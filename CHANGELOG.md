@@ -53,6 +53,13 @@ All notable changes to this project will be documented in this file.
     org-settings toggle, not a bad credential.
   - Release triage (rule 8) and the `security-triage` charter now name the Snyk and Bandit feeds
     alongside CodeQL and Dependabot, with the per-category triage note.
+- **SonarQube adoption, local-first (#359, adapting stock PR #357)** — `scripts/sonar_local.sh`
+  runs a dockerized SonarQube Community + scanner against the committed
+  `sonar-project.properties` (both stacks, coverage reused from pytest/Vitest output) and
+  exits by the quality-gate verdict; the stock `sonarqube.yml` workflow is now
+  **secrets-gated** (absent `SONAR_TOKEN`/`SONAR_HOST_URL` → clean skip, never red — the
+  rollout-job pattern). Recorded decision: SonarCloud is the recommended CI target for this
+  public repo (free, PR decoration without Developer Edition).
 
 ### Changed
 - **CI frontend jobs use the same worker-teardown retry as the pre-push gate (#319)** — each of the
@@ -135,6 +142,33 @@ All notable changes to this project will be documented in this file.
     rotating spoofed first hop all passed a 5/60 limiter; with it off the 6th got `429`. The app's
     `TRUSTED_PROXY_CIDRS` check is now the single decision point (`backend/Dockerfile`, pinned by
     a test). Nothing in the backend reads `scope["scheme"]`; nginx still logs the real client IP.
+- **Analytics no longer starves the connection pool — and both counters are now exact (#326)** —
+  an engagement emit opened its own session from the REQUEST pool while the request that scheduled
+  it still held its own (a background task is part of the ASGI cycle), so at concurrency ≥ pool
+  capacity one request wanted two connections and the pool deadlocked against itself. Every request
+  still returned `200`, so the loss was invisible. Measured on `/cv/download`, 300 requests at
+  concurrency 60: **32.3 s, 106 `QueuePool limit … connection timed out`, 194/300 events,
+  139/300 `download_count`**. After: **1.4 s, 0 timeouts, 300/300 events, 300/300 increments**;
+  at 600 requests / concurrency 120 (2× capacity) **1.9 s, 600/600, 600/600, 0 timeouts**.
+  - **Analytics has its own small pool** (`analytics_engine`, `pool_size =
+    ENGAGEMENT_MAX_CONCURRENT_WRITES = 4`, `max_overflow = 0`), so a side write can never take a
+    connection a request is waiting for. Separation — not a bigger number — is the fix: bounding
+    the emits on the *shared* pool was measured to be **worse than leaving them unbounded**
+    (397 timeouts and 152 HTTP 500s vs 106 timeouts and none), because a bounded emit that cannot
+    get a connection blocks every emit behind it while the connection holders wait on those emits.
+  - **Backpressure with a countable drop**: emits queue under a semaphore, and one arriving with
+    `ENGAGEMENT_MAX_PENDING_EVENTS` (1000) already in flight is dropped, counted
+    (`engagement.dropped_event_count()`) and logged at WARNING. Analytics never grows memory
+    without bound and never loses an event silently.
+  - **`download_count` is incremented by the database**, not read-modify-write in Python. The old
+    form lost concurrent increments outright — measured with analytics OFF (1.5 s, zero errors, no
+    pool pressure whatsoever): 300 downloads at concurrency 60 left the counter at **3**. It is now
+    `UPDATE … SET download_count = download_count + 1 … RETURNING id`, evaluated under the row lock.
+  - **Pool sizing is explicit and documented** (`DB_POOL_SIZE` 20 + `DB_MAX_OVERFLOW` 40 = a hard
+    ceiling of 60, inside Postgres' default `max_connections` of 100) and **`echo=True` is gone**:
+    `DB_ECHO` defaults to `false`, so production no longer logs every statement and every bound
+    parameter. No request-path latency cost: 60 sequential downloads, three alternating rounds,
+    mean **4.75/3.92/4.40 ms before** vs **4.30/3.58/3.61 ms after**.
 - **Bandit CI workflow rebuilt on the repo's own Bandit contract, with stable SARIF
   (#355 follow-up)** — the stock template had three defects, all measured: it scanned every
   path at every severity and flooded the Security tab with **100 findings** (98× B101
@@ -163,33 +197,6 @@ All notable changes to this project will be documented in this file.
     with the rationale on the lines above: Bandit parses anything trailing the marker as further
     test IDs, which emitted 15 spurious warnings per run. Measured after the fix:
     **0 warnings, valid SARIF 2.1.0, 0 findings.**
-- **Analytics no longer starves the connection pool — and both counters are now exact (#326)** —
-  an engagement emit opened its own session from the REQUEST pool while the request that scheduled
-  it still held its own (a background task is part of the ASGI cycle), so at concurrency ≥ pool
-  capacity one request wanted two connections and the pool deadlocked against itself. Every request
-  still returned `200`, so the loss was invisible. Measured on `/cv/download`, 300 requests at
-  concurrency 60: **32.3 s, 106 `QueuePool limit … connection timed out`, 194/300 events,
-  139/300 `download_count`**. After: **1.4 s, 0 timeouts, 300/300 events, 300/300 increments**;
-  at 600 requests / concurrency 120 (2× capacity) **1.9 s, 600/600, 600/600, 0 timeouts**.
-  - **Analytics has its own small pool** (`analytics_engine`, `pool_size =
-    ENGAGEMENT_MAX_CONCURRENT_WRITES = 4`, `max_overflow = 0`), so a side write can never take a
-    connection a request is waiting for. Separation — not a bigger number — is the fix: bounding
-    the emits on the *shared* pool was measured to be **worse than leaving them unbounded**
-    (397 timeouts and 152 HTTP 500s vs 106 timeouts and none), because a bounded emit that cannot
-    get a connection blocks every emit behind it while the connection holders wait on those emits.
-  - **Backpressure with a countable drop**: emits queue under a semaphore, and one arriving with
-    `ENGAGEMENT_MAX_PENDING_EVENTS` (1000) already in flight is dropped, counted
-    (`engagement.dropped_event_count()`) and logged at WARNING. Analytics never grows memory
-    without bound and never loses an event silently.
-  - **`download_count` is incremented by the database**, not read-modify-write in Python. The old
-    form lost concurrent increments outright — measured with analytics OFF (1.5 s, zero errors, no
-    pool pressure whatsoever): 300 downloads at concurrency 60 left the counter at **3**. It is now
-    `UPDATE … SET download_count = download_count + 1 … RETURNING id`, evaluated under the row lock.
-  - **Pool sizing is explicit and documented** (`DB_POOL_SIZE` 20 + `DB_MAX_OVERFLOW` 40 = a hard
-    ceiling of 60, inside Postgres' default `max_connections` of 100) and **`echo=True` is gone**:
-    `DB_ECHO` defaults to `false`, so production no longer logs every statement and every bound
-    parameter. No request-path latency cost: 60 sequential downloads, three alternating rounds,
-    mean **4.75/3.92/4.40 ms before** vs **4.30/3.58/3.61 ms after**.
 
 ### Removed
 - **The `frontend-design` plugin** — carried as a conditional KEEP through two releases with no

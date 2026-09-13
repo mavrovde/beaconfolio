@@ -246,6 +246,26 @@ cd frontend
 npm run test:coverage
 ```
 
+## Static Analysis (SonarQube, #359)
+
+Local-first, like every other gate in this repo:
+
+```bash
+bash scripts/sonar_local.sh          # dockerized SonarQube Community + scanner,
+                                     # prints the quality-gate verdict, exits by it
+bash scripts/sonar_local.sh --down   # remove the sonar container (volumes kept)
+```
+
+The script runs a plain named container (`beaconfolio-sonarqube`) — never a compose
+project, so the one-stack guard is not involved — and reuses existing coverage output
+(`backend/coverage.xml` from `pytest --cov-report=xml`, `frontend/coverage/*/lcov.info`
+from `npm run test:coverage`). Project surface and exclusions are committed in
+`sonar-project.properties`, shared with CI.
+
+CI (`.github/workflows/sonarqube.yml`) is **secrets-gated**: without `SONAR_TOKEN` +
+`SONAR_HOST_URL` it skips with a note (never red). Recommended CI target when
+activated: **SonarCloud** (free for public repos, PR decoration included).
+
 ## Troubleshooting
 
 ### Backend Tests Fail

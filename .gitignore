@@ -60,3 +60,6 @@ importer/state.json
 .angular/
 backend/perf/results/
 .playwright-mcp/
+
+# SonarQube local scanner workdir (scripts/sonar_local.sh, #359)
+.scannerwork/
