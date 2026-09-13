@@ -43,12 +43,26 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Install backend requirements (resolution only)
         working-directory: backend
+        # Best-effort: linkedin-api==2.2.1 is a prod-patched wheel not on PyPI
+        # (CLAUDE.md rule 6), so a clean-index install cannot fully resolve. Snyk
+        # SCA reads requirements.txt directly regardless, so a partial venv is
+        # fine — never let this hard-fail the scan job.
         run: |
           python -m venv .snyk-venv && . .snyk-venv/bin/activate
-          pip install -q -r requirements.txt -r requirements-dev.txt || pip install -q -r requirements.txt
+          pip install -q -r requirements.txt -r requirements-dev.txt \
+            || pip install -q -r requirements.txt \
+            || echo "::warning::partial dependency resolution (patched wheel absent) — Snyk reads the manifest directly"
       - name: Snyk Code (SAST) → SARIF
         env: { SNYK_TOKEN: "${{ secrets.SNYK_TOKEN }}" }
-        run: snyk code test --sarif > snyk-code.sarif || true   # findings land in the Security tab; triage per rule 8
+        # A rejected token (HTTP 403 — Snyk Code not enabled for the org, or an
+        # invalid/wrong-region SNYK_TOKEN) leaves no valid SARIF. Surface it as an
+        # actionable error but don't crash the step; the guarded upload below skips
+        # a missing/empty file so the run reflects "token needs fixing", not a
+        # broken workflow. (Findings, when the token works, land in the Security
+        # tab for rule-8 triage.)
+        run: |
+          snyk code test --sarif > snyk-code.sarif \
+            || echo "::warning::snyk code test produced no SARIF (check SNYK_TOKEN / Snyk Code entitlement)"
       - name: Snyk Open Source (both stacks)
         env: { SNYK_TOKEN: "${{ secrets.SNYK_TOKEN }}" }
         run: |
@@ -58,7 +72,17 @@ jobs:
       - name: Snyk IaC (compose + Dockerfiles + workflows)
         env: { SNYK_TOKEN: "${{ secrets.SNYK_TOKEN }}" }
         run: snyk iac test --report || true
+      - name: Check SARIF is present and non-empty
+        id: sarif
+        run: |
+          if [ -s snyk-code.sarif ] && grep -q '"runs"' snyk-code.sarif 2>/dev/null; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::no valid Snyk SARIF to upload — skipping (see the Snyk Code step)"
+          fi
       - name: Upload SARIF to code scanning
+        if: steps.sarif.outputs.ok == 'true'
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: snyk-code.sarif
