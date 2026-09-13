@@ -105,6 +105,8 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
 | lint | `scripts/run_frontend_suites.sh` | runs the Vitest projects independently and retries ONCE on the worker-teardown race (present on 4.x AND 5.x, #309); replaces `npm test` in the pre-push gate AND wraps each frontend job in CI (#319) |
 | lint | `scripts/check_live_freshness.test.sh` | self-test for the one live-vs-released verdict script shared by Live Freshness + the post-rollout gate; pins the 3-way verdict and staleness-beats-outage precedence — pre-push + CI (#280) |
 | lint | `scripts/check_migration_heads.sh` | exactly ONE Alembic head in the working tree UNIONED with `origin/main` — pre-push + CI (v1.14.0 retro; #323/#325 forked the chain only in the merged result, which would have stopped the prod backend booting) |
+| lint | `scripts/check_no_pii.sh` | no real PII and no retired brand/domain may reach the public repo — pre-push + CI; the exclude-list fails CLOSED, and `de-brand:canonical`/`de-brand:historical` markers exempt deliberate records (#330) |
+| lint | `scripts/check_live_freshness.sh` | the ONE live-vs-released verdict (0 fresh / 1 stale / 2 unreachable, staleness beats outage) shared by the Live Freshness workflow and deploy.yml's post-rollout gate (#169/#254) |
 | lint | `scripts/check_aiconfig_map.sh` | the AI-config map below must describe the tooling that actually EXISTS — every agent/command/skill/hook/lint has a row, every row names a real file, every enabled plugin has a row AND a rationale, prose counts match the table; pre-push + CI + `verify_all.sh` (#246 — the map had no guard and drifted silently) |
 | plugin | `context7`, `pyright-lsp`, `typescript-lsp`, `security-guidance` | per-plugin keep-rationale in "Plugins" below (#122); `frontend-design` and `playwright` were dropped |
 | MCP | `postgres`, `playwright`, `github` | read-only SQL / browser automation / PRs+issues |
@@ -158,8 +160,8 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
     `code-review` (rule 13's `pr-reviewer` agent is the merge gate — a generic reviewer has less
     repo context and no standing in the gate). Nothing filled a gap the in-repo toolkit doesn't;
     revisit only when a concrete gap surfaces in practice.
-  - **Project plugin (`mavrovde-toolkit`) — DEFERRED, deliberately**: packaging the 7 agents +
-    7 commands + 5 skills + 2 hooks as one installable plugin is the right end-state for the
+  - **Project plugin (`mavrovde-toolkit`) — DEFERRED, deliberately**: packaging the agents,
+    commands, skills and hooks **in the map above** as one installable plugin is the right end-state for the
     template product (#61/#88), but today every consumer of this config is this repo itself —
     packaging would add a version-sync surface with zero second consumers. Tracked as follow-up
     issue **#244**; trigger = the first real fork/template user (milestone #2).

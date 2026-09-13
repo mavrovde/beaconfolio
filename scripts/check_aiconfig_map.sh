@@ -82,14 +82,40 @@ for d in "$ROOT"/.claude/skills/*/; do
 done
 map_names skill | while IFS= read -r name; do
   [ -n "$name" ] || continue
-  [ -d "$ROOT/.claude/skills/$name" ] \
-    || printf '  ✗ skill row `%s` names a directory that does not exist\n' "$name"
+  # A skill is its SKILL.md, not its directory: an empty directory left behind
+  # by a deleted skill would otherwise satisfy the row (review finding).
+  if [ ! -d "$ROOT/.claude/skills/$name" ]; then
+    printf '  ✗ skill row `%s` names a directory that does not exist\n' "$name"
+  elif [ ! -f "$ROOT/.claude/skills/$name/SKILL.md" ]; then
+    printf '  ✗ skill row `%s` has a directory but NO SKILL.md — the skill is not loadable\n' "$name"
+  fi
 done
 # lint rows point at scripts/ (the row text carries the scripts/ prefix, stripped above)
 map_names lint | while IFS= read -r name; do
   [ -n "$name" ] || continue
   [ -f "$ROOT/scripts/$name" ] \
     || printf '  ✗ lint row `%s` names a file that does not exist (scripts/%s)\n' "$name" "$name"
+done
+# …and the REAL -> MAP direction for lints, which the first version omitted.
+# Without it the whole lint category could not fail: a new `scripts/` lint with
+# no row passed, and deleting ALL five lint rows still printed "✓ … 0 lints".
+# Found by review, and it was hiding LIVE drift — `check_no_pii.sh` runs in the
+# pre-push gate and in deploy.yml and had no row at all. A check that cannot
+# fail is worse than no check, because it reports success.
+#
+# What counts as a lint here: an executable `scripts/*.sh` that is not itself a
+# self-test (`*.test.sh` belongs to the tool it tests) and not a build helper.
+# The exclusions are named, not pattern-guessed, so adding a script forces a
+# decision rather than silently slipping into an ignore rule.
+for f in "$ROOT"/scripts/*.sh; do
+  [ -e "$f" ] || continue
+  name="$(basename "$f")"
+  case "$name" in
+    *.test.sh) continue ;;                 # a self-test, not a lint
+    make-social-image.sh) continue ;;      # asset generator, not a repo-contract lint
+  esac
+  map_names lint | grep -qxF "$name" \
+    || fail "lint 'scripts/$name' exists but has NO row in the CLAUDE.md AI-config map"
 done
 
 # The `while | read` subshells above cannot increment `problems`, so re-count the
@@ -98,7 +124,7 @@ missing_files=$( {
   map_names agent   | while IFS= read -r n; do [ -n "$n" ] && [ ! -e "$ROOT/.claude/agents/$n.md" ] && echo x; done
   map_names command | while IFS= read -r n; do [ -n "$n" ] && [ ! -e "$ROOT/.claude/commands/$n.md" ] && echo x; done
   map_names hook    | while IFS= read -r n; do [ -n "$n" ] && [ ! -e "$ROOT/.claude/hooks/$n" ] && echo x; done
-  map_names skill   | while IFS= read -r n; do [ -n "$n" ] && [ ! -d "$ROOT/.claude/skills/$n" ] && echo x; done
+  map_names skill   | while IFS= read -r n; do [ -n "$n" ] && { [ ! -d "$ROOT/.claude/skills/$n" ] || [ ! -f "$ROOT/.claude/skills/$n/SKILL.md" ]; } && echo x; done
   map_names lint    | while IFS= read -r n; do [ -n "$n" ] && [ ! -f "$ROOT/scripts/$n" ] && echo x; done
 } | grep -c x )
 problems=$((problems + missing_files))
@@ -122,6 +148,12 @@ if [ -f "$SETTINGS" ]; then
   for p in $(printf '%s' "$plugin_row" | grep -oE '`[a-z0-9-]+`' | tr -d '`'); do
     printf '%s\n' "$enabled" | grep -qxF "$p" \
       || fail "plugin '$p' is in the map's plugin row but is NOT enabled in .claude/settings.json"
+  done
+  # A name listed twice in the row is drift as much as a missing one — it means
+  # the row was edited without reading it (review finding).
+  dupes="$(printf '%s' "$plugin_row" | grep -oE '`[a-z0-9-]+`' | tr -d '`' | sort | uniq -d)"
+  for p in $dupes; do
+    fail "plugin '$p' is listed MORE THAN ONCE in the map's plugin row"
   done
 fi
 
