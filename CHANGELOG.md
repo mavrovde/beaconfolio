@@ -17,7 +17,6 @@ All notable changes to this project will be documented in this file.
   admin-route-stale, down, mixed-down+stale) with stubbed curl/jq, asserting exit code AND verdict
   line; the mixed state pins the staleness-beats-outage precedence (#254) and fails against a
   regressed `*)` branch. Runs in the pre-push docs leg and the CI Version Consistency job.
-
 - **v1.14.0 release retrospective, and the gates it produced (#328)** — the cycle's evidence turned
   into committed configuration, archived as `docs/retrospectives/v1.14.0.md` with the trend row in
   that directory's README:
@@ -81,7 +80,6 @@ All notable changes to this project will be documented in this file.
     `docs/retrospectives/` and `LICENSE`. (`specs/` and `docs/agent-runs/` are removed, not
     rewritten — their content is unchanged in git history; an early sweep pass touched two
     retrospective lines and was reverted verbatim before merge.)
-
 - **`.claude/hooks/pre-merge-gate.sh`: an APPROVE must be NEWER than every commit on the PR.**
   Replaying the release's own threads as they stood at merge time, **4 of 10 reviewed merges** carried
   commits no approval had seen — including the fixes to a reviewer's own findings, two merges of
@@ -130,8 +128,9 @@ All notable changes to this project will be documented in this file.
   *"Node 20 is being deprecated"* pipeline warning; and its SARIF carried **no category**, so
   another tool's upload could displace its results.
   - The job now runs `bandit` **directly** under the CLAUDE.md contract
-    (`-ll --skip B101`) across `backend/app`, `importer`, `scraper`, `scripts` and the root
-    probe script — wider than the backend-local command — emitting SARIF via `bandit[sarif]`.
+    (`-ll --skip B101`) across `backend/app`, `backend/scripts`, `backend/ensure_admin.py`,
+    `importer` and the root proxy probe — wider than the backend-local command, which sees
+    `backend/app` only — emitting SARIF via `bandit[sarif]`.
   - SARIF is **validated before upload** (missing/malformed → warn and skip, never a failed
     upload masquerading as a broken pipeline) and published under an explicit
     `category: bandit` so Bandit, Snyk and CodeQL results coexist.
@@ -148,7 +147,6 @@ All notable changes to this project will be documented in this file.
     with the rationale on the lines above: Bandit parses anything trailing the marker as further
     test IDs, which emitted 15 spurious warnings per run. Measured after the fix:
     **0 warnings, valid SARIF 2.1.0, 0 findings.**
-
 - **Analytics no longer starves the connection pool — and both counters are now exact (#326)** —
   an engagement emit opened its own session from the REQUEST pool while the request that scheduled
   it still held its own (a background task is part of the ASGI cycle), so at concurrency ≥ pool
