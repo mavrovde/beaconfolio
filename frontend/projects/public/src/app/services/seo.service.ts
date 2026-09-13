@@ -62,7 +62,15 @@ export class SeoService {
             // its not-found title (with the fresh owner name), never the
             // regular branding.
             if (this.notFound) {
+                const wasNoIndex = this.noIndex;
                 this.setNotFound(this.notFoundSubject);
+                // `setNotFound` writes the bare `noindex` every not-found body
+                // carries; a page that additionally asked for `nofollow` (the
+                // #324 wildcard 404) has to re-assert it, exactly like the
+                // regular branch below.
+                if (wasNoIndex) {
+                    this.setNoIndex();
+                }
             } else {
                 // updateSeo clears the robots meta (see there), so a page that
                 // asked to stay unlisted has to re-assert it afterwards.
@@ -195,20 +203,28 @@ export class SeoService {
      * the two states are indistinguishable, so this is defence for the slow-
      * config ordering, not for every 404.
      *
-     * NOTE for the next reader: `/does-not-exist` is NOT this path. The public
-     * app declares no `**` route (`app.routes.ts`), so an unknown top-level URL
-     * never reaches Angular at all — the SSR engine declines it and Express
-     * answers its own `Cannot GET` page, which has no head links by
-     * construction. That absence cannot be fixed here.
+     * NOTE for the next reader: since #324 `/does-not-exist` reaches this path
+     * too — the app declares a `**` route rendering `NotFoundComponent`, so an
+     * unknown top-level URL is a branded, head-carrying 404 instead of Express's
+     * bare `Cannot GET` page.
      *
      * The links are still omitted while `siteUrl` is unknown, the same rule the
      * canonical follows: a relative or empty `href` is worse than none.
+     *
+     * **The canonical is REMOVED here (#324).** When the runtime config lands
+     * BEFORE the component marks the route missing — the common ordering — the
+     * re-apply in the constructor has already run `updateSeo({})`, whose
+     * `data.url || '/'` default wrote `<link rel="canonical" href="{site}/">`
+     * into the head. A 404 body that names the home page as its canonical tells
+     * a crawler this response IS the home page. A not-found page gets no
+     * canonical at all.
      */
     setNotFound(subject: string = 'Post'): void {
         this.notFound = true;
         this.notFoundSubject = subject;
         this.titleService.setTitle(`${subject} not found | ${this.site.ownerName}`);
         this.metaService.updateTag({ name: 'robots', content: 'noindex' });
+        this.removeCanonicalUrl();
         if (this.baseUrl) {
             this.updateAgentLinks();
         }
@@ -242,6 +258,19 @@ export class SeoService {
      */
     private updateCanonicalUrl(url: string): void {
         this.updateLink("link[rel='canonical']", { rel: 'canonical' }, url);
+    }
+
+    /**
+     * Drop the `<link rel="canonical">` from the injected document (#324).
+     *
+     * A client-side navigation keeps the previous page's head, so a canonical
+     * written by a real page would otherwise survive onto the 404 that follows
+     * it — the same "the document outlives the route" problem the robots meta
+     * has. `updateSeo` re-creates the element when a real page is rendered
+     * next, so removing it is safe in both directions.
+     */
+    private removeCanonicalUrl(): void {
+        this.document.querySelector("link[rel='canonical']")?.remove();
     }
 
     /** Upsert one `<link>` in the injected document's head, by selector. */
