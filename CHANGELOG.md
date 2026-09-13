@@ -151,6 +151,12 @@ All notable changes to this project will be documented in this file.
   locally with `git fetch --depth=1` shallows your own repository), both measured while writing this
   retrospective.
 
+### Removed
+- **The `frontend-design` plugin** — carried as a conditional KEEP through two releases with no
+  evidence of use in either; the cycle's only design-shaped work (#311) shipped through a hand-written
+  renderer without it. An enabled plugin costs tokens on every load; re-enabling is one line, and the
+  trigger is written into CLAUDE.md.
+
 ### Fixed
 - **Unmatched URLs now render the site's own 404 instead of Express's bare page (#324)** — the public
   app declared no `**` route, so an unknown URL never reached Angular at all: the SSR engine declined
@@ -168,6 +174,14 @@ All notable changes to this project will be documented in this file.
   by the wildcard page survives a late config arrival. `/blog/<unknown>` and `/for/<unknown>` keep
   their existing `noindex` title/meta behaviour. Covered by unit specs (public: 55 files / 490 tests,
   100% coverage) and a new `e2e/public/not-found.spec.ts` reading the wire.
+- **Snyk Code no longer scans the throwaway venv the scan job itself creates (#358 follow-up)** —
+  the first real run after `sastEnabled` was enabled produced **100 alerts, 79 of them inside
+  `backend/.snyk-venv`** (`pip/_vendor/…` and other third-party package sources), burying the 21
+  findings that are actually ours. Fixed at the source: the resolution venv now lives in
+  `$RUNNER_TEMP`, outside the checkout, so code analysis cannot walk into it — dependencies are
+  judged by SCA, which reads the manifests directly. A committed `.snyk` policy additionally
+  excludes the other vendored/generated trees (`node_modules`, `dist`, `.angular`, local venvs,
+  coverage, `.scannerwork`).
 - **Rate limiting no longer trusts the attacker-controlled `X-Forwarded-For` hop (#273, security)** —
   the per-client-IP key came from `x-forwarded-for.split(",")[0]`, which is whatever the caller
   typed: nginx **appends** with `$proxy_add_x_forwarded_for`, it never replaces, so rotating that
@@ -244,12 +258,6 @@ All notable changes to this project will be documented in this file.
     with the rationale on the lines above: Bandit parses anything trailing the marker as further
     test IDs, which emitted 15 spurious warnings per run. Measured after the fix:
     **0 warnings, valid SARIF 2.1.0, 0 findings.**
-
-### Removed
-- **The `frontend-design` plugin** — carried as a conditional KEEP through two releases with no
-  evidence of use in either; the cycle's only design-shaped work (#311) shipped through a hand-written
-  renderer without it. An enabled plugin costs tokens on every load; re-enabling is one line, and the
-  trigger is written into CLAUDE.md.
 
 ## [1.14.0] - 2026-09-09
 
@@ -1024,7 +1032,6 @@ All notable changes to this project will be documented in this file.
   verification block for the new surfaces: confirm the identity is yours and not the demo
   persona, POST a probe to the contact form, and find it in the admin Inbox.
 
-
 ## [1.12.0] - 2026-09-06
 
 ### Fixed
@@ -1247,7 +1254,6 @@ All notable changes to this project will be documented in this file.
 > `GEMINI_ENCRYPTION_KEY` names are ignored; the backend logs which ignored legacy names it
 > sees). Without the rename the AI features silently degrade to the local Ollama fallback —
 > this does not fail closed. Details in the #141 entry under *Changed*.
-
 
 ### Added
 - **`/deploy-status` command** (#120) — one command that reports the TRUE deploy state: latest
