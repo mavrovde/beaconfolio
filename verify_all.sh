@@ -27,6 +27,14 @@ if [ -z "${DOCKER_HOST:-}" ] && command -v podman >/dev/null 2>&1; then
     fi
 fi
 
+# 0. Repo-contract lint: the CLAUDE.md AI-config map must describe the tooling
+# that actually exists (#246). Dependency-free and instant, so it runs first —
+# a stale map misleads every later reader, human or agent.
+echo ""
+echo "========================================"
+echo "[0/3] repo: 🗺️  AI-config map drift"
+echo "========================================"
+bash "$(dirname "$0")/scripts/check_aiconfig_map.sh" || exit 1
 
 # 1. Backend Checks (via Docker to ensure consistent environment)
 echo ""

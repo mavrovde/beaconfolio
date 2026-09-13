@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **The CLAUDE.md AI-config map is now enforced, not just written (#246)** —
+  `scripts/check_aiconfig_map.sh` compares the map against the filesystem and
+  `.claude/settings.json`: every agent/command/skill/hook/lint on disk must have a row, every row
+  must name a file that exists, every **enabled** plugin must appear in the plugin row *and* carry a
+  rationale line (and vice versa — a listed-but-disabled plugin fails), and prose counts
+  ("all eight —") must match the table. Dependency-free bash, wired into the pre-push docs leg, the
+  CI Version Consistency job and `verify_all.sh`.
+  - It found real drift on its first run against `main`: **8 command rows carried a leading `/`**
+    that no lookup matched, and the plugin cross-check flagged two names the purpose column
+    mentions as *dropped*. Both are now handled precisely rather than approximately.
+  - `check_aiconfig_map.test.sh` proves it can fail: **12 cases, all failing-first** — an
+    undocumented agent/command/hook/skill, a row naming a deleted file, a deleted lint script, an
+    enabled-but-unlisted plugin, a listed-but-disabled plugin, a missing rationale, and a stale
+    prose count; plus a control that an agreeing map passes and a case pinning that **one shared
+    rationale line counts for both plugins** it names.
+
 ### Security
 - **`guard-destructive` no longer treats the SPELLING of a shell as a security boundary (#253)** —
   four pipe-into-shell forms executed a destruction payload **completely unguarded**, measured on
