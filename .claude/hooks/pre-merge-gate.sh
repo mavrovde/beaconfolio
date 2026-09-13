@@ -348,7 +348,7 @@ fi
 # `gh pr review --approve` is blocked for a same-identity author, so the repo's
 # sanctioned path is a COMMENT verdict whose body states APPROVE. Both streams
 # count and the NEWEST wins, so a later REQUEST CHANGES overrides an approval.
-PR_JSON="$(gh pr view "$PR_NUM" --json reviews,comments,body,commits 2>/dev/null)" \
+PR_JSON="$(gh pr view "$PR_NUM" --json reviews,comments,body,commits,mergeable 2>/dev/null)" \
   || deny "could not read PR #$PR_NUM (network or auth) — refusing to merge unverified"
 past_deadline && deny "could not finish within ${DEADLINE_SECONDS}s — an unanalysed merge must not proceed"
 
@@ -501,6 +501,21 @@ if [ -n "$VERDICT_AT" ]; then
     NEWER_LIST="$(printf '%s\n' "$NEWER" | head -3 | paste -sd '; ' - 2>/dev/null || printf '%s' "$NEWER")"
     deny "PR #$PR_NUM's APPROVE was posted at $VERDICT_AT, but $NEWER_N commit(s) landed after it ($NEWER_LIST) — the approval does not cover the head. Ask pr-reviewer for a delta-confirm verdict on the current head (rule 13), or prefix PR_MERGE_GATE=0 if this merge is already authorized"
   fi
+fi
+
+# --- Check 1c: the approval must cover the MERGED RESULT, not just the branch -
+# The check above asks whether commits landed on the PR after the verdict. It is
+# blind to the other way a reviewed state goes stale: `main` moving underneath.
+# An APPROVE at head X, then someone else's merge to `main`, leaves the PR
+# BEHIND with no new commit of its own — check 1b sees nothing, and the stale
+# APPROVE merges a branch nobody reviewed against the base it will land on.
+# That is how #325's Alembic head fork appeared (v1.14.0 retro) and how five
+# stale-base blockers reached review in v1.14.1: a branch green in isolation is
+# not green merged. `mergeable: CONFLICTING` is the cheap, mechanical signal —
+# GitHub computes it against the CURRENT base, so it needs no local clone.
+MERGEABLE="$(printf '%s' "$PR_JSON" | jq -r '.mergeable // ""' 2>/dev/null)"
+if [ "$MERGEABLE" = "CONFLICTING" ]; then
+  deny "PR #$PR_NUM conflicts with its base — the approval covers a branch that cannot merge as-is. Rebase onto origin/main, re-run the gates on the RESULT, and get a delta-confirm verdict (rule 13); prefix PR_MERGE_GATE=0 if this merge is already authorized"
 fi
 
 # --- Check 2: `Closes #NN` must not point at unticked criteria ---------------

@@ -15,10 +15,24 @@ E2E assertion). Consult the `env-gotchas` skill for platform pitfalls while runn
    stale main is also how duplicate CHANGELOG sections happen. And note what CI will NOT tell you:
    **GitHub does not re-run a PR's checks when its base moves**, so a green PR run can predate a
    collision entirely.
-2. **CHANGELOG hygiene.** Exactly ONE `## [Unreleased]` block
+2. **CHANGELOG hygiene — headings AND entries.** Exactly ONE `## [Unreleased]` block
    (`grep -c '^## \[Unreleased\]' CHANGELOG.md` → 1), no duplicated `### Added/Changed/Fixed`
    headers within it, and the block actually mentions this branch's change. FLAG any duplicate
    section (the #103/#104 failure).
+
+   **A heading-only check is not enough** (v1.14.1): merging two `[Unreleased]` sections duplicates
+   headings **and entries independently**, so the section list can look perfect while the entries
+   underneath are doubled. That passed this step and reached review on #354 and #362, costing a
+   round each. Run the fixer, then diff the ENTRIES against `main`:
+
+   ```bash
+   python3 scripts/dedup_changelog_unreleased.py CHANGELOG.md
+   diff <(git show origin/main:CHANGELOG.md | sed -n '/^## \[Unreleased\]/,/^## \[[0-9]/p' | grep '^- ') \
+        <(sed -n '/^## \[Unreleased\]/,/^## \[[0-9]/p' CHANGELOG.md | grep '^- ')
+   ```
+
+   The diff must show only `>` lines, and only this branch's own entries. Any `<` line means the
+   rebase **lost** something from `main`.
 3. **Stale old-behavior assertions.** If the diff changes user-visible behavior, grep the WHOLE
    relevant spec tree (`frontend/e2e`, `frontend/projects/*/src/**/*.spec.ts`, `backend/tests`) for
    assertions on the OLD behavior — search for the old strings/routes/status codes the diff removes

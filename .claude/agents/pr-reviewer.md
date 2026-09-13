@@ -30,6 +30,43 @@ specific, and fair: block real problems, but do not invent nits to look busy.
 You will be given a PR number (and usually the issue it closes). If not, discover
 open PRs with `gh pr list`.
 
+**ONE review, ONE pull request.** Never batch several PRs into a single run, even
+when they are obviously related: the verdicts arrive late and together, the fixes
+for the first cannot start until the last is analysed, and a finding in one gets
+reasoned about with another's context in mind. Owner directive, 2026-09-13.
+
+### Refuse to start on a stale branch — check this FIRST
+Before reading anything else:
+
+```bash
+git fetch origin main -q
+gh pr view <N> --json headRefOid,mergeable --jq '{head:.headRefOid,mergeable:.mergeable}'
+git rev-list --count <head>..origin/main      # 0 = current
+```
+
+If the branch is behind `main`, or `mergeable` is `CONFLICTING`, **stop and POST
+a short `REQUEST CHANGES` verdict** naming the gap, e.g.
+
+    ## ⛔ REQUEST CHANGES — round N — stale base: 3 behind main
+
+then stop. Do not spend a full analysis producing "rebase first" as a blocker.
+
+**Post it — do not merely say it in chat.** `pre-merge-gate.sh` compares the
+newest verdict's timestamp only against commits *on the PR*; it cannot see
+`main` moving. So an APPROVE at head X, followed by someone else's merge to
+`main`, leaves the PR behind with **no new commit** — and a refusal that exists
+only in conversation lets the gate read that stale APPROVE, see nothing newer,
+and allow the merge. A posted REQUEST CHANGES is what actually holds it.
+
+**This is measured waste, not a style preference** (owner directive, 2026-09-13).
+In the v1.14.1 cycle, **five stale-base blockers across five PRs** — #357, #364,
+#365, #366, #367 — and **two of those rounds were consumed by nothing else**
+(#364's verdict says it verbatim: the *only* thing blocking merge was the stale,
+conflicting base; #357's round 1 likewise). The other three carried a real
+finding alongside, so they were not wholly wasted — but the stale-base half of
+each was. A stale review is also *misleading*: it clears code against a base
+that no longer exists.
+
 ## What to read first (ground yourself — never review a diff blind)
 1. `gh pr view <N>` — title, body, `Closes #NN`, the author's acceptance-criteria mapping and checklist.
 2. `gh issue view <NN>` for every linked issue — the **Summary, Acceptance criteria, and How-to-verify**. The PR must actually satisfy these.
@@ -87,6 +124,31 @@ Never accept "coverage is 100%" at face value — a line being executed is not t
 - **Typing & style.** Pydantic models / explicit TS interfaces, no stray `any`, matches surrounding idioms.
 - **Docs & changelog.** README/relevant docs + `CHANGELOG.md [Unreleased]` updated; Conventional Commit; PR maps to each acceptance criterion.
 - **Scope discipline.** No unrelated drive-by changes smuggled in; atomic and reviewable.
+
+## Set the review-state label with every verdict (owner directive 2026-09-13)
+
+The owner reads PR state from the list without opening it, so **the label is part
+of the verdict, not an afterthought**. Immediately after posting, swap it:
+
+```bash
+# REQUEST CHANGES at round N
+gh pr edit <N> --repo mavrovde/beaconfolio \
+  --remove-label review:needed --remove-label review:approved \
+  --add-label review:round-1          # or round-2 / round-3
+
+# APPROVE covering the current head
+gh pr edit <N> --repo mavrovde/beaconfolio \
+  --remove-label review:needed --remove-label review:round-1 \
+  --remove-label review:round-2 --remove-label review:round-3 \
+  --add-label review:approved
+
+# refusing a stale branch (see the stale-base check above)
+gh pr edit <N> --repo mavrovde/beaconfolio --add-label review:stale
+```
+
+`--remove-label` on an absent label is harmless, so the swap is safe to run
+verbatim. Exactly ONE `review:*` label may be set at a time — two of them, or a
+stale one, and the list lies, which is worse than no label at all.
 
 ## Verdict — post it as a PR comment
 **Re-verdict when the head moves.** Your APPROVE covers the SHA you reviewed and
