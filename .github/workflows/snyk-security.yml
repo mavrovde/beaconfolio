@@ -63,9 +63,13 @@ jobs:
           python -m venv "$RUNNER_TEMP/snyk-venv" && . "$RUNNER_TEMP/snyk-venv/bin/activate"
           python -m pip install --quiet --upgrade pip
           bash scripts/patch_linkedin.sh
+          # The dev-requirements leg may legitimately fail on a transient index
+          # error; the runtime manifest is what SCA needs, so fall back to it
+          # once. But do NOT swallow a total failure: a venv that resolved
+          # nothing scans nothing and reports "clean" — the quietest way for a
+          # security job to lie. Fail the step instead.
           pip install -q -r requirements.txt -r requirements-dev.txt \
-            || pip install -q -r requirements.txt \
-            || echo "::warning::partial dependency resolution — Snyk SCA reads the manifest directly"
+            || pip install -q -r requirements.txt
       - name: Snyk Code (SAST) → SARIF
         env: { SNYK_TOKEN: "${{ secrets.SNYK_TOKEN }}" }
         # A rejected token (HTTP 403 — Snyk Code not enabled for the org, or an

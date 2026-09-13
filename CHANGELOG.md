@@ -4,20 +4,6 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Fixed
-- **Snyk scan follow-ups from the #368 review (#358)** — three corrections to the scanning surface,
-  each one measured rather than assumed:
-  - **`.snyk` now declares `version: v1.25.0`.** Without it the policy can be judged invalid and
-    **silently ignored** — the worst failure mode an exclude list has, since it looks like it works.
-  - **The backend scan venv uses the repo's own `scripts/patch_linkedin.sh`**, like every other
-    install leg (`backend/Dockerfile`, `deploy.yml`, `copilot-setup-steps.yml`). The previous
-    comment blamed "absent from PyPI"; the run log actually says
-    `ERROR: For req: linkedin-api==2.2.1. Invalid script entry point` — the sdist ships a malformed
-    `entry_points.txt` that aborts pip. It now resolves properly instead of limping on a
-    best-effort fallback.
-  - Undocumented `**/` glob prefixes dropped from `.snyk` — the documented form already matches at
-    any depth.
-
 ### Security
 - **Merge gate now filters verdicts by trusted author association (#316)** — on this PUBLIC repo any
   passer-by could post an approval-shaped comment; `pre-merge-gate.sh` now admits a verdict only from
@@ -105,9 +91,10 @@ All notable changes to this project will be documented in this file.
   Snyk, Bandit and CodeQL results coexist instead of displacing one another.
   - The token is scan-quota only and **never reaches a test or E2E stack** (rule 10, stated in the
     workflow); a missing `SNYK_TOKEN` fails loudly rather than pseudo-passing.
-  - Robustness measured against real runs: the backend venv install is best-effort because
-    `linkedin-api==2.2.1` is a prod-patched wheel absent from PyPI (rule 6) and Snyk reads the
-    manifest directly; SARIF is **parsed** before upload, so a rejected token or an unpublished
+  - Robustness measured against real runs: the backend venv install runs the repo's own
+    `scripts/patch_linkedin.sh` first, because the `linkedin-api==2.2.1` sdist ships a malformed
+    `entry_points.txt` that aborts pip (`Invalid script entry point` — the package itself is on
+    PyPI and downloads fine); SARIF is **parsed** before upload, so a rejected token or an unpublished
     image warns and skips instead of failing the run with a misleading upload error. Recorded
     gotcha: **Snyk Code answers HTTP 403 when `sastEnabled` is off on the Snyk org** — an
     org-settings toggle, not a bad credential.
@@ -187,6 +174,18 @@ All notable changes to this project will be documented in this file.
   trigger is written into CLAUDE.md.
 
 ### Fixed
+- **Snyk scan follow-ups from the #368 review (#358)** — three corrections to the scanning surface,
+  each one measured rather than assumed:
+  - **`.snyk` now declares `version: v1.25.0`.** Without it the policy can be judged invalid and
+    **silently ignored** — the worst failure mode an exclude list has, since it looks like it works.
+  - **The backend scan venv uses the repo's own `scripts/patch_linkedin.sh`**, like every other
+    install leg (`backend/Dockerfile`, `deploy.yml`, `copilot-setup-steps.yml`). The previous
+    comment blamed "absent from PyPI"; the run log actually says
+    `ERROR: For req: linkedin-api==2.2.1. Invalid script entry point` — the sdist ships a malformed
+    `entry_points.txt` that aborts pip. It now resolves properly instead of limping on a
+    best-effort fallback.
+  - Undocumented `**/` glob prefixes dropped from `.snyk` — the documented form already matches at
+    any depth.
 - **Unmatched URLs now render the site's own 404 instead of Express's bare page (#324)** — the public
   app declared no `**` route, so an unknown URL never reached Angular at all: the SSR engine declined
   the request and Express answered its own `Cannot GET /…` body (measured: 404, `x-powered-by:

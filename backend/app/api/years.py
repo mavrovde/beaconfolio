@@ -70,6 +70,9 @@ async def get_cv_years():
 
     # Try local files first
     for lang in ("en", "de"):
+        # deepcode ignore PT: path is a module constant joined with a literal
+        # filename over a two-element hardcoded tuple — no request data reaches
+        # it, so there is nothing for a traversal to come from.
         file_path = os.path.join(PROFILE_DATA_DIR, f"profile_data_{lang}.json")
         all_years |= _extract_years_from_profile(file_path)
 
