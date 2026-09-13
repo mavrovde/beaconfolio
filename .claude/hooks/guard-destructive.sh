@@ -499,14 +499,29 @@ pipes_into_shell() {
           seg="$(printf '%s' "$seg" | sed -E 's/^xargs *//; s/^(-[^ ]+ )*//; s/^-[^ ]*$//')"
           continue ;;
       esac
+      # NORMALISE BEFORE MATCHING, and do it INSIDE the loop (#253). Both of
+      # these used to run once, AFTER the loop had already given up — so an
+      # absolute-path wrapper was never peeled at all: `/usr/bin/env bash`
+      # became `env bash` with nothing left to peel it, and `\bash` never
+      # matched the shell list. Measured bypasses on the pre-fix hook:
+      # `\bash`, `/usr/bin/env bash`, `/usr/bin/sudo bash`,
+      # `/usr/bin/timeout 60 bash` all ALLOWED a destruction payload.
+      # Peeling is iterative, so normalisation must be too.
+      before="$seg"
+      # absolute path: /bin/bash is as much a shell as bash, and
+      # /usr/bin/env is as much a wrapper as env. Builtins only, no fork.
+      case "$seg" in
+        /*) first="${seg%% *}"; seg="${first##*/}${seg#"$first"}" ;;
+      esac
+      # a leading backslash suppresses alias/function lookup but runs the SAME
+      # binary — inspect_segment has stripped it since #204; this path had not.
+      case "$seg" in
+        '\'*) seg="${seg#\\}" ;;
+      esac
+      [ "$seg" != "$before" ] && continue
       if peel_wrapper "$seg"; then seg="$PEEL_RESULT"; continue; fi
       break
     done
-    # absolute-path shells: /bin/bash is as much a shell as bash — strip the
-    # directory with builtins, only for segments that actually start with '/'
-    case "$seg" in
-      /*) first="${seg%% *}"; seg="${first##*/}${seg#"$first"}" ;;
-    esac
     first="${seg%% *}"
     case "$first" in
       bash|sh|zsh|dash)
@@ -588,10 +603,20 @@ if pipes_into_shell "$SEGMENTS"; then
     # sets REASON goes through inspect_segment, which just denies on the
     # deadline — so stopping here is fail-closed AND far cheaper (#235).
     [ "$SECONDS" -ge "$INSPECT_DEADLINE" ] && break
-    for payload in $(quoted_payloads "$seg"); do
-      [ -n "$REASON" ] && break
-      inspect_inner_script "$payload"
-    done
+    # PREFILTER WITH BUILTINS BEFORE FORKING (#253). A segment containing no
+    # quote character has no quoted payloads to extract and nothing for
+    # mask_quotes to mask — both forks are pure waste on it, and in a long
+    # pipeline most segments are exactly that shape. #235 bounded this loop
+    # with a deadline; below the deadline the per-segment cost was unchanged.
+    # `case` is a builtin: no fork, no subshell.
+    _has_quote=0
+    case "$seg" in *'"'*|*"'"*) _has_quote=1 ;; esac
+    if [ "$_has_quote" -eq 1 ]; then
+      for payload in $(quoted_payloads "$seg"); do
+        [ -n "$REASON" ] && break
+        inspect_inner_script "$payload"
+      done
+    fi
     # An UNQUOTED payload is code too (#220): `echo <destroy> | bash` executes
     # identically to the quoted spelling, but produced no quoted payload at all,
     # so nothing above inspected it. When the segment's command is a text tool
@@ -600,8 +625,23 @@ if pipes_into_shell "$SEGMENTS"; then
     # already inspected as payloads, and leaving them in would re-read prose as
     # code and bring back the #204 false denials.
     if [ -z "$REASON" ]; then
-      _unq="$(mask_quotes "$seg")"
-      _unq="$(printf '%s' "$_unq" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+/ /g; s/[[:space:]]+$//')"
+      # Same prefilter: with no quote in the segment, mask_quotes is the
+      # identity — skip the fork and use the segment as-is.
+      if [ "$_has_quote" -eq 1 ]; then _unq="$(mask_quotes "$seg")"; else _unq="$seg"; fi
+      # …and the whitespace squeeze only needs a sed when there IS irregular
+      # whitespace. Trimming the ends is builtin-only (the same `${var#...}`
+      # pattern the segment loop above already uses).
+      _unq="${_unq#"${_unq%%[![:space:]]*}"}"
+      _unq="${_unq%"${_unq##*[![:space:]]}"}"
+      # NOTE the local copies: pipes_into_shell declares _TAB/_CR/_VT/_FF as
+      # `local`, so reusing those names here would test against EMPTY strings —
+      # which `case` matches unconditionally, sending every segment back
+      # through the sed this prefilter exists to avoid.
+      _wsTAB=$'\t'; _wsCR=$'\r'; _wsVT=$'\v'; _wsFF=$'\f'
+      case "$_unq" in
+        *"  "*|*"$_wsTAB"*|*"$_wsCR"*|*"$_wsVT"*|*"$_wsFF"*)
+          _unq="$(printf '%s' "$_unq" | sed -E 's/[[:space:]]+/ /g')" ;;
+      esac
       _unq_first="${_unq%% *}"
       if [ "$_unq_first" != "$_unq" ] && is_text_tool "$_unq_first"; then
         inspect_segment "${_unq#* }"

@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Security
+- **`guard-destructive` no longer treats the SPELLING of a shell as a security boundary (#253)** —
+  four pipe-into-shell forms executed a destruction payload **completely unguarded**, measured on
+  `main` with a real `docker volume rm` payload: `| \bash`, `| /usr/bin/env bash`,
+  `| /usr/bin/sudo bash` and `| /usr/bin/timeout 60 bash` all returned `allow`.
+  - **Root cause:** normalisation ran *once, after* the wrapper-peel loop had already given up, so
+    an absolute-path wrapper was never peeled at all — `/usr/bin/env bash` was reduced to
+    `env bash` with nothing left to peel it — and a leading backslash was never stripped here,
+    though `inspect_segment` has stripped one since #204. Peeling is iterative, so normalisation
+    has to be too: both steps now run **inside** the loop, which re-runs while either changes the
+    segment. All seven spellings now `deny`; a benign `echo "hello" | /usr/bin/env bash` still
+    `allow`s, so the fix buys no false denials.
+  - **Per-segment fork cost cut** (#235 bounded this loop with a deadline; below the deadline the
+    cost was unchanged). A builtin `case` prefilter now skips the `quoted_payloads` and
+    `mask_quotes` forks entirely for segments containing no quote character — where both are
+    provably no-ops — and the whitespace-squeeze `sed` runs only when irregular whitespace is
+    actually present. Guard self-test: **286 cases pass**, including the existing cost budgets.
+
+### Security
 - **Merge gate now filters verdicts by trusted author association (#316)** — on this PUBLIC repo any
   passer-by could post an approval-shaped comment; `pre-merge-gate.sh` now admits a verdict only from
   an `OWNER`/`MEMBER`/`COLLABORATOR` entry (missing/unknown association = untrusted, fail-closed).

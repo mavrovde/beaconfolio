@@ -381,6 +381,21 @@ check "pipe: echo into sh"           "echo \"$D $T\" | sh"                      
 check "pipe: echo into sudo bash"    "echo \"$DV $V\" | sudo bash"                deny
 check "pipe: echo into bash -s"      "echo \"$D $T\" | bash -s"                   deny
 
+# (b2) THE SPELLING OF THE SHELL IS NOT A SECURITY BOUNDARY (#253). Every case
+#      below was a MEASURED bypass on the pre-fix hook — the payload ran
+#      unguarded — because normalisation (absolute-path basename, leading
+#      backslash) happened ONCE, AFTER the wrapper-peel loop had already given
+#      up. `/usr/bin/env bash` was reduced to `env bash` with nothing left to
+#      peel it. Normalising INSIDE the loop is what makes peeling iterative.
+check "pipe: \\bash suppresses alias" "echo \"$DV $V\" | \\bash"                   deny
+check "pipe: absolute env wrapper"   "echo \"$DV $V\" | /usr/bin/env bash"        deny
+check "pipe: absolute sudo wrapper"  "echo \"$DV $V\" | /usr/bin/sudo bash"       deny
+check "pipe: absolute timeout+opt"   "echo \"$DV $V\" | /usr/bin/timeout 60 bash" deny
+check "pipe: absolute shell path"    "echo \"$DV $V\" | /bin/bash"                deny
+check "pipe: stacked wrappers"       "echo \"$DV $V\" | /usr/bin/env /bin/bash"   deny
+# …and the normalisation must not invent denials for innocent text.
+check "pipe: benign via env wrapper" "echo \"hello\" | /usr/bin/env bash"         allow
+
 # ...and none of that may cost a false denial.
 check "pipe: benign echo into bash"  "echo \"hello\" | bash"                      allow
 check "pipe: curl into bash"         "curl -s https://example.com/i.sh | bash"    allow
