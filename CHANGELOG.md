@@ -17,7 +17,6 @@ All notable changes to this project will be documented in this file.
   admin-route-stale, down, mixed-down+stale) with stubbed curl/jq, asserting exit code AND verdict
   line; the mixed state pins the staleness-beats-outage precedence (#254) and fails against a
   regressed `*)` branch. Runs in the pre-push docs leg and the CI Version Consistency job.
-
 - **v1.14.0 release retrospective, and the gates it produced (#328)** — the cycle's evidence turned
   into committed configuration, archived as `docs/retrospectives/v1.14.0.md` with the trend row in
   that directory's README:
@@ -38,6 +37,22 @@ All notable changes to this project will be documented in this file.
     survived.** The documented `DOCKER_STACK_GUARD=0` bypass is read from the COMMAND TEXT per
     segment, like both sibling hooks — the first version read only the hook's own environment, which
     nothing in this harness sets, so the printed remedy was a deny loop with no exit.
+- **Snyk adopted for code, dependencies and the four published images (#358)** — three scan
+  surfaces now feed the Security tab: **Snyk Code** (SAST), **Snyk Open Source** (both dependency
+  trees — the npm lockfile and the backend requirements via a scan-only venv) and **Snyk Container**
+  (a matrix over `beaconfolio-{backend,frontend,admin-frontend,proxy}`, replacing the stock
+  template's `your/image-to-test` placeholder). Each uploads SARIF under its own `category`, so
+  Snyk, Bandit and CodeQL results coexist instead of displacing one another.
+  - The token is scan-quota only and **never reaches a test or E2E stack** (rule 10, stated in the
+    workflow); a missing `SNYK_TOKEN` fails loudly rather than pseudo-passing.
+  - Robustness measured against real runs: the backend venv install is best-effort because
+    `linkedin-api==2.2.1` is a prod-patched wheel absent from PyPI (rule 6) and Snyk reads the
+    manifest directly; SARIF is **parsed** before upload, so a rejected token or an unpublished
+    image warns and skips instead of failing the run with a misleading upload error. Recorded
+    gotcha: **Snyk Code answers HTTP 403 when `sastEnabled` is off on the Snyk org** — an
+    org-settings toggle, not a bad credential.
+  - Release triage (rule 8) and the `security-triage` charter now name the Snyk and Bandit feeds
+    alongside CodeQL and Dependabot, with the per-category triage note.
 
 ### Changed
 - **CI frontend jobs use the same worker-teardown retry as the pre-push gate (#319)** — each of the
@@ -81,7 +96,6 @@ All notable changes to this project will be documented in this file.
     `docs/retrospectives/` and `LICENSE`. (`specs/` and `docs/agent-runs/` are removed, not
     rewritten — their content is unchanged in git history; an early sweep pass touched two
     retrospective lines and was reverted verbatim before merge.)
-
 - **`.claude/hooks/pre-merge-gate.sh`: an APPROVE must be NEWER than every commit on the PR.**
   Replaying the release's own threads as they stood at merge time, **4 of 10 reviewed merges** carried
   commits no approval had seen — including the fixes to a reviewer's own findings, two merges of
