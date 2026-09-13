@@ -14,7 +14,10 @@ async def verify_proxy_routes():
     
     # We use verify=False because local SSL certs might not be trusted by httpx
     # We use timeout=10.0 to allow for backend startup
-    async with httpx.AsyncClient(verify=False, timeout=10.0) as client:
+    # B501 justified: this probes the LOCAL stack's self-signed certificate by
+    # design and is never pointed at a remote host. Keep the suppression comment
+    # below bare — Bandit reads whatever follows it as further test IDs.
+    async with httpx.AsyncClient(verify=False, timeout=10.0) as client:  # nosec B501
         tests = [
             # 1. API Health
             {
