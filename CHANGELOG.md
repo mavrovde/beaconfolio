@@ -4,67 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Security
-- **Open redirect in the CV download link, closed at its source (#376)** — `getDownloadUrl` returned
-  any absolute URL from the API response verbatim into `window.open`. **Two earlier attempts at this
-  were not enough, and both are worth recording**: `noopener` guards reverse tabnabbing, a *different*
-  vulnerability; and a regex gate on `http`/`//` missed backslash authority forms
-  (`/\evil.com/x`, `\\evil.com/x` — the WHATWG parser treats a backslash as a separator) *and* only
-  applied when `environment.apiUrl` was set, which **neither shipped environment does** — both are
-  `''`, so the guard never ran in production. **A third attempt still leaked**: `URL.pathname` can
-  begin with *two* slashes (`..//evil.com/x` over-pops the base, leaving an empty first segment), and
-  a `startsWith('/')` guard accepts that happily — 5 of 80 vectors escaped, again only in the
-  `apiUrl = ''` configuration that production actually ships. The URL is now parsed
-  **unconditionally** against a throwaway base, keeping only `pathname + search`, and **every leading
-  slash or backslash is collapsed to exactly one** — closing the class rather than the spellings.
-  Measured 0 escapes across 80 vectors with `/a//b` preserved. Pinned by cases that run with
-  `apiUrl = ''` — the shipped value — after the first set tested a configuration production never uses.
-  The cases now assert an **invariant** (the result is never protocol-relative and never
-  scheme-bearing) rather than a list of vectors: three rounds of green suites coexisted with a live
-  bypass precisely because the table only held the spellings someone had thought of.
-- **`x-powered-by` is no longer advertised** — `app.disable('x-powered-by')` in the SSR server; it was
-  the header the bare Express 404 leaked before #324. Asserted on the wire in the `not-found` E2E,
-  since `src/server.ts` is excluded from unit coverage.
-- **`PROFILE_DATA_DIR` is treated as the untrusted input it is (#376)** — it is an *environment
-  variable*, not the "module constant" an earlier suppression claimed. Each profile path is now
-  `realpath`-resolved and refused if it escapes its root, covered by a symlink-escape test;
-  `app/api/years.py` is back at **100%**.
-- **Merge gate now filters verdicts by trusted author association (#316)** — on this PUBLIC repo any
-  passer-by could post an approval-shaped comment; `pre-merge-gate.sh` now admits a verdict only from
-  an `OWNER`/`MEMBER`/`COLLABORATOR` entry (missing/unknown association = untrusted, fail-closed).
-  "Newest wins" still holds within the trusted set. Six new self-test cases + a mutation
-  ("trusted-author filter removed") prove it load-bearing.
-- **`guard-destructive` no longer treats the SPELLING of a shell as a security boundary (#253)** —
-  four pipe-into-shell forms executed a destruction payload **completely unguarded**, measured on
-  `main` with a real `docker volume rm` payload: `| \bash`, `| /usr/bin/env bash`,
-  `| /usr/bin/sudo bash` and `| /usr/bin/timeout 60 bash` all returned `allow`.
-  - **Root cause:** normalisation ran *once, after* the wrapper-peel loop had already given up, so
-    an absolute-path wrapper was never peeled at all — `/usr/bin/env bash` was reduced to
-    `env bash` with nothing left to peel it — and a leading backslash was never stripped here,
-    though `inspect_segment` has stripped one since #204. Peeling is iterative, so normalisation
-    has to be too: both steps now run **inside** the loop, which re-runs while either changes the
-    segment. All seven spellings now `deny`; a benign `echo "hello" | /usr/bin/env bash` still
-    `allow`s, so the fix buys no false denials.
-  - **Payload-pass fork cost: a modest, measured reduction — and a corrected premise.** A builtin
-    `case` prefilter now skips the `quoted_payloads` fork for segments with no quote character, and
-    the `mask_quotes` fork for segments with no quote, backslash **or** `#`. The two predicates are
-    deliberately different: an earlier draft used the narrow one for both, on the assumption that
-    `mask_quotes` is the identity without a quote. **It is not** — it also de-escapes `\X` and
-    blanks an unquoted `#` comment — and that assumption **opened a bypass**, caught in review:
-    `echo docker\ volume\ rm\ <vol> | bash` and `echo rm\ -rf\ ./data | bash` both went from
-    `deny` to **ALLOW**. Both deny again, pinned by two regression cases. The whitespace-squeeze
-    `sed` runs only
-    when irregular whitespace is actually present. Measured on a 40-segment pipeline ending in a
-    shell: **1219 → 1178 forks (-3.4%)**. That is far less than #253 anticipated, because the
-    issue's "~3 forks per segment" was wrong: the payload pass costs **~19 forks per segment**
-    (768 forks for 40 segments), and the bulk of them are inside the recursive
-    `inspect_inner_script` path, not the two calls prefiltered here. The remaining cost is
-    therefore still bounded by the #235 deadline rather than eliminated.
-  - **Hook self-tests now run in CI, not only in the pre-push gate.** This change is the argument
-    for it: the gate runs on the author's machine, so a hook PR otherwise arrives with a green tick
-    that executed zero hook cases — exactly the state in which the bypass above reached review.
-    `guard-destructive`, `pre-merge-gate`, `guard-stack-resources` and `pre-push-tests` self-tests
-    are hermetic (stubbed `gh`, fake `npm`, no network), so they belong beside the script lints.
+### Added
+- Placeholder for next release.
+
+## [1.14.1] - 2026-09-14
 
 ### Added
 - **The CLAUDE.md AI-config map is now enforced, not just written (#246)** —
@@ -330,6 +273,68 @@ All notable changes to this project will be documented in this file.
     with the rationale on the lines above: Bandit parses anything trailing the marker as further
     test IDs, which emitted 15 spurious warnings per run. Measured after the fix:
     **0 warnings, valid SARIF 2.1.0, 0 findings.**
+
+### Security
+- **Open redirect in the CV download link, closed at its source (#376)** — `getDownloadUrl` returned
+  any absolute URL from the API response verbatim into `window.open`. **Two earlier attempts at this
+  were not enough, and both are worth recording**: `noopener` guards reverse tabnabbing, a *different*
+  vulnerability; and a regex gate on `http`/`//` missed backslash authority forms
+  (`/\evil.com/x`, `\\evil.com/x` — the WHATWG parser treats a backslash as a separator) *and* only
+  applied when `environment.apiUrl` was set, which **neither shipped environment does** — both are
+  `''`, so the guard never ran in production. **A third attempt still leaked**: `URL.pathname` can
+  begin with *two* slashes (`..//evil.com/x` over-pops the base, leaving an empty first segment), and
+  a `startsWith('/')` guard accepts that happily — 5 of 80 vectors escaped, again only in the
+  `apiUrl = ''` configuration that production actually ships. The URL is now parsed
+  **unconditionally** against a throwaway base, keeping only `pathname + search`, and **every leading
+  slash or backslash is collapsed to exactly one** — closing the class rather than the spellings.
+  Measured 0 escapes across 80 vectors with `/a//b` preserved. Pinned by cases that run with
+  `apiUrl = ''` — the shipped value — after the first set tested a configuration production never uses.
+  The cases now assert an **invariant** (the result is never protocol-relative and never
+  scheme-bearing) rather than a list of vectors: three rounds of green suites coexisted with a live
+  bypass precisely because the table only held the spellings someone had thought of.
+- **`x-powered-by` is no longer advertised** — `app.disable('x-powered-by')` in the SSR server; it was
+  the header the bare Express 404 leaked before #324. Asserted on the wire in the `not-found` E2E,
+  since `src/server.ts` is excluded from unit coverage.
+- **`PROFILE_DATA_DIR` is treated as the untrusted input it is (#376)** — it is an *environment
+  variable*, not the "module constant" an earlier suppression claimed. Each profile path is now
+  `realpath`-resolved and refused if it escapes its root, covered by a symlink-escape test;
+  `app/api/years.py` is back at **100%**.
+- **Merge gate now filters verdicts by trusted author association (#316)** — on this PUBLIC repo any
+  passer-by could post an approval-shaped comment; `pre-merge-gate.sh` now admits a verdict only from
+  an `OWNER`/`MEMBER`/`COLLABORATOR` entry (missing/unknown association = untrusted, fail-closed).
+  "Newest wins" still holds within the trusted set. Six new self-test cases + a mutation
+  ("trusted-author filter removed") prove it load-bearing.
+- **`guard-destructive` no longer treats the SPELLING of a shell as a security boundary (#253)** —
+  four pipe-into-shell forms executed a destruction payload **completely unguarded**, measured on
+  `main` with a real `docker volume rm` payload: `| \bash`, `| /usr/bin/env bash`,
+  `| /usr/bin/sudo bash` and `| /usr/bin/timeout 60 bash` all returned `allow`.
+  - **Root cause:** normalisation ran *once, after* the wrapper-peel loop had already given up, so
+    an absolute-path wrapper was never peeled at all — `/usr/bin/env bash` was reduced to
+    `env bash` with nothing left to peel it — and a leading backslash was never stripped here,
+    though `inspect_segment` has stripped one since #204. Peeling is iterative, so normalisation
+    has to be too: both steps now run **inside** the loop, which re-runs while either changes the
+    segment. All seven spellings now `deny`; a benign `echo "hello" | /usr/bin/env bash` still
+    `allow`s, so the fix buys no false denials.
+  - **Payload-pass fork cost: a modest, measured reduction — and a corrected premise.** A builtin
+    `case` prefilter now skips the `quoted_payloads` fork for segments with no quote character, and
+    the `mask_quotes` fork for segments with no quote, backslash **or** `#`. The two predicates are
+    deliberately different: an earlier draft used the narrow one for both, on the assumption that
+    `mask_quotes` is the identity without a quote. **It is not** — it also de-escapes `\X` and
+    blanks an unquoted `#` comment — and that assumption **opened a bypass**, caught in review:
+    `echo docker\ volume\ rm\ <vol> | bash` and `echo rm\ -rf\ ./data | bash` both went from
+    `deny` to **ALLOW**. Both deny again, pinned by two regression cases. The whitespace-squeeze
+    `sed` runs only
+    when irregular whitespace is actually present. Measured on a 40-segment pipeline ending in a
+    shell: **1219 → 1178 forks (-3.4%)**. That is far less than #253 anticipated, because the
+    issue's "~3 forks per segment" was wrong: the payload pass costs **~19 forks per segment**
+    (768 forks for 40 segments), and the bulk of them are inside the recursive
+    `inspect_inner_script` path, not the two calls prefiltered here. The remaining cost is
+    therefore still bounded by the #235 deadline rather than eliminated.
+  - **Hook self-tests now run in CI, not only in the pre-push gate.** This change is the argument
+    for it: the gate runs on the author's machine, so a hook PR otherwise arrives with a green tick
+    that executed zero hook cases — exactly the state in which the bypass above reached review.
+    `guard-destructive`, `pre-merge-gate`, `guard-stack-resources` and `pre-push-tests` self-tests
+    are hermetic (stubbed `gh`, fake `npm`, no network), so they belong beside the script lints.
 
 ## [1.14.0] - 2026-09-09
 
