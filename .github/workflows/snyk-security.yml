@@ -61,8 +61,13 @@ jobs:
         # broken workflow. (Findings, when the token works, land in the Security
         # tab for rule-8 triage.)
         run: |
-          snyk code test --sarif > snyk-code.sarif \
-            || echo "::warning::snyk code test produced no SARIF (check SNYK_TOKEN / Snyk Code entitlement)"
+          # `snyk code test` exits 1 when it FINDS something — a successful scan,
+          # not an error. Judge the SARIF, not the exit code: anything else prints
+          # a "no SARIF" warning on the exact runs that found the most.
+          snyk code test --sarif > snyk-code.sarif || true
+          if ! python3 -c "import json,sys; d=json.load(open('snyk-code.sarif')); sys.exit(0 if d.get('runs') else 1)" 2>/dev/null; then
+            echo "::warning::snyk code test produced no valid SARIF — check SNYK_TOKEN and that Snyk Code (sastEnabled) is ON for the org; a disabled org answers HTTP 403"
+          fi
       - name: Snyk Open Source (both stacks)
         env: { SNYK_TOKEN: "${{ secrets.SNYK_TOKEN }}" }
         run: |
