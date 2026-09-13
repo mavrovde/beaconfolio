@@ -90,5 +90,40 @@ run 'if [ "$target" = "test:admin" ]; then echo "Error: Cannot find module x"; e
   && ok "…and is not retried" || bad "crash not retried" "$(cat "$LAST_DIR/test:admin" 2>/dev/null)"
 rm -rf "$LAST_DIR"
 
+# --- 8. THE CI INVOCATION PATH (#319): one project + --coverage --------------
+#     deploy.yml calls this as `FRONTEND_PROJECTS=public … --coverage`, which is
+#     a different code path from the gate's all-three default: it must target
+#     `test:coverage:<p>` (not `test:<p>`) and must run ONLY that project.
+run_one() { # run_one <project> <npm-body>
+  LAST_DIR="$(mktemp -d)"; mk_npm "$LAST_DIR" "$2"
+  OUT="$(FAKE_STATE_DIR="$LAST_DIR" NPM_BIN="$LAST_DIR/bin/npm" FRONTEND_DIR="$LAST_DIR" \
+    FRONTEND_PROJECTS="$1" bash "$SCRIPT" --coverage 2>&1)"
+  RC=$?
+}
+run_one public 'echo "$target: 10 passed"; exit 0'
+[ "$RC" -eq 0 ] && ok "CI path: single project + --coverage -> rc 0" || bad "CI path green" "rc=$RC out=$OUT"
+printf '%s' "$OUT" | grep -q 'test:coverage:public' \
+  && ok "…targets test:coverage:public (the coverage script, not the bare one)" \
+  || bad "CI path target" "$OUT"
+printf '%s' "$OUT" | grep -qE 'test:(coverage:)?(shared|admin)' \
+  && bad "CI path ran other projects" "$OUT" \
+  || ok "…and runs ONLY that project (CI parallelises the other two)"
+rm -rf "$LAST_DIR"
+
+# The retry must protect the CI path too — that is the whole point of #319.
+run_one public 'if [ "$n" -eq 1 ]; then
+  echo "Tests 337 passed (337)"; echo "'"$TEARDOWN"'"; exit 1; fi; echo ok; exit 0'
+[ "$RC" -eq 0 ] && ok "CI path: teardown flake is retried and survives" || bad "CI path retry" "rc=$RC out=$OUT"
+[ "$(cat "$LAST_DIR/test:coverage:public" 2>/dev/null)" = "2" ] \
+  && ok "…exactly two invocations" || bad "CI retry count" "$(cat "$LAST_DIR/test:coverage:public" 2>/dev/null)"
+rm -rf "$LAST_DIR"
+
+# …and a REAL failure on the CI path still fails (the gate is not weakened).
+run_one public 'echo "Tests 3 failed | 334 passed"; exit 1'
+[ "$RC" -eq 1 ] && ok "CI path: a real failure still fails the job" || bad "CI path real failure" "rc=$RC"
+[ "$(cat "$LAST_DIR/test:coverage:public" 2>/dev/null)" = "1" ] \
+  && ok "…and is not retried" || bad "CI real failure retried" "$(cat "$LAST_DIR/test:coverage:public" 2>/dev/null)"
+rm -rf "$LAST_DIR"
+
 printf '\nrun_frontend_suites self-test: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
