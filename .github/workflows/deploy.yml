@@ -393,6 +393,21 @@ jobs:
       # verdict (fresh/stale/down) and the staleness-beats-outage precedence.
       - name: Self-test the live-freshness checker
         run: bash scripts/check_live_freshness.test.sh
+      # HOOK self-tests, in CI and not only in the pre-push gate (#253 review).
+      # The gate runs on the AUTHOR's machine; a PR that changes a hook otherwise
+      # arrives with green CI that never executed a single hook case, so the
+      # green tick says nothing about the change. This #253 PR is the proof: its
+      # cost optimisation opened a real bypass, and CI would have stayed green.
+      # These are hermetic (stubbed `gh`, fake `npm`, no network), so they belong
+      # here as much as the script lints above.
+      - name: Self-test the destructive-command guard
+        run: bash .claude/hooks/guard-destructive.test.sh
+      - name: Self-test the merge gate
+        run: bash .claude/hooks/pre-merge-gate.test.sh
+      - name: Self-test the stack-resources guard
+        run: bash .claude/hooks/guard-stack-resources.test.sh
+      - name: Self-test the pre-push hook
+        run: bash .claude/hooks/pre-push-tests.test.sh
       # Alembic single-head contract (v1.14.0 retrospective): #323 and #325 both
       # chained onto `trans0009`. Each branch was single-head in isolation, so
       # the Backend Migrations job passed on both — the fork existed only in the

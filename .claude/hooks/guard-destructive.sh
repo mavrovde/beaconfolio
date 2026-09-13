@@ -449,7 +449,7 @@ inspect_segment() {
 # text that reaches me", so quoted text earlier in the pipeline is CODE, however
 # innocent its producing command looks (#210).
 pipes_into_shell() {
-  local seg first rest optless via_xargs
+  local seg first rest optless via_xargs before
   local _TAB=$'\t' _CR=$'\r' _VT=$'\v' _FF=$'\f'
   local OLD="$IFS"; IFS=$'\n'
   for seg in $1; do
@@ -611,6 +611,17 @@ if pipes_into_shell "$SEGMENTS"; then
     # `case` is a builtin: no fork, no subshell.
     _has_quote=0
     case "$seg" in *'"'*|*"'"*) _has_quote=1 ;; esac
+    # mask_quotes is NOT the identity on quote-free input, and assuming it was
+    # opened a REAL BYPASS in review (round 1 of #253): it also de-escapes `\X`
+    # (hook-parse-lib.sh:184) and blanks an unquoted `#` comment (:200), neither
+    # of which needs a quote. Measured on the first draft:
+    #   echo docker\ volume\ rm\ <vol> | bash   deny -> ALLOW
+    #   echo rm\ -rf\ ./data | bash             deny -> ALLOW
+    # So the masking predicate must be WIDER than the payload one: any character
+    # mask_quotes reacts to. Keep the two flags separate — `quoted_payloads`
+    # genuinely has nothing to extract without a quote.
+    _needs_mask=0
+    case "$seg" in *'"'*|*"'"*|*'\'*|*'#'*) _needs_mask=1 ;; esac
     if [ "$_has_quote" -eq 1 ]; then
       for payload in $(quoted_payloads "$seg"); do
         [ -n "$REASON" ] && break
@@ -625,18 +636,19 @@ if pipes_into_shell "$SEGMENTS"; then
     # already inspected as payloads, and leaving them in would re-read prose as
     # code and bring back the #204 false denials.
     if [ -z "$REASON" ]; then
-      # Same prefilter: with no quote in the segment, mask_quotes is the
-      # identity — skip the fork and use the segment as-is.
-      if [ "$_has_quote" -eq 1 ]; then _unq="$(mask_quotes "$seg")"; else _unq="$seg"; fi
+      # Skip the fork only when mask_quotes provably cannot change the string —
+      # i.e. no quote, no backslash, no `#`. See the _needs_mask note above.
+      if [ "$_needs_mask" -eq 1 ]; then _unq="$(mask_quotes "$seg")"; else _unq="$seg"; fi
       # …and the whitespace squeeze only needs a sed when there IS irregular
       # whitespace. Trimming the ends is builtin-only (the same `${var#...}`
       # pattern the segment loop above already uses).
       _unq="${_unq#"${_unq%%[![:space:]]*}"}"
       _unq="${_unq%"${_unq##*[![:space:]]}"}"
-      # NOTE the local copies: pipes_into_shell declares _TAB/_CR/_VT/_FF as
-      # `local`, so reusing those names here would test against EMPTY strings —
-      # which `case` matches unconditionally, sending every segment back
-      # through the sed this prefilter exists to avoid.
+      # NOTE the distinct names: _TAB/_CR/_VT/_FF are `local` to
+      # pipes_into_shell and unset out here. Under this script's `set -u` that
+      # is an ABORT, not an empty match (measured in review — the original
+      # "matches empty, so it always seds" rationale was wrong; the real
+      # consequence was worse). Either way the fix is the same: own copies.
       _wsTAB=$'\t'; _wsCR=$'\r'; _wsVT=$'\v'; _wsFF=$'\f'
       case "$_unq" in
         *"  "*|*"$_wsTAB"*|*"$_wsCR"*|*"$_wsVT"*|*"$_wsFF"*)
