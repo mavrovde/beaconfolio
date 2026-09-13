@@ -43,12 +43,20 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Install backend requirements (resolution only)
         working-directory: backend
-        # Best-effort: linkedin-api==2.2.1 is a prod-patched wheel not on PyPI
-        # (CLAUDE.md rule 6), so a clean-index install cannot fully resolve. Snyk
-        # SCA reads requirements.txt directly regardless, so a partial venv is
-        # fine — never let this hard-fail the scan job.
+        # The venv lives OUTSIDE the checkout, in $RUNNER_TEMP. Measured reason:
+        # when it sat at `backend/.snyk-venv`, Snyk Code walked into it and
+        # reported **79 of 100 findings inside `pip/_vendor/…`** — third-party
+        # package sources nobody here can act on, burying the 21 findings that
+        # were actually ours. Dependencies are judged by SCA (which reads the
+        # manifests directly), never by code analysis of their vendored source.
+        # Keeping the venv out of the tree fixes that at the source; `.snyk`
+        # additionally excludes the other vendored/generated trees.
+        #
+        # Best-effort install: linkedin-api==2.2.1 is a prod-patched wheel not on
+        # PyPI (CLAUDE.md rule 6), so a clean-index install cannot fully resolve
+        # — and it must never hard-fail the scan job.
         run: |
-          python -m venv .snyk-venv && . .snyk-venv/bin/activate
+          python -m venv "$RUNNER_TEMP/snyk-venv" && . "$RUNNER_TEMP/snyk-venv/bin/activate"
           pip install -q -r requirements.txt -r requirements-dev.txt \
             || pip install -q -r requirements.txt \
             || echo "::warning::partial dependency resolution (patched wheel absent) — Snyk reads the manifest directly"
@@ -72,8 +80,8 @@ jobs:
         env: { SNYK_TOKEN: "${{ secrets.SNYK_TOKEN }}" }
         run: |
           snyk test --file=frontend/package-lock.json --package-manager=npm --severity-threshold=high || true
-          . backend/.snyk-venv/bin/activate && snyk test --file=backend/requirements.txt --command=python --severity-threshold=high || true
-          snyk monitor --all-projects --exclude=.snyk-venv || true
+          . "$RUNNER_TEMP/snyk-venv/bin/activate" && snyk test --file=backend/requirements.txt --command=python --severity-threshold=high || true
+          snyk monitor --all-projects || true
       - name: Snyk IaC (compose + Dockerfiles + workflows)
         env: { SNYK_TOKEN: "${{ secrets.SNYK_TOKEN }}" }
         run: snyk iac test --report || true

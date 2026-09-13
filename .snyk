@@ -1,0 +1,29 @@
+# Snyk policy file — what Snyk Code must NOT analyse.
+#
+# WHY THIS EXISTS (measured, #358 follow-up): the first real Snyk Code run after
+# `sastEnabled` was switched on produced **100 alerts, 79 of them inside
+# `backend/.snyk-venv`** — the throwaway virtualenv the scan workflow itself
+# creates a few steps earlier so Snyk Open Source can resolve the backend
+# dependency tree. Snyk Code then walked into it and reported findings in
+# `pip/_vendor/…` and other third-party package sources. That is not this
+# project's code, nobody can act on it, and at 79% of the feed it buries the 21
+# findings that are actually ours.
+#
+# Vendored/generated trees belong to their upstreams: SCA (Snyk Open Source)
+# is the tool that judges dependencies, and it reads the manifests directly.
+# Code analysis of them is duplicate noise at best.
+exclude:
+  code:
+    # the scan workflow's own resolution venv (created in-job, never committed)
+    - backend/.snyk-venv/**
+    # any other local virtualenv a developer may have
+    - backend/venv/**
+    - '**/.venv/**'
+    - '**/site-packages/**'
+    # JS dependency and build trees
+    - '**/node_modules/**'
+    - '**/dist/**'
+    - frontend/.angular/**
+    # coverage and scanner working output
+    - frontend/coverage/**
+    - .scannerwork/**

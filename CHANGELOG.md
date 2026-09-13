@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Snyk Code no longer scans the throwaway venv the scan job itself creates (#358 follow-up)** —
+  the first real run after `sastEnabled` was enabled produced **100 alerts, 79 of them inside
+  `backend/.snyk-venv`** (`pip/_vendor/…` and other third-party package sources), burying the 21
+  findings that are actually ours. Fixed at the source: the resolution venv now lives in
+  `$RUNNER_TEMP`, outside the checkout, so code analysis cannot walk into it — dependencies are
+  judged by SCA, which reads the manifests directly. A committed `.snyk` policy additionally
+  excludes the other vendored/generated trees (`node_modules`, `dist`, `.angular`, local venvs,
+  coverage, `.scannerwork`).
+
 ### Security
 - **`guard-destructive` no longer treats the SPELLING of a shell as a security boundary (#253)** —
   four pipe-into-shell forms executed a destruction payload **completely unguarded**, measured on
