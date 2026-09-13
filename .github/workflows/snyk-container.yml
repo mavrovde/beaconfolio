@@ -1,0 +1,67 @@
+# Snyk Container — image-layer CVE scanning for the FOUR real images this repo
+# publishes (adapted from the stock template by #358; the placeholder
+# `your/image-to-test` built a root Dockerfile that does not exist here).
+# Scans the published GHCR images post-push (cheaper and truer than rebuilding),
+# plus a weekly cron so newly disclosed CVEs surface between releases.
+name: Snyk Container
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["backend/Dockerfile", "frontend/Dockerfile*", "proxy/**", ".github/workflows/snyk-container.yml"]
+  schedule:
+    - cron: '36 5 * * 5'
+
+permissions:
+  contents: read
+
+jobs:
+  snyk-container:
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [backend, frontend, admin-frontend, proxy]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Fail fast without a token
+        run: |
+          if [ -z "${{ secrets.SNYK_TOKEN }}" ]; then
+            echo "::error::SNYK_TOKEN is not set — the scan cannot run."; exit 1
+          fi
+      - name: Pull the published image
+        run: docker pull ghcr.io/${{ github.repository_owner }}/beaconfolio-${{ matrix.service }}:latest
+      - name: Snyk Container test → SARIF
+        uses: snyk/actions/docker@806182742461562b67788a64410098c9d9b96adb
+        continue-on-error: true   # findings are release-triage input (rule 8), not a build-breaker
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          image: ghcr.io/${{ github.repository_owner }}/beaconfolio-${{ matrix.service }}:latest
+          args: --severity-threshold=high
+      - name: Verify the SARIF is present and well-formed
+        id: sarif
+        # PARSE it rather than test for the file: a scan that failed (image not
+        # published yet, token rejected) can leave a truncated or error-JSON
+        # body that the uploader rejects, turning a missing scan into a red
+        # pipeline. Validate, then skip with a warning if it is unusable.
+        run: |
+          if python3 -c "import json,sys; d=json.load(open('snyk.sarif')); sys.exit(0 if d.get('runs') else 1)" 2>/dev/null; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+            python3 -c "import json; d=json.load(open('snyk.sarif')); print(f\"::notice::${{ matrix.service }} SARIF OK — {sum(len(r.get('results',[])) for r in d['runs'])} finding(s)\")"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::no valid SARIF for ${{ matrix.service }} — skipping upload (image published? SNYK_TOKEN valid?)"
+          fi
+      - name: Upload SARIF (per image category)
+        if: steps.sarif.outputs.ok == 'true'
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: snyk.sarif
+          # One category per image, so the four scans coexist instead of
+          # overwriting each other in the Security tab.
+          category: snyk-container-${{ matrix.service }}
