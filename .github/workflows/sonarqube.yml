@@ -1,0 +1,67 @@
+# SonarQube / SonarCloud analysis — secrets-gated (#359, adapts stock PR #357).
+#
+# The analysis job runs ONLY when both SONAR_TOKEN and SONAR_HOST_URL secrets are
+# configured — absent secrets produce a clean skip with a one-line note, never a red
+# run (the same pattern as deploy.yml's "Check rollout secrets" job, #112/#169).
+#
+# Decision (recorded in #359): the recommended CI target is **SonarCloud**
+# (free for public repos, PR decoration included) rather than a self-hosted
+# SonarQube, which needs Developer Edition ≥9.7 for PR decoration. To activate:
+#   - SonarCloud: SONAR_HOST_URL=https://sonarcloud.io, SONAR_TOKEN from the
+#     SonarCloud account, and add `-Dsonar.organization=<org>` to the args below.
+#   - Self-hosted: point SONAR_HOST_URL at the instance.
+# Project config (key, sources, coverage paths) lives in sonar-project.properties.
+# The same analysis runs locally without any secrets via scripts/sonar_local.sh.
+
+name: SonarQube analysis
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  pull-requests: read # allows SonarQube to decorate PRs with analysis results
+
+jobs:
+  check-secrets:
+    name: Check Sonar secrets
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+    steps:
+      - name: Decide whether analysis can run
+        id: check
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        run: |
+          if [ -n "$SONAR_TOKEN" ] && [ -n "$SONAR_HOST_URL" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "SONAR_TOKEN / SONAR_HOST_URL not configured — skipping analysis." \
+                 "Run the local check instead: bash scripts/sonar_local.sh (#359)."
+          fi
+
+  analysis:
+    name: Analysis
+    needs: check-secrets
+    if: needs.check-secrets.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full history so new-code detection and blame are accurate
+
+      - name: Analyze with SonarQube
+        uses: SonarSource/sonarqube-scan-action@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # PR decoration
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        # Project key/sources/exclusions come from the committed
+        # sonar-project.properties; add -Dsonar.organization=<org> here when
+        # targeting SonarCloud.
