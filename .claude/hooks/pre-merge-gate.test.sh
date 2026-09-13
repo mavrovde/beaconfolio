@@ -7,7 +7,7 @@
 # Only 4 of 10 mutations bit. That is the exact fake-green class the retrospective
 # this hook came from is about, so every case here now asserts the DECISION
 # (parsed out of the JSON) and the mutation list below is part of the contract:
-# `bash pre-merge-gate.test.sh --mutations` re-runs them and must report 20 killed.
+# `bash pre-merge-gate.test.sh --mutations` re-runs them and must report 21 killed.
 set -u
 
 HOOK="${HOOK:-$(cd "$(dirname "$0")" && pwd)/pre-merge-gate.sh}"
@@ -81,9 +81,15 @@ run_reason() { # run_reason <name> <expected-substring> <command>
 }
 
 # --- verdict fixtures --------------------------------------------------------
-rev()  { printf '{"reviews":[{"submittedAt":"%s","body":"%s"}],"comments":[],"body":"%s"}' "$1" "$2" "${3:-Refs #1}"; }
+# Every fixture entry carries authorAssociation OWNER: that is what a real
+# reviewer/owner entry looks like, and since #316 an entry WITHOUT a trusted
+# association is not a verdict candidate at all (untrusted cases below build
+# their JSON explicitly).
+rev()  { printf '{"reviews":[{"submittedAt":"%s","body":"%s","authorAssociation":"OWNER"}],"comments":[],"body":"%s"}' "$1" "$2" "${3:-Refs #1}"; }
 both() { # review at $1 body $2 ; comment at $3 body $4
-  printf '{"reviews":[{"submittedAt":"%s","body":"%s"}],"comments":[{"createdAt":"%s","body":"%s"}],"body":"%s"}' "$1" "$2" "$3" "$4" "${5:-Refs #1}"; }
+  printf '{"reviews":[{"submittedAt":"%s","body":"%s","authorAssociation":"OWNER"}],"comments":[{"createdAt":"%s","body":"%s","authorAssociation":"OWNER"}],"body":"%s"}' "$1" "$2" "$3" "$4" "${5:-Refs #1}"; }
+stranger() { # comment-only fixture with an EXPLICIT association: at $1 body $2 assoc $3
+  printf '{"reviews":[],"comments":[{"createdAt":"%s","body":"%s","authorAssociation":"%s"}],"body":"Refs #1"}' "$1" "$2" "$3"; }
 
 AC_UNTICKED='## Acceptance criteria
 - [x] done
@@ -110,8 +116,26 @@ GH_STUB_PR_JSON="$(both 2026-09-06T10:00:00Z '## ✅ APPROVED' 2026-09-06T11:00:
   run "later REQUEST-CHANGES *comment* overrides an approval" deny "gh pr merge 284 --squash"
 GH_STUB_PR_JSON="$(both 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES' 2026-09-06T11:00:00Z '## ✅ APPROVED')" \
   run "later APPROVE comment overrides REQUEST CHANGES" allow "gh pr merge 284 --squash"
-GH_STUB_PR_JSON='{"reviews":[],"comments":[{"createdAt":"2026-09-06T10:00:00Z","body":"## ✅ APPROVED"}],"body":"Refs #1"}' \
+GH_STUB_PR_JSON='{"reviews":[],"comments":[{"createdAt":"2026-09-06T10:00:00Z","body":"## ✅ APPROVED","authorAssociation":"OWNER"}],"body":"Refs #1"}' \
   run "APPROVE posted as a COMMENT (the sanctioned path)" allow "gh pr merge 284 --squash"
+
+# 2c. Trusted-author filter (#316): on a PUBLIC repo any passer-by can post an
+#     approval-shaped comment. Only OWNER/MEMBER/COLLABORATOR entries are verdict
+#     candidates; a missing or unknown association is untrusted, fail-closed.
+GH_STUB_PR_JSON="$(stranger 2026-09-06T10:00:00Z '## ✅ APPROVED' NONE)" \
+  run "stranger (NONE) approval is not a verdict" deny "gh pr merge 284 --squash"
+GH_STUB_PR_JSON="$(stranger 2026-09-06T10:00:00Z '## ✅ APPROVED' CONTRIBUTOR)" \
+  run "CONTRIBUTOR approval is not a verdict" deny "gh pr merge 284 --squash"
+GH_STUB_PR_JSON='{"reviews":[],"comments":[{"createdAt":"2026-09-06T10:00:00Z","body":"## ✅ APPROVED"}],"body":"Refs #1"}' \
+  run "ABSENT association is untrusted (fail-closed)" deny "gh pr merge 284 --squash"
+GH_STUB_PR_JSON="$(stranger 2026-09-06T10:00:00Z '## ✅ APPROVED' COLLABORATOR)" \
+  run "COLLABORATOR verdict counts (trusted set unchanged)" allow "gh pr merge 284 --squash"
+GH_STUB_PR_JSON="$(stranger 2026-09-06T10:00:00Z '## ✅ APPROVED' NONE)" \
+  run_reason "untrusted-only stream yields the no-verdict deny" "no posted review verdict" "gh pr merge 284 --squash"
+# Newest-wins holds WITHIN the trusted set: a later untrusted approval cannot
+# supersede the standing trusted REQUEST CHANGES.
+GH_STUB_PR_JSON='{"reviews":[{"submittedAt":"2026-09-06T10:00:00Z","body":"## ⛔ REQUEST CHANGES","authorAssociation":"OWNER"}],"comments":[{"createdAt":"2026-09-06T11:00:00Z","body":"## ✅ APPROVED","authorAssociation":"NONE"}],"body":"Refs #1"}' \
+  run "later untrusted approval cannot supersede trusted REQUEST CHANGES" deny "gh pr merge 284 --squash"
 
 # 2b. A verdict states itself in its FIRST LINE (v1.13.0 retrospective).
 # EVIDENCE: on #291 the author posted two fix-report comments — "## Round 4 — the
@@ -360,7 +384,7 @@ GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ✅ APPROVED — round 3\n\nThe 
 # it stood allowed all three: it asked whether the newest verdict says APPROVE,
 # never whether it had seen the code. Every case below FAILS against that hook.
 revc() { # revc <verdict-at> <verdict-body> <commit-date> <headline>
-  printf '{"reviews":[{"submittedAt":"%s","body":"%s"}],"comments":[],"body":"Refs #1","commits":[{"committedDate":"%s","oid":"abcdef1234567890","messageHeadline":"%s"}]}' \
+  printf '{"reviews":[{"submittedAt":"%s","body":"%s","authorAssociation":"OWNER"}],"comments":[],"body":"Refs #1","commits":[{"committedDate":"%s","oid":"abcdef1234567890","messageHeadline":"%s"}]}' \
     "$1" "$2" "$3" "$4"
 }
 GH_STUB_PR_JSON="$(revc 2026-09-06T10:00:00Z '## ✅ APPROVED' 2026-09-06T09:00:00Z 'the reviewed commit')" \
@@ -386,7 +410,7 @@ GH_STUB_PR_JSON="$(revc 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES' 2026-09-06
     "latest verdict is REQUEST CHANGES" "gh pr merge 284 --squash"
 # The delta-confirm is the remedy and this repo already posts it (#315 round 2,
 # "APPROVE — round 2 (delta-confirm at 2a7c1a0)"). It must actually unblock.
-GH_STUB_PR_JSON='{"reviews":[{"submittedAt":"2026-09-06T10:00:00Z","body":"## ✅ APPROVED"}],"comments":[{"createdAt":"2026-09-06T12:00:00Z","body":"## ✅ APPROVE — round 2 (delta-confirm at abcdef1)"}],"body":"Refs #1","commits":[{"committedDate":"2026-09-06T11:00:00Z","oid":"abcdef1234567890","messageHeadline":"fix: findings"}]}' \
+GH_STUB_PR_JSON='{"reviews":[{"submittedAt":"2026-09-06T10:00:00Z","body":"## ✅ APPROVED","authorAssociation":"OWNER"}],"comments":[{"createdAt":"2026-09-06T12:00:00Z","body":"## ✅ APPROVE — round 2 (delta-confirm at abcdef1)","authorAssociation":"OWNER"}],"body":"Refs #1","commits":[{"committedDate":"2026-09-06T11:00:00Z","oid":"abcdef1234567890","messageHeadline":"fix: findings"}]}' \
   run "a delta-confirm verdict on the new head unblocks the merge" allow "gh pr merge 284 --squash"
 # A PR whose `commits` field is absent (older gh, or a stub) is not evidence of
 # staleness — documented as fail-OPEN here because the field comes from the same
@@ -561,7 +585,12 @@ PY
   # dress it up as a passing case. The load-bearing half is the SELECTION mutation
   # directly above, which is killed.
   mutate die "comments stream dropped" \
-    'replace::((.comments // [])[] | {at: .createdAt,   body: (.body // "")}) =>'
+    'replace::((.comments // [])[] | {at: .createdAt,   body: (.body // ""), assoc: (.authorAssociation // "NONE")}) =>'
+  # #316: the trusted-author filter must actually gate. Removing it lets an
+  # untrusted (NONE) approval-shaped comment count as a verdict — the
+  # "stranger approval is not a verdict" case above fails without it.
+  mutate die "trusted-author filter removed (any public commenter can approve)" \
+    'replace::and (.assoc == "OWNER" or .assoc == "MEMBER" or .assoc == "COLLABORATOR")=>'
   mutate die "approval-covers-head check removed (the #320 shape merges again)" \
     'delete_block::if [ -n "$NEWER" ]; then'
   mutate die "staleness comparison flipped (older commits would block instead)" \

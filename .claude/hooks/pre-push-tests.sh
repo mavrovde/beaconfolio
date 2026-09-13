@@ -307,6 +307,15 @@ run_checks() {
         return 1
       }
     fi
+    # Freshness-contract self-test (#280): the live-vs-released verdict script is
+    # shared by the Live Freshness workflow AND deploy.yml's post-rollout gate —
+    # if IT breaks, prod verification silently lies. Stubbed curl/jq, no network.
+    if [ -f "$ROOT/scripts/check_live_freshness.test.sh" ]; then
+      ( cd "$ROOT" && bash scripts/check_live_freshness.test.sh >/dev/null ) || {
+        echo "  ✗ check_live_freshness.test.sh failed — the freshness checker itself is broken"
+        return 1
+      }
+    fi
     # Alembic single-head contract (v1.14.0 retrospective, #323/#325). Measured
     # AGAINST origin/main, not just the working tree: both of those branches were
     # single-head alone and every gate they ran was green — the fork existed only
