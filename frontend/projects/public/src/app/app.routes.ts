@@ -38,4 +38,15 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./components/cv/cv.component').then((m) => m.CvComponent),
   },
+  {
+    // The site's own 404 (#324). MUST stay last: `**` matches everything, so any
+    // route declared after it is dead. Without this entry an unmatched URL never
+    // reached Angular at all — the SSR engine declined the request and Express
+    // answered with its bare `Cannot GET /…` page.
+    path: '**',
+    loadComponent: () =>
+      import('./components/not-found/not-found.component').then(
+        (m) => m.NotFoundComponent
+      ),
+  },
 ];

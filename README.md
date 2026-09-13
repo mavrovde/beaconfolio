@@ -60,7 +60,9 @@ own name and domain.
   `knowsAbout`, `alumniOf`, `worksFor`, `address`, `sameAs`, plus a `seeks` open-to-work signal),
   a unique title/description/canonical + Open Graph/Twitter card per route, and `sitemap.xml` /
   `robots.txt` **rendered per request** from your `SITE_URL` and your published posts — all
-  server-rendered, so crawlers read them without executing JavaScript.
+  server-rendered, so crawlers read them without executing JavaScript. An unmatched URL gets the
+  site's own terminal-styled 404 page with a real HTTP 404 status, `noindex, nofollow` and no
+  canonical (#324) — never a framework error page.
 - **Readable by AI assistants** (#252): recruiters increasingly ask an assistant instead of a
   search engine, so the profile is published in a form agents can ingest — see below.
 - **Type-Safe**: Full TypeScript/Python type coverage

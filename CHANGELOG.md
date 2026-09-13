@@ -152,6 +152,22 @@ All notable changes to this project will be documented in this file.
   retrospective.
 
 ### Fixed
+- **Unmatched URLs now render the site's own 404 instead of Express's bare page (#324)** — the public
+  app declared no `**` route, so an unknown URL never reached Angular at all: the SSR engine declined
+  the request and Express answered its own `Cannot GET /…` body (measured: 404, `x-powered-by:
+  Express`, `content-length: 153`, **no `<head>`**). `/blog/<unknown>` and `/for/<unknown>` were
+  already correct because their routes match — that asymmetry was the bug. A lazy `**` route now
+  renders a terminal-styled `NotFoundComponent` (site header, the echoed path, links back to the
+  portfolio, the blog and the CV) and sets a **real HTTP 404** through the `RESPONSE_INIT` pattern
+  (#109) already used by the blog and tailored pages.
+- **A 404 no longer claims to be the home page (#324)** — `SeoService.setNotFound()` emitted no
+  canonical of its own, but the runtime-config re-apply (`updateSeo({})` → `data.url || '/'`) had
+  usually already written `<link rel="canonical" href="{site}/">` into the head, so every not-found
+  body told crawlers it WAS the home page. `setNotFound()` now removes the canonical outright (none
+  is correct for a 404; `updateSeo` re-creates it for the next real page), and a `nofollow` asserted
+  by the wildcard page survives a late config arrival. `/blog/<unknown>` and `/for/<unknown>` keep
+  their existing `noindex` title/meta behaviour. Covered by unit specs (public: 55 files / 490 tests,
+  100% coverage) and a new `e2e/public/not-found.spec.ts` reading the wire.
 - **Rate limiting no longer trusts the attacker-controlled `X-Forwarded-For` hop (#273, security)** —
   the per-client-IP key came from `x-forwarded-for.split(",")[0]`, which is whatever the caller
   typed: nginx **appends** with `$proxy_add_x_forwarded_for`, it never replaces, so rotating that
