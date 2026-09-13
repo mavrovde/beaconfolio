@@ -474,6 +474,13 @@ OWNER_LANGUAGE=en                          # default: en — ISO 639-1; casing/r
 # Engagement analytics (#249) — forwarded by both compose files.
 ENGAGEMENT_ANALYTICS_ENABLED=true          # default: true — false writes no events and 404s the dashboard
 ENGAGEMENT_RETENTION_DAYS=365              # default: 365 — 0 keeps nothing; negative disables purging
+ENGAGEMENT_MAX_CONCURRENT_WRITES=4         # default: 4 — size of analytics' OWN connection pool (#326)
+ENGAGEMENT_MAX_PENDING_EVENTS=1000         # default: 1000 — beyond this an emit is dropped, counted and logged
+
+# Database connection pool (#326) — forwarded by both compose files.
+DB_POOL_SIZE=20                            # default: 20 steady connections for REQUESTS
+DB_MAX_OVERFLOW=40                         # default: 40 burst on top → hard ceiling 60 (Postgres allows 100)
+DB_ECHO=false                              # default: false — true logs every statement and parameter
 ```
 
 ### Root Environment (Docker Compose)
