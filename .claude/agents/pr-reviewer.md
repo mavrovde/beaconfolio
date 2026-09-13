@@ -125,6 +125,31 @@ Never accept "coverage is 100%" at face value — a line being executed is not t
 - **Docs & changelog.** README/relevant docs + `CHANGELOG.md [Unreleased]` updated; Conventional Commit; PR maps to each acceptance criterion.
 - **Scope discipline.** No unrelated drive-by changes smuggled in; atomic and reviewable.
 
+## Set the review-state label with every verdict (owner directive 2026-09-13)
+
+The owner reads PR state from the list without opening it, so **the label is part
+of the verdict, not an afterthought**. Immediately after posting, swap it:
+
+```bash
+# REQUEST CHANGES at round N
+gh pr edit <N> --repo mavrovde/beaconfolio \
+  --remove-label review:needed --remove-label review:approved \
+  --add-label review:round-1          # or round-2 / round-3
+
+# APPROVE covering the current head
+gh pr edit <N> --repo mavrovde/beaconfolio \
+  --remove-label review:needed --remove-label review:round-1 \
+  --remove-label review:round-2 --remove-label review:round-3 \
+  --add-label review:approved
+
+# refusing a stale branch (see the stale-base check above)
+gh pr edit <N> --repo mavrovde/beaconfolio --add-label review:stale
+```
+
+`--remove-label` on an absent label is harmless, so the swap is safe to run
+verbatim. Exactly ONE `review:*` label may be set at a time — two of them, or a
+stale one, and the list lies, which is worse than no label at all.
+
 ## Verdict — post it as a PR comment
 **Re-verdict when the head moves.** Your APPROVE covers the SHA you reviewed and
 nothing after it. If the author pushes again — even a merge of `main`, even a

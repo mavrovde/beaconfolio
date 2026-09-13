@@ -152,7 +152,7 @@ All notable changes to this project will be documented in this file.
   `### Documentation` — all real in this repo's history) are kept rather than dropped, preamble
   text before the first heading is kept, and entry splitting is fence-aware so a `- ` inside a code
   block is not torn out. 15 self-test cases, each loss case taken from a real defect caught in
-  review, plus a no-loss check against the repo's own 224-entry / 27-release CHANGELOG.
+  review, plus a no-loss check against the repo's own 27-release CHANGELOG (entry count asserted, not hard-coded).
 - **CI frontend jobs use the same worker-teardown retry as the pre-push gate (#319)** — each of the
   three Vitest project steps in `deploy.yml` now runs through `scripts/run_frontend_suites.sh`
   (signature-narrow single retry for the upstream Vitest teardown race, #309) instead of a bare

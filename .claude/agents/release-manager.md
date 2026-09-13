@@ -127,21 +127,31 @@ and `backend/docker-entrypoint.sh` (`set -e`, `db_probe.py`) crash-loops — a f
     Record the measured effort (agent, model, tokens, wall time, review rounds) on the issue
     and mirror it to GitHub Project 3 — the retrospective in step 12 depends on it, and the
     numbers come from agent telemetry that is NOT retrievable later.
-11b. **Flip the ship-state labels — the owner's merged-PR queue depends on it.**
+11b. **Flip the ship-state labels — and note they are a CACHE, not the truth.**
     Every PR in this tag moves `awaiting-release` → `shipped`:
 
     ```bash
-    for n in $(gh pr list --state merged --limit 100 --json number,mergedAt \
-                 --jq "[.[]|select(.mergedAt>\"$PREV_TAG_ISO\")]|.[].number"); do
-      gh pr edit "$n" --remove-label awaiting-release --add-label shipped
+    # git is the source of truth: a merge commit contained in a tag IS shipped.
+    for n in $(gh pr list --state merged --limit 100 --json number --jq '.[].number'); do
+      sha=$(gh pr view "$n" --json mergeCommit --jq '.mergeCommit.oid')
+      if [ -n "$(git tag --contains "$sha" 2>/dev/null)" ]; then
+        gh pr edit "$n" --remove-label awaiting-release --add-label shipped
+      else
+        gh pr edit "$n" --add-label awaiting-release
+      fi
     done
     ```
 
-    **Why a label and not the PR state:** GitHub will not let a merged PR be closed — measured,
-    `gh pr close` on one answers *"can't be closed because it was already merged"*. `is:merged` is
-    permanent, so the only way the owner can see "merged but NOT yet released" is
-    `is:pr is:merged label:awaiting-release`. If this step is skipped that queue never empties and
-    stops meaning anything.
+    **Derive, do not remember.** Writing this from `git tag --contains` rather than from
+    "which PRs did I merge this cycle" makes the step **self-correcting**: run it at any time,
+    after any number of missed releases, and it converges on the truth. A hand-maintained list
+    silently rots the first time the step is skipped — and a queue that is wrong is worse than
+    no queue, because it is still believed.
+
+    **Why a label at all:** GitHub will not let a merged PR be closed — measured, `gh pr close`
+    on one answers *"can't be closed because it was already merged"*. `is:merged` is permanent,
+    so `is:pr is:merged label:awaiting-release` is the only way the owner can see "merged but
+    not yet released".
 
 12. **Release retrospective — the release is not complete without it** (owner directive
     2026-09-06, rule 8). Run `/retro` (or delegate to `ai-integration`): analyse this release's

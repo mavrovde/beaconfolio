@@ -18,7 +18,18 @@ pass=0; fail=0
 ok()  { pass=$((pass+1)); printf '  ✓ %s\n' "$1"; }
 bad() { fail=$((fail+1)); printf '  ✗ %s\n     %s\n' "$1" "$2"; }
 
-run() { python3 "$SCRIPT" "$1" 2>&1; }
+# EVERY case must assert the script SUCCEEDED, not merely that the file still
+# looks right. A crashing script leaves the file byte-for-byte untouched, so
+# "nothing was lost" passes trivially — measured: a mutant with a NameError
+# scored 16/18 green because the two cases it broke never noticed it had died.
+# `run` therefore fails the case itself on a non-zero exit.
+run() {
+  RUN_OUT="$(python3 "$SCRIPT" "$1" 2>&1)"; RUN_RC=$?
+  if [ "$RUN_RC" -ne 0 ]; then
+    bad "script exited $RUN_RC (a crash leaves the file untouched — do not read that as success)" "$RUN_OUT"
+  fi
+  printf '%s' "$RUN_OUT"
+}
 
 echo "== dedup_changelog_unreleased self-test =="
 
@@ -105,28 +116,98 @@ grep -q "Nothing released yet" "$f" && ok "preamble text before the first headin
   || bad "preamble dropped" "$(cat "$f")"
 rm -f "$f"
 
-# --- 4. LOSS CASE: a '- ' line inside a fenced code block ------------------
+# --- 4. LOSS CASE: an UNINDENTED '- ' inside a fence, WITH a repeat ---------
+#     Two things had to be fixed here before this case discriminated at all.
+#     (a) The fence bullets must be UNINDENTED — indented ones are protected by
+#         the plain `startswith("- ")` check on its own.
+#     (b) The same fenced line must appear in TWO entries. Without that, ripping
+#         out the fence logic still yields byte-identical output (measured), so
+#         the case was fake-green: every torn-out fence line was unique, stayed
+#         in order, and nothing was visibly lost.
+#     With (b), removing fence-awareness makes the second `- name: a step` look
+#     like a repeat of the first and DELETES it, corrupting the code block.
 f="$(mktemp)"; cat > "$f" <<'MD'
 # Changelog
 
 ## [Unreleased]
 
 ### Added
-- **entry with code** — see below:
-  ```yaml
-  - name: a step
-  - name: another step
-  ```
-  trailing prose.
+- **first entry** — uses this snippet:
+
+```yaml
+- name: a step
+```
+- **second entry** — uses the very same snippet:
+
+```yaml
+- name: a step
+```
 
 ## [1.0.0] - 2026-01-01
 - old
 MD
 out="$(run "$f")"
-[ "$(grep -c '^- \*\*' "$f")" = 1 ] && ok "a '- ' inside a fence is not torn out as an entry" \
-  || bad "fence split" "$(cat "$f")"
-grep -q "trailing prose" "$f" && ok "…and the entry's trailing prose survives" \
-  || bad "prose after fence lost" "$(cat "$f")"
+[ "$(grep -c '^- name: a step' "$f")" = 2 ] \
+  && ok "an identical line inside TWO fences survives in both (fence-aware)" \
+  || bad "fenced line deduped away" "$(cat "$f")"
+[ "$(grep -c '^```' "$f")" = 4 ] && ok "…all four fence markers survive" \
+  || bad "fence markers lost" "count=$(grep -c '^```' "$f")"
+grep -q "second entry" "$f" && ok "…and the second entry survives" \
+  || bad "second entry lost" "$(cat "$f")"
+rm -f "$f"
+
+# --- 4b. LOSS CASE: the SAME TITLE LINE under two different headings -------
+#     The first draft keyed dedup on the entry's FIRST LINE with a set shared
+#     across sections. So an entry under `### Fixed` whose title line matched
+#     one under `### Added` was deleted — with its heading — and reported only
+#     as "dropped 1 duplicate entry(ies)".
+#     The title lines below are BYTE-IDENTICAL and the difference is on the
+#     continuation line; that is the only shape that exercises the bug. An
+#     earlier fixture put the differing text on the title line itself, so the
+#     keys differed and the mutant survived (measured).
+f="$(mktemp)"; cat > "$f" <<'MD'
+# Changelog
+
+## [Unreleased]
+
+### Added
+- **Thing (#1)** —
+  the added half.
+
+### Fixed
+- **Thing (#1)** —
+  the fixed half, genuinely different content.
+
+## [1.0.0] - 2026-01-01
+- old
+MD
+out="$(run "$f")"
+if grep -q "the added half" "$f" && grep -q "the fixed half" "$f" \
+   && grep -qF "### Added" "$f" && grep -qF "### Fixed" "$f"; then
+  ok "identical title under two headings: BOTH kept, both headings kept"
+else bad "cross-section deletion" "$(cat "$f")"; fi
+[ "$(grep -c 'Thing (#1)' "$f")" = 2 ] && ok "…both entries present, not collapsed" \
+  || bad "entry collapsed" "count=$(grep -c 'Thing (#1)' "$f")"
+rm -f "$f"
+
+# --- 4c. a TRUE duplicate (identical text, same section) is still dropped ---
+f="$(mktemp)"; cat > "$f" <<'MD'
+# Changelog
+
+## [Unreleased]
+
+### Fixed
+- **Dup (#9)** — identical body.
+
+### Fixed
+- **Dup (#9)** — identical body.
+
+## [1.0.0] - 2026-01-01
+- old
+MD
+out="$(run "$f")"
+[ "$(grep -c 'Dup (#9)' "$f")" = 1 ] && ok "a TRUE duplicate is still dropped (the whole point)" \
+  || bad "dedup stopped working" "$(cat "$f")"
 rm -f "$f"
 
 # --- 5. EDGE: no [Unreleased] at all — leave the file alone ----------------

@@ -22,7 +22,10 @@ asked", never "silently dropped something":
   * Fenced code blocks are not scanned for bullets, so a `- ` line inside a
     ``` fence stays with its entry instead of being torn out as a new one.
   * Everything from the first released section (`## [x.y.z]`) down is copied
-    byte-for-byte; only the `[Unreleased]` block is ever rewritten.
+    unchanged line-for-line; only the `[Unreleased]` block is ever rewritten.
+    (A final pass collapses runs of blank lines across the whole file, so the
+    bytes below can differ by whitespace alone — never by content. The self-test
+    asserts every release heading and every entry survives.)
   * A file with no `[Unreleased]` section is left untouched (exit 0, says so).
 
 It is idempotent: running it twice changes nothing the second time. Verify after
@@ -82,7 +85,7 @@ def rstrip_block(block):
 
 
 def main(path):
-    text = open(path).read()
+    text = open(path, encoding="utf-8").read()
     lines = text.split("\n")
 
     start = next((i for i, l in enumerate(lines) if UNRELEASED_RE.match(l)), None)
@@ -116,14 +119,23 @@ def main(path):
     ordered = [n for n in KNOWN_ORDER if n in merged]
     ordered += [n for n in order if n not in KNOWN_ORDER]
 
-    seen, dropped = set(), 0
+    dropped = 0
     out = list(rstrip_block(preamble))
     if out:
         out.append("")
     for name in ordered:
+        # `seen` is PER SECTION, and the key is the WHOLE entry — not its first
+        # line. Both were wrong in the first draft and both lost content: with a
+        # global set, an entry under `### Fixed` whose first line matched one
+        # under `### Added` was deleted along with its heading; with a first-line
+        # key, two genuinely different entries that happen to share a title line
+        # collapse into one. A rebase duplicates an entry *within* the section it
+        # came from, so per-section is also the only shape that matches the
+        # defect this exists for.
+        seen = set()
         kept = []
         for entry in merged[name]:
-            key = entry[0].strip()
+            key = "\n".join(rstrip_block(entry))
             if key in seen:
                 dropped += 1
                 continue
@@ -148,11 +160,12 @@ def main(path):
             blank = False
         collapsed.append(line)
 
-    open(path, "w").write("\n".join(collapsed))
+    open(path, "w", encoding="utf-8").write("\n".join(collapsed))
     extra = [n for n in ordered if n not in KNOWN_ORDER]
     note = f"; kept {len(extra)} non-standard heading(s): {', '.join(extra)}" if extra else ""
+    kept_total = sum(len(merged[n]) for n in ordered) - dropped
     print(f"{path}: dropped {dropped} duplicate entry(ies); "
-          f"{len(seen)} kept across {len(ordered)} section(s){note}")
+          f"{kept_total} kept across {len(ordered)} section(s){note}")
     return 0
 
 

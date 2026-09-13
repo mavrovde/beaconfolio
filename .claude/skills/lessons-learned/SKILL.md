@@ -1501,7 +1501,7 @@ prevent* — proof the author had never run it on their own branch.
   of content**. Unknown input is *preserved and reported*, never dropped. Its acceptable failure is
   "did less than asked".
 - Its self-test leads with the **loss cases**, and one case runs it against the repo's **real**
-  file asserting nothing disappears (here: 27 release headings and 224 entries, unchanged).
+  file asserting nothing disappears (here: 27 release headings and its full entry count, unchanged).
 - A new `scripts/` file is outside `backend/`'s linters by default. Wire the self-test into the
   pre-push gate in the SAME PR, or it is unexamined by anything.
 - **Run your own tool on your own branch before asking for review.** The reviewer proved it had

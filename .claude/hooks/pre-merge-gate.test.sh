@@ -7,7 +7,7 @@
 # Only 4 of 10 mutations bit. That is the exact fake-green class the retrospective
 # this hook came from is about, so every case here now asserts the DECISION
 # (parsed out of the JSON) and the mutation list below is part of the contract:
-# `bash pre-merge-gate.test.sh --mutations` re-runs them and must report 21 killed.
+# `bash pre-merge-gate.test.sh --mutations` re-runs them and must report 22 killed.
 set -u
 
 HOOK="${HOOK:-$(cd "$(dirname "$0")" && pwd)/pre-merge-gate.sh}"
@@ -118,6 +118,23 @@ GH_STUB_PR_JSON="$(both 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES' 2026-09-06
   run "later APPROVE comment overrides REQUEST CHANGES" allow "gh pr merge 284 --squash"
 GH_STUB_PR_JSON='{"reviews":[],"comments":[{"createdAt":"2026-09-06T10:00:00Z","body":"## ✅ APPROVED","authorAssociation":"OWNER"}],"body":"Refs #1"}' \
   run "APPROVE posted as a COMMENT (the sanctioned path)" allow "gh pr merge 284 --squash"
+
+# 1c. A CONFLICTING base denies, even with a perfectly good APPROVE (#371 review).
+#     The approval covers the branch; it does not cover the merged RESULT. This is
+#     the half `main` moving underneath makes stale, which the commits-after check
+#     cannot see (no new commit lands on the PR).
+GH_STUB_PR_JSON='{"reviews":[{"submittedAt":"2026-09-06T10:00:00Z","body":"## ✅ APPROVED","authorAssociation":"OWNER"}],"comments":[],"body":"Refs #1","mergeable":"CONFLICTING"}' \
+  run "a CONFLICTING base denies despite an APPROVE" deny "gh pr merge 284 --squash"
+GH_STUB_PR_JSON='{"reviews":[{"submittedAt":"2026-09-06T10:00:00Z","body":"## ✅ APPROVED","authorAssociation":"OWNER"}],"comments":[],"body":"Refs #1","mergeable":"CONFLICTING"}' \
+  run_reason "…and the deny says to rebase and re-confirm" "conflicts with its base" "gh pr merge 284 --squash"
+GH_STUB_PR_JSON='{"reviews":[{"submittedAt":"2026-09-06T10:00:00Z","body":"## ✅ APPROVED","authorAssociation":"OWNER"}],"comments":[],"body":"Refs #1","mergeable":"MERGEABLE"}' \
+  run "a MERGEABLE base with an APPROVE still allows" allow "gh pr merge 284 --squash"
+# An ABSENT mergeable field must NOT invent a denial — older gh, or a stub.
+GH_STUB_PR_JSON='{"reviews":[{"submittedAt":"2026-09-06T10:00:00Z","body":"## ✅ APPROVED","authorAssociation":"OWNER"}],"comments":[],"body":"Refs #1"}' \
+  run "an absent mergeable field does not block" allow "gh pr merge 284 --squash"
+# UNKNOWN means GitHub has not computed it yet — must not block either.
+GH_STUB_PR_JSON='{"reviews":[{"submittedAt":"2026-09-06T10:00:00Z","body":"## ✅ APPROVED","authorAssociation":"OWNER"}],"comments":[],"body":"Refs #1","mergeable":"UNKNOWN"}' \
+  run "mergeable UNKNOWN does not block" allow "gh pr merge 284 --squash"
 
 # 2c. Trusted-author filter (#316): on a PUBLIC repo any passer-by can post an
 #     approval-shaped comment. Only OWNER/MEMBER/COLLABORATOR entries are verdict
@@ -589,6 +606,10 @@ PY
   # #316: the trusted-author filter must actually gate. Removing it lets an
   # untrusted (NONE) approval-shaped comment count as a verdict — the
   # "stranger approval is not a verdict" case above fails without it.
+  # #371 review: main moving underneath is the half the commits-after check
+  # cannot see. Removing it lets a conflicting branch merge on a stale APPROVE.
+  mutate die "CONFLICTING-base check removed (stale base merges on an old APPROVE)" \
+    'replace::if [ "$MERGEABLE" = "CONFLICTING" ]; then=>if false; then'
   mutate die "trusted-author filter removed (any public commenter can approve)" \
     'replace::and (.assoc == "OWNER" or .assoc == "MEMBER" or .assoc == "COLLABORATOR")=>'
   mutate die "approval-covers-head check removed (the #320 shape merges again)" \
