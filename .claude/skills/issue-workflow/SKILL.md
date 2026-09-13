@@ -16,6 +16,41 @@ deferred fix, shipped milestone, and research decision lives as an issue — not
 memory. Register work up front; close-the-loop when it lands. This skill is the operational
 companion to `CLAUDE.md` → *Issue tracking, milestones & labels*.
 
+## PR state at a glance — the label scheme (owner directive 2026-09-13)
+
+The owner must be able to read a PR's review state from the list **without opening it**.
+
+**Review state** — exactly one at a time, updated as the verdict changes:
+
+| label | meaning |
+|---|---|
+| `review:needed` | no verdict yet; awaiting the first `pr-reviewer` run |
+| `review:round-1` / `-2` / `-3` | REQUEST CHANGES at that round; the author is fixing |
+| `review:approved` | an APPROVE is posted **and covers the current head** — mergeable under rule 13 |
+| `review:stale` | approved, but the head moved since; needs a delta-confirm before merge |
+| `review:blocked` | waiting on something external (owner action, another PR, GitHub itself) |
+
+Swap the old one off when you add the new one, or the list lies.
+
+**Ship state** — because **GitHub will not let a merged PR be closed.** Measured: `gh pr close`
+on a merged PR answers *"can't be closed because it was already merged"*. A merged PR is already
+in the closed state and `is:merged` is permanent, so "shipped vs waiting for the release" cannot
+be expressed by PR state and must be a label:
+
+| label | meaning |
+|---|---|
+| `awaiting-release` | merged to `main`, **not yet in a tagged release** — the real ship queue |
+| `shipped` | merged **and** included in a tagged release — historical, no action |
+
+The queue the owner actually wants to look at is therefore:
+
+```
+is:pr is:merged label:awaiting-release
+```
+
+At release time, the release-manager swaps `awaiting-release` → `shipped` on everything in the
+tag, so the queue empties itself and only the next release's PRs remain.
+
 ## Invariant — no orphan issues
 **Every issue MUST have: a milestone (theme) + exactly one priority label + ≥1 area label.**
 Missing any of these = incomplete; fix before moving on. `/issue-triage` sweeps the backlog for

@@ -127,6 +127,22 @@ and `backend/docker-entrypoint.sh` (`set -e`, `db_probe.py`) crash-loops — a f
     Record the measured effort (agent, model, tokens, wall time, review rounds) on the issue
     and mirror it to GitHub Project 3 — the retrospective in step 12 depends on it, and the
     numbers come from agent telemetry that is NOT retrievable later.
+11b. **Flip the ship-state labels — the owner's merged-PR queue depends on it.**
+    Every PR in this tag moves `awaiting-release` → `shipped`:
+
+    ```bash
+    for n in $(gh pr list --state merged --limit 100 --json number,mergedAt \
+                 --jq "[.[]|select(.mergedAt>\"$PREV_TAG_ISO\")]|.[].number"); do
+      gh pr edit "$n" --remove-label awaiting-release --add-label shipped
+    done
+    ```
+
+    **Why a label and not the PR state:** GitHub will not let a merged PR be closed — measured,
+    `gh pr close` on one answers *"can't be closed because it was already merged"*. `is:merged` is
+    permanent, so the only way the owner can see "merged but NOT yet released" is
+    `is:pr is:merged label:awaiting-release`. If this step is skipped that queue never empties and
+    stops meaning anything.
+
 12. **Release retrospective — the release is not complete without it** (owner directive
     2026-09-06, rule 8). Run `/retro` (or delegate to `ai-integration`): analyse this release's
     issues, PRs, review threads and telemetry against the five questions in the `release-retro`
