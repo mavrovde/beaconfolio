@@ -151,7 +151,7 @@ All notable changes to this project will be documented in this file.
   **never loses content**: headings it does not recognise (`### Docs`, `### Deprecated`,
   `### Documentation` — all real in this repo's history) are kept rather than dropped, preamble
   text before the first heading is kept, and entry splitting is fence-aware so a `- ` inside a code
-  block is not torn out. 15 self-test cases, each loss case taken from a real defect caught in
+  block is not torn out. 24 self-test cases, each loss case taken from a real defect caught in
   review, plus a no-loss check against the repo's own 27-release CHANGELOG (entry count asserted, not hard-coded).
 - **CI frontend jobs use the same worker-teardown retry as the pre-push gate (#319)** — each of the
   three Vitest project steps in `deploy.yml` now runs through `scripts/run_frontend_suites.sh`

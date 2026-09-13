@@ -55,6 +55,7 @@ def split_entries(body):
     including indented continuations and fenced code blocks.
     """
     entries, current, in_fence = [], None, False
+    lead = None
     for line in body:
         if FENCE_RE.match(line):
             in_fence = not in_fence
@@ -68,10 +69,15 @@ def split_entries(body):
             continue
         if current is not None:
             current.append(line)
-        elif line.strip():
-            # prose sitting under a heading before any bullet — keep it as its
-            # own block so it cannot be lost
-            entries.append([line])
+        else:
+            # Content under a heading BEFORE the first bullet. It must stay ONE
+            # block: splitting it line-by-line fed each line to the dedup, which
+            # then deleted a repeated line (e.g. `make build`) and the closing
+            # fence with it, leaving an unterminated code block (review finding).
+            if not entries or entries[-1] is not lead:
+                lead = []
+                entries.append(lead)
+            lead.append(line)
     if current is not None:
         entries.append(current)
     return entries
@@ -97,8 +103,14 @@ def main(path):
                len(lines))
 
     preamble, sections, current = [], [], None
+    in_fence = False
     for line in lines[start + 1:end]:
-        if line.startswith("### "):
+        if FENCE_RE.match(line):
+            in_fence = not in_fence
+        # A `### ` line INSIDE a fenced block is content, not a heading. Without
+        # this it was torn out as a section and then deleted on merge (review
+        # finding), which is the same loss class as the bullet splitter had.
+        if line.startswith("### ") and not in_fence:
             current = (line.strip(), [])
             sections.append(current)
         elif current is not None:

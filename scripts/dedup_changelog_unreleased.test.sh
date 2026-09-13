@@ -23,12 +23,18 @@ bad() { fail=$((fail+1)); printf '  ✗ %s\n     %s\n' "$1" "$2"; }
 # "nothing was lost" passes trivially — measured: a mutant with a NameError
 # scored 16/18 green because the two cases it broke never noticed it had died.
 # `run` therefore fails the case itself on a non-zero exit.
+# CALL AS:  run "$f"      then read "$RUN_OUT"
+# NEVER as: run "$f"; out="$RUN_OUT"
+# The second form puts the whole function in a SUBSHELL, so the `bad` below
+# increments a counter that dies with it and prints into the captured string.
+# Measured in review: a mutant that raised on every fenced input scored
+# 19 passed / 0 failed / exit 0 — the fourth fake-green in this file. The rc
+# check only works if it runs in the PARENT shell.
 run() {
   RUN_OUT="$(python3 "$SCRIPT" "$1" 2>&1)"; RUN_RC=$?
   if [ "$RUN_RC" -ne 0 ]; then
     bad "script exited $RUN_RC (a crash leaves the file untouched — do not read that as success)" "$RUN_OUT"
   fi
-  printf '%s' "$RUN_OUT"
 }
 
 echo "== dedup_changelog_unreleased self-test =="
@@ -53,7 +59,7 @@ f="$(mktemp)"; cat > "$f" <<'MD'
 ### Added
 - old release entry
 MD
-out="$(run "$f")"
+run "$f"; out="$RUN_OUT"
 [ "$(grep -c '^### Fixed' "$f")" = 1 ] && ok "duplicate headings merge into one" \
   || bad "heading merge" "$(grep '^### ' "$f")"
 [ "$(grep -c 'A (#1)' "$f")" = 1 ] && ok "a repeated entry is dropped once" \
@@ -85,7 +91,7 @@ f="$(mktemp)"; cat > "$f" <<'MD'
 ## [1.0.0] - 2026-01-01
 - old
 MD
-out="$(run "$f")"
+run "$f"; out="$RUN_OUT"
 missing=""
 for t in "doc entry" "dep entry" "another doc" "added entry"; do
   grep -q "$t" "$f" || missing="$missing $t"
@@ -111,7 +117,7 @@ Nothing released yet; see the sections below.
 ## [1.0.0] - 2026-01-01
 - old
 MD
-out="$(run "$f")"
+run "$f"; out="$RUN_OUT"
 grep -q "Nothing released yet" "$f" && ok "preamble text before the first heading is KEPT" \
   || bad "preamble dropped" "$(cat "$f")"
 rm -f "$f"
@@ -146,7 +152,7 @@ f="$(mktemp)"; cat > "$f" <<'MD'
 ## [1.0.0] - 2026-01-01
 - old
 MD
-out="$(run "$f")"
+run "$f"; out="$RUN_OUT"
 [ "$(grep -c '^- name: a step' "$f")" = 2 ] \
   && ok "an identical line inside TWO fences survives in both (fence-aware)" \
   || bad "fenced line deduped away" "$(cat "$f")"
@@ -181,7 +187,7 @@ f="$(mktemp)"; cat > "$f" <<'MD'
 ## [1.0.0] - 2026-01-01
 - old
 MD
-out="$(run "$f")"
+run "$f"; out="$RUN_OUT"
 if grep -q "the added half" "$f" && grep -q "the fixed half" "$f" \
    && grep -qF "### Added" "$f" && grep -qF "### Fixed" "$f"; then
   ok "identical title under two headings: BOTH kept, both headings kept"
@@ -205,15 +211,73 @@ f="$(mktemp)"; cat > "$f" <<'MD'
 ## [1.0.0] - 2026-01-01
 - old
 MD
-out="$(run "$f")"
+run "$f"; out="$RUN_OUT"
 [ "$(grep -c 'Dup (#9)' "$f")" = 1 ] && ok "a TRUE duplicate is still dropped (the whole point)" \
   || bad "dedup stopped working" "$(cat "$f")"
+rm -f "$f"
+
+# --- 4d. LOSS CASE: a fenced block BEFORE the first bullet (review round 3) --
+#     The pre-bullet path split content one line per entry and then ran it
+#     through dedup, so a repeated line inside a fence (`make build`) was
+#     deleted along with the closing fence, leaving the block unterminated.
+f="$(mktemp)"; cat > "$f" <<'MD'
+# Changelog
+
+## [Unreleased]
+
+### Changed
+Run these before pushing:
+
+```sh
+make build
+make test
+make build
+```
+
+- **an entry after the block** — normal.
+
+## [1.0.0] - 2026-01-01
+- old
+MD
+run "$f"; out="$RUN_OUT"
+[ "$(grep -c '^make build' "$f")" = 2 ] \
+  && ok "a repeated line inside a pre-bullet fence is kept (both copies)" \
+  || bad "pre-bullet fence content deleted" "$(cat "$f")"
+[ "$(grep -c '^```' "$f")" = 2 ] && ok "…and the block stays terminated" \
+  || bad "fence unterminated" "markers=$(grep -c '^```' "$f")"
+grep -q "Run these before pushing" "$f" && ok "…and its lead-in prose survives" \
+  || bad "lead-in lost" "$(cat "$f")"
+rm -f "$f"
+
+# --- 4e. LOSS CASE: a '### ' line INSIDE a fenced block is CONTENT ----------
+f="$(mktemp)"; cat > "$f" <<'MD'
+# Changelog
+
+## [Unreleased]
+
+### Added
+- **documents the changelog format** — like so:
+
+```markdown
+### Added
+- an example entry
+```
+
+## [1.0.0] - 2026-01-01
+- old
+MD
+run "$f"; out="$RUN_OUT"
+[ "$(grep -c '^### Added' "$f")" = 2 ] \
+  && ok "a '### ' inside a fence is content, not a heading" \
+  || bad "fenced heading torn out" "$(cat "$f")"
+grep -q "an example entry" "$f" && ok "…and the fenced example survives" \
+  || bad "fenced example lost" "$(cat "$f")"
 rm -f "$f"
 
 # --- 5. EDGE: no [Unreleased] at all — leave the file alone ----------------
 f="$(mktemp)"; printf '# Changelog\n\n## [1.0.0] - 2026-01-01\n- only a release\n' > "$f"
 before="$(cat "$f")"
-out="$(run "$f")"; rc=$?
+run "$f"; out="$RUN_OUT"; rc=$?
 [ "$rc" -eq 0 ] && [ "$before" = "$(cat "$f")" ] \
   && ok "no [Unreleased]: exits 0 and changes nothing" || bad "no-unreleased" "rc=$rc; $out"
 printf '%s' "$out" | grep -qi "nothing to do" || bad "no-unreleased message" "$out"
@@ -221,7 +285,7 @@ rm -f "$f"
 
 # --- 6. EDGE: [Unreleased] with no released section under it ---------------
 f="$(mktemp)"; printf '# Changelog\n\n## [Unreleased]\n\n### Added\n- **a** — x.\n\n### Added\n- **b** — y.\n' > "$f"
-out="$(run "$f")"; rc=$?
+run "$f"; out="$RUN_OUT"; rc=$?
 if [ "$rc" -eq 0 ] && [ "$(grep -c '^### Added' "$f")" = 1 ] \
    && grep -q '\*\*a\*\*' "$f" && grep -q '\*\*b\*\*' "$f"; then
   ok "[Unreleased] with no release below it still merges, keeps both"
@@ -243,9 +307,9 @@ f="$(mktemp)"; cat > "$f" <<'MD'
 ## [1.0.0] - 2026-01-01
 - old
 MD
-run "$f" >/dev/null
+run "$f"
 once="$(cat "$f")"
-run "$f" >/dev/null
+run "$f"
 [ "$once" = "$(cat "$f")" ] && ok "idempotent — a second run is a no-op" \
   || bad "not idempotent" "$(diff <(printf '%s' "$once") "$f")"
 rm -f "$f"
@@ -262,14 +326,14 @@ if [ -f "$ROOT/CHANGELOG.md" ]; then
   f="$(mktemp)"; cp "$ROOT/CHANGELOG.md" "$f"
   before_entries="$(grep -c '^- ' "$f")"
   before_rel="$(grep -c '^## \[[0-9]' "$f")"
-  run "$f" >/dev/null
+  run "$f"
   after_entries="$(grep -c '^- ' "$f")"
   after_rel="$(grep -c '^## \[[0-9]' "$f")"
   [ "$before_rel" = "$after_rel" ] \
     && ok "real CHANGELOG: every release heading survives ($after_rel)" \
     || bad "release headings lost" "$before_rel -> $after_rel"
-  [ "$after_entries" -le "$before_entries" ] && [ "$after_entries" -ge $((before_entries - 20)) ] \
-    && ok "real CHANGELOG: entries only ever removed as duplicates ($before_entries -> $after_entries)" \
+  [ "$after_entries" -eq "$before_entries" ] \
+    && ok "real CHANGELOG: entry count UNCHANGED ($before_entries) — not 'within 20'" \
     || bad "entry count moved unexpectedly" "$before_entries -> $after_entries"
   rm -f "$f"
 fi
