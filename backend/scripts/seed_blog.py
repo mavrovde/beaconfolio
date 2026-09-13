@@ -9,6 +9,13 @@ API_URL_BASE = os.getenv("API_URL", "http://backend:8000/api")
 ADMIN_USER = os.getenv("ADMIN_USER", "admin")
 ADMIN_PASS = os.getenv("ADMIN_PASS", "admin")
 
+# API_URL comes from the environment, and urllib honours whatever scheme it is
+# given — including file:// and ftp://, which would make these "HTTP" calls read
+# the local filesystem instead (Bandit B310). Pin the scheme once, here, so both
+# call sites below are covered by construction rather than by a suppression.
+if not API_URL_BASE.startswith(("http://", "https://")):
+    sys.exit(f"API_URL must be an http(s) URL, got: {API_URL_BASE!r}")
+
 
 def get_auth_token():
     print(f"Authenticating as {ADMIN_USER}...")
@@ -23,7 +30,8 @@ def get_auth_token():
     req.add_header("Content-Type", "application/x-www-form-urlencoded")
 
     try:
-        with urllib.request.urlopen(req) as response:
+        # scheme pinned to http(s) at import time above
+        with urllib.request.urlopen(req) as response:  # nosec B310
             res_data = json.loads(response.read().decode())
             print("Successfully authenticated.")
             return res_data["access_token"]
@@ -70,7 +78,8 @@ def seed_posts():
             req.add_header("Authorization", f"Bearer {token}")
 
             try:
-                with urllib.request.urlopen(req):
+                # scheme pinned to http(s) at import time above
+                with urllib.request.urlopen(req):  # nosec B310
                     print(f"Successfully seeded: {post_data['id']} ({lang})")
             except urllib.error.HTTPError as e:
                 if e.code in [400, 409]:
