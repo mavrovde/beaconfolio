@@ -1449,6 +1449,38 @@ code, 5/60 limiter, a fresh spoofed first hop per request: **7 of 7 served with 
 - **Read the access log of the thing you are measuring**, not just the response body. The response
   agreed with the expected value for the wrong reason; the log line named the real client and blew
   the assumption open. A green measurement whose mechanism you have not traced is §42 again.
+## 57. A background task still holds the REQUEST's connection — so BOUNDING a side write on the shared pool is worse than not bounding it (#326)
+
+`record_event` runs via `BackgroundTasks`, i.e. after the response body — but still inside the ASGI
+cycle, while the request's `get_db` session is open. So an emit that opens its own session from the
+**same** pool makes one request need **two** connections, and at concurrency ≥ pool capacity the
+pool deadlocks against itself: the connection holders are waiting for the emits, the emits are
+waiting for connections. Measured on `/cv/download`, 300 requests at concurrency 60 (pool 20+40):
+**106 pool timeouts, 194/300 events, 139/300 `download_count` — and 300/300 HTTP 200**. Silent.
+
+**The obvious fix made it dramatically worse.** Adding an `asyncio.Semaphore(4)` around the emit —
+the reviewer's suggestion, and the natural reading of "bound the concurrency" — went to **397
+timeouts and 152 HTTP 500s**, because a bounded emit that cannot get a connection now blocks every
+emit behind it. What works is **separation, not a smaller number**: a second `create_async_engine`
+with `pool_size = <emit budget>, max_overflow = 0` for the side writes. Then the ceiling is
+additive and structural: **1.4 s, 0 timeouts, 300/300 events**, and 600 requests at concurrency 120
+still 600/600. Keep the semaphore on top only so emits queue in memory instead of on the pool's
+checkout queue, with an admission cap that DROPS and COUNTS (a counter + a WARNING line) rather
+than growing without bound.
+
+**And measure the feature OFF before you believe the attribution.** The issue blamed the missing
+`download_count` increments on the starvation. Running the same load with analytics disabled —
+1.5 s, zero errors, zero pool pressure — the counter still ended at **3 of 300**: `cv_request.
+download_count += 1` is a read-modify-write, and concurrent requests all read N and write N+1. Two
+independent defects wearing one symptom; the fix is `UPDATE … SET download_count = download_count
++ 1 … RETURNING id` (add `.execution_options(synchronize_session="fetch")` or a session that
+already loaded the row keeps serving the pre-increment value).
+
+**How to apply.** When a request-scoped resource is also used off the request path, ask *how many
+does one request hold at its peak*, not *how many does each step take*. And for a load-shaped fix,
+the deterministic pytest is the **seam**, not the load: spy which session factory the emit opened
+(the written row is identical either way), exhaust a 1-connection pool for real and assert the
+emits still land, and count peak simultaneous sessions against the configured bound.
 
 ## Where the rules live (AI-config map)
 

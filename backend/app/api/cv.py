@@ -3,7 +3,7 @@ from datetime import UTC
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -144,17 +144,37 @@ async def download_cv(
         # 1. Update tracking if req_id provided
         if req_id:
             try:
-                # Validate UUID format implicitly by querying
-                stmt = select(CvRequest).where(CvRequest.id == req_id)
-                result = await db.execute(stmt)
-                cv_request = result.scalar_one_or_none()
+                from datetime import datetime
 
-                if cv_request:
-                    from datetime import datetime
+                # ONE atomic statement, not read-modify-write (#326). The ORM
+                # form (`cv_request.download_count += 1`) computes the new
+                # value in Python from a value read earlier, so concurrent
+                # downloads of the SAME link all read N and all write N+1 —
+                # every increment but one is lost. MEASURED before this change,
+                # 300 downloads at concurrency 60 with analytics OFF (so no
+                # pool pressure at all, 1.5 s, zero errors): download_count
+                # ended at 3. `download_count + 1` is evaluated by Postgres
+                # under the row lock, so the count is exact.
+                # The UUID format is still validated implicitly by the
+                # statement, and RETURNING tells us whether the row existed.
+                stmt = (
+                    update(CvRequest)
+                    .where(CvRequest.id == req_id)
+                    .values(
+                        downloaded_at=datetime.now(UTC),
+                        download_count=CvRequest.download_count + 1,
+                    )
+                    .returning(CvRequest.id)
+                    # Keep any copy of this row already loaded in THIS session
+                    # consistent with what the database now holds — a Core
+                    # UPDATE bypasses the identity map, so without this a later
+                    # read in the same session would serve the pre-increment
+                    # value.
+                    .execution_options(synchronize_session="fetch")
+                )
+                downloaded_id = (await db.execute(stmt)).scalar_one_or_none()
 
-                    cv_request.downloaded_at = datetime.now(UTC)
-                    cv_request.download_count += 1
-                    downloaded_id = cv_request.id
+                if downloaded_id:
                     await db.commit()
                     # Engagement analytics (#249): ONE ROW PER DOWNLOAD. The
                     # counter above cannot answer "when" for anything but the

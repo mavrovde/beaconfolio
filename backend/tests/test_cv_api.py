@@ -168,6 +168,85 @@ async def test_download_cv_with_tracking(client, db_session):
 
 
 @pytest.mark.asyncio
+async def test_concurrent_downloads_count_every_single_one(client, db_session):
+    """#326: `download_count` is incremented by the DATABASE, not in Python.
+
+    The previous `cv_request.download_count += 1` computed the new value from a
+    value read earlier, so simultaneous downloads of the same link all read N
+    and all wrote N+1. MEASURED against the unfixed endpoint with analytics
+    OFF (so no pool pressure at all — 1.5 s, zero errors): 300 downloads at
+    concurrency 60 left download_count at **3**. Ten concurrent downloads here
+    must count ten, and emit ten events.
+    """
+    import asyncio
+    import uuid
+
+    from httpx import ASGITransport, AsyncClient
+
+    from app.database import get_db
+    from app.main import app
+    from app.models.cv_document import CvDocument
+    from app.models.engagement_event import EngagementEvent
+    from conftest import get_test_async_session
+
+    db_session.add(
+        CvDocument(
+            id=uuid.uuid4(),
+            filename="hot.pdf",
+            data=b"pdf data",
+            version="v9.9",
+            is_active=True,
+        )
+    )
+    req_id = uuid.uuid4()
+    db_session.add(
+        CvRequest(
+            id=req_id,
+            name="Hot Link",
+            email="hot@example.com",
+            message="shared with the whole team",
+            consent_given=True,
+        )
+    )
+    await db_session.commit()
+
+    # Concurrency needs a session PER request; the shared `client` fixture
+    # hands every request the same one, which cannot overlap.
+    maker = get_test_async_session()
+
+    async def fresh_session():
+        async with maker() as session:
+            yield session
+
+    app.dependency_overrides[get_db] = fresh_session
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as concurrent:
+        responses = await asyncio.gather(
+            *(
+                concurrent.get(f"{settings.api_prefix}/cv/download?req_id={req_id!s}")
+                for _ in range(10)
+            )
+        )
+    assert [r.status_code for r in responses] == [200] * 10
+
+    async with maker() as verify:
+        count = (
+            await verify.execute(select(CvRequest).where(CvRequest.id == req_id))
+        ).scalar_one()
+        events = (
+            (
+                await verify.execute(
+                    select(EngagementEvent).where(EngagementEvent.kind == "cv_download")
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert count.download_count == 10
+    assert len(events) == 10
+
+
+@pytest.mark.asyncio
 async def test_download_cv_with_invalid_req_id(client, db_session):
     import uuid
 

@@ -18,6 +18,15 @@ class Settings(BaseSettings):
     database_url: str = (
         "postgresql+asyncpg://postgres:postgres@127.0.0.1:5433/beaconfolio"
     )
+    # Connection pool (#326) — the reasoning for these numbers, and the
+    # one-connection-per-request invariant they assume, lives in
+    # `app/database.py` next to the engine they configure.
+    db_pool_size: int = 20
+    db_max_overflow: int = 40
+    # SQL statement logging. FALSE in production: this was a hard-coded
+    # `echo=True` (#326), which logged every statement AND every bound
+    # parameter set of every request.
+    db_echo: bool = False
     ollama_url: str = "http://localhost:11434"
     embedding_model: str = "nomic-embed-text"
     embedding_dimensions: int = 768  # nomic-embed-text uses 768 dimensions
@@ -83,6 +92,21 @@ class Settings(BaseSettings):
     # entirely. Events carry no identity data, so purging destroys no recruiter
     # record: the CvRequest / Interaction rows they point at are untouched.
     engagement_retention_days: int = 365
+    # How many analytics writes may hold a database connection AT ONCE (#326).
+    # An emit runs off the request's critical path but out of the SAME pool, so
+    # an unbounded emit count competes with request handlers for connections:
+    # measured at 300 requests / concurrency 60, the emits produced 106 pool
+    # timeouts and 106 of 300 events were lost. 4 keeps analytics to a small,
+    # explicit slice of `db_pool_size + db_max_overflow` (60) — enough for
+    # thousands of events per second, never enough to starve the request path.
+    engagement_max_concurrent_writes: int = 4
+    # Admission cap for emits WAITING on that slice. Reaching it means the
+    # database cannot keep up with a burst; the event is dropped, counted and
+    # logged (see `app.services.engagement.dropped_event_count`) rather than
+    # queued without bound, because unbounded queueing turns a traffic spike
+    # into memory growth. 1000 is far above any burst this backend serves — the
+    # #326 reproduction peaked at 60 pending — so in practice nothing drops.
+    engagement_max_pending_events: int = 1000
     # The language recruiter messages are translated INTO (ISO 639-1).
     owner_language: str = "en"
     admin_email: str = "admin@beaconfolio.com"

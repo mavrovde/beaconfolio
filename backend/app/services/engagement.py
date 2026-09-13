@@ -16,6 +16,15 @@ ORM object in the caller's identity map, so the caller's next attribute read
 in an async context: ``MissingGreenlet``, and a 500 on a request that had
 already succeeded. Owning the session makes the isolation structural instead of
 asking every call site to remember it.
+
+AND ITS OWN SESSION IS A SECOND POOL CONNECTION (#326), which is why the emits
+are BOUNDED. Unbounded, they compete with request handlers for the same pool:
+measured on `/cv/download`, 300 requests at concurrency 60 produced 106
+`QueuePool limit … connection timed out` failures, 106 of 300 events silently
+lost — and the requests still returned 200, so nothing surfaced it. At most
+``engagement_max_concurrent_writes`` emits now hold a connection at a time, and
+an emit that finds ``engagement_max_pending_events`` already waiting is dropped,
+COUNTED and logged rather than queued without bound. Loss is never silent.
 """
 
 import asyncio
@@ -39,6 +48,53 @@ from app.services.email import email_service
 # ``recent_events``). The event itself stores no identity data — the label is
 # read back from the record it points at, at render time, for the admin only.
 _CV_KINDS = ("cv_request", "cv_download")
+
+#: Emits currently holding OR waiting for a database connection (#326). Read
+#: and written only from the event loop, so a plain int is the whole
+#: synchronisation story — no lock, no race.
+_pending_writes = 0
+#: Emits refused because `_pending_writes` was already at the cap. Cumulative
+#: for the life of the process; every increment is logged as it happens.
+_dropped_events = 0
+#: Created on first use so the bound tracks the setting even when a test
+#: overrides it (a module-level Semaphore would freeze the value at import).
+_write_slots: asyncio.Semaphore | None = None
+_write_slots_bound: int | None = None
+
+
+def dropped_event_count() -> int:
+    """How many events this process refused to record because of backpressure.
+
+    Non-zero means the database could not keep up with a burst and analytics is
+    UNDER-reporting by exactly this much — the number that turns silent loss
+    into a countable fact. Every drop is also logged at WARNING as it happens.
+    """
+    return _dropped_events
+
+
+def reset_write_budget() -> None:
+    """Drop the semaphore and the counters. Test helper.
+
+    pytest-asyncio gives each test its own event loop, and an
+    ``asyncio.Semaphore`` that has waiters on a closed loop is useless to the
+    next one; resetting between tests keeps the budget per-test instead of
+    per-process.
+    """
+    global _write_slots, _write_slots_bound, _pending_writes, _dropped_events
+    _write_slots = None
+    _write_slots_bound = None
+    _pending_writes = 0
+    _dropped_events = 0
+
+
+def _slots() -> asyncio.Semaphore:
+    """The shared write budget, rebuilt when the configured bound changes."""
+    global _write_slots, _write_slots_bound
+    bound = settings.engagement_max_concurrent_writes
+    if _write_slots is None or _write_slots_bound != bound:
+        _write_slots = asyncio.Semaphore(bound)
+        _write_slots_bound = bound
+    return _write_slots
 
 
 async def record_event(
@@ -73,21 +129,44 @@ async def record_event(
     ASGI transport drains tasks before returning), so this does not trade
     latency for a flaky test — pinned by
     ``test_every_emission_is_scheduled_not_awaited``.
+
+    BOUNDED (#326): the connection is taken under a semaphore of
+    ``engagement_max_concurrent_writes`` slots, so however many visitors arrive
+    at once, analytics can hold only that many of the pool's connections and
+    the request path keeps the rest. Waiting for a slot costs the visitor
+    nothing — this already runs after the response — but waiting *without
+    bound* would cost memory, so an emit arriving with
+    ``engagement_max_pending_events`` already in flight is dropped, counted
+    (``dropped_event_count``) and logged instead.
     """
+    global _pending_writes, _dropped_events
     if kind not in ENGAGEMENT_KINDS:
         raise ValueError(f"Unknown engagement kind '{kind}'")
     if not settings.engagement_analytics_enabled:
         return False
+    if _pending_writes >= settings.engagement_max_pending_events:
+        _dropped_events += 1
+        logger.warning(
+            f"Dropped engagement event '{kind}': "
+            f"{_pending_writes} writes already pending "
+            f"(cap {settings.engagement_max_pending_events}); "
+            f"{_dropped_events} dropped so far"
+        )
+        return False
+    _pending_writes += 1
     try:
-        async with app.database.async_session() as session:
-            session.add(
-                EngagementEvent(kind=kind, subject_id=subject_id, payload=payload)
-            )
-            await session.commit()
+        async with _slots():
+            async with app.database.analytics_session() as session:
+                session.add(
+                    EngagementEvent(kind=kind, subject_id=subject_id, payload=payload)
+                )
+                await session.commit()
         return True
     except Exception as e:
         logger.error(f"Failed to record engagement event '{kind}': {e}")
         return False
+    finally:
+        _pending_writes -= 1
 
 
 def _zero_counts() -> dict[str, int]:

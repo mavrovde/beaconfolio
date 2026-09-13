@@ -5,7 +5,9 @@ countable occurrence: ``CvRequest.download_count`` cannot produce a per-week
 trend, which is the whole reason the event table exists.
 """
 
+import asyncio
 import uuid
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -14,6 +16,7 @@ import pytest
 from fastapi import BackgroundTasks
 from httpx import AsyncClient
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.config import settings
 from app.models.cv_document import CvDocument
@@ -139,6 +142,194 @@ async def test_a_failed_recording_leaves_the_callers_session_usable(db_session):
 
     # Not expired: readable without emitting a reload the caller cannot await.
     assert cv_request.name == "Rita Recruiter"
+
+
+# --- connection budget (#326) ------------------------------------------------
+#
+# The emit runs WHILE the request that scheduled it still holds its own
+# connection (a background task is part of the ASGI cycle), so an emit drawing
+# from the REQUEST pool means one request wants two connections. Measured on
+# `/cv/download`, 300 requests at concurrency 60: 106 `QueuePool limit …
+# connection timed out`, 106 of 300 events lost, every request still 200.
+
+
+@pytest.mark.asyncio
+async def test_emit_never_draws_from_the_request_pool(db_session, monkeypatch):
+    """At the SEAM: which factory does the emit open its session from?
+
+    Asserting on the written row cannot see this — the row is identical either
+    way — so spy on the two factories and assert which one was CALLED.
+    """
+    import app.database
+    from conftest import get_test_async_session
+
+    used: list[str] = []
+    real = get_test_async_session()
+
+    def request_pool(*args, **kwargs):
+        used.append("request")
+        return real(*args, **kwargs)
+
+    def analytics_pool(*args, **kwargs):
+        used.append("analytics")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(app.database, "async_session", request_pool)
+    monkeypatch.setattr(app.database, "analytics_session", analytics_pool)
+
+    assert await engagement.record_event("cv_request") is True
+    assert used == ["analytics"]
+
+
+@pytest.mark.asyncio
+async def test_emits_land_while_every_request_connection_is_in_use(
+    db_session, monkeypatch
+):
+    """The starvation shape itself, on REAL pools.
+
+    The request pool is exhausted (its only connection is held, as an in-flight
+    request would) and six emits arrive at once. They must all be written.
+    Sharing the pool here is not merely slower — it deadlocks: the connection
+    is held by something that is waiting for the emits, so every emit burns its
+    `pool_timeout` and returns False.
+    """
+    import app.database
+    from conftest import _test_database_url
+
+    url = _test_database_url()
+    request_engine = create_async_engine(
+        url, pool_size=1, max_overflow=0, pool_timeout=2, echo=False
+    )
+    analytics_engine = create_async_engine(
+        url, pool_size=2, max_overflow=0, pool_timeout=2, echo=False
+    )
+    monkeypatch.setattr(
+        app.database,
+        "async_session",
+        async_sessionmaker(request_engine, expire_on_commit=False),
+    )
+    monkeypatch.setattr(
+        app.database,
+        "analytics_session",
+        async_sessionmaker(analytics_engine, expire_on_commit=False),
+    )
+    try:
+        async with request_engine.connect():  # the pool is now empty
+            results = await asyncio.gather(
+                *(engagement.record_event("cv_download") for _ in range(6))
+            )
+        assert results == [True] * 6
+    finally:
+        await request_engine.dispose()
+        await analytics_engine.dispose()
+
+    rows = (await db_session.execute(select(EngagementEvent))).scalars().all()
+    assert len(rows) == 6
+
+
+@pytest.mark.asyncio
+async def test_concurrent_emits_never_exceed_the_configured_budget(
+    db_session, monkeypatch
+):
+    """Analytics holds at most `engagement_max_concurrent_writes` connections.
+
+    Unbounded, ten simultaneous emits hold ten connections; the bound is what
+    keeps that slice small enough that the request path always has room.
+    """
+    import app.database
+    from conftest import get_test_async_session
+
+    monkeypatch.setattr(settings, "engagement_max_concurrent_writes", 2)
+    engagement.reset_write_budget()
+    real = get_test_async_session()
+    live = 0
+    peak = 0
+
+    @asynccontextmanager
+    async def counting_session():
+        nonlocal live, peak
+        live += 1
+        peak = max(peak, live)
+        try:
+            async with real() as session:
+                yield session
+        finally:
+            live -= 1
+
+    monkeypatch.setattr(app.database, "analytics_session", counting_session)
+
+    results = await asyncio.gather(
+        *(engagement.record_event("cv_download") for _ in range(10))
+    )
+    assert results == [True] * 10
+    assert peak <= 2
+    rows = (await db_session.execute(select(EngagementEvent))).scalars().all()
+    assert len(rows) == 10
+
+
+@pytest.mark.asyncio
+async def test_emits_beyond_the_pending_cap_are_dropped_counted_and_logged(
+    db_session, monkeypatch
+):
+    """Backpressure, not unbounded queueing — and never SILENT loss.
+
+    One write slot is held open, so the third and fourth emits arrive with the
+    pending cap already reached. They are refused, counted and logged; the two
+    admitted ones still land.
+    """
+    import app.database
+    from conftest import get_test_async_session
+
+    monkeypatch.setattr(settings, "engagement_max_concurrent_writes", 1)
+    monkeypatch.setattr(settings, "engagement_max_pending_events", 2)
+    engagement.reset_write_budget()
+    real = get_test_async_session()
+    gate = asyncio.Event()
+
+    @asynccontextmanager
+    async def gated_session():
+        await gate.wait()
+        async with real() as session:
+            yield session
+
+    monkeypatch.setattr(app.database, "analytics_session", gated_session)
+
+    with patch("app.services.engagement.logger") as log:
+        tasks = [
+            asyncio.create_task(engagement.record_event("cv_download"))
+            for _ in range(4)
+        ]
+        await asyncio.sleep(0.05)  # let all four reach their decision point
+        gate.set()
+        results = await asyncio.gather(*tasks)
+
+        assert results == [True, True, False, False]
+        assert engagement.dropped_event_count() == 2
+        assert log.warning.call_count == 2
+        message = log.warning.call_args.args[0]
+        assert "Dropped engagement event 'cv_download'" in message
+        assert "2 dropped so far" in message
+
+    rows = (await db_session.execute(select(EngagementEvent))).scalars().all()
+    assert len(rows) == 2
+
+
+def test_pool_sizes_are_explicit_and_sql_echo_is_off():
+    """The engines' sizing comes from settings, not from literals nobody chose,
+    and `echo` is OFF — it was a hard-coded `echo=True` in production (#326)."""
+    import app.database
+
+    assert settings.db_echo is False
+    assert app.database.engine.echo is False
+    assert app.database.engine.pool.size() == settings.db_pool_size
+    assert app.database.engine.pool._max_overflow == settings.db_max_overflow
+    # Analytics is a SEPARATE pool, hard-capped at the emit budget.
+    assert app.database.analytics_engine is not app.database.engine
+    assert (
+        app.database.analytics_engine.pool.size()
+        == settings.engagement_max_concurrent_writes
+    )
+    assert app.database.analytics_engine.pool._max_overflow == 0
 
 
 # --- aggregation -------------------------------------------------------------

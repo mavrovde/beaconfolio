@@ -48,6 +48,22 @@ def _reset_rate_limiters():
 
 
 @pytest.fixture(autouse=True)
+def _reset_analytics_write_budget():
+    """Reset the analytics write budget between tests (#326).
+
+    The emit semaphore and the pending/dropped counters are module-level. Each
+    test gets its own event loop, so a semaphore carrying waiters from a closed
+    loop — or a leftover pending count — would make the next test's budget
+    depend on the previous one's.
+    """
+    from app.services.engagement import reset_write_budget
+
+    reset_write_budget()
+    yield
+    reset_write_budget()
+
+
+@pytest.fixture(autouse=True)
 def mock_embedding_global(mocker):
     """Global mock for embeddings to prevent external API calls during tests."""
     val = [0.1] * 768
@@ -100,6 +116,10 @@ def _redirect_background_sessions(monkeypatch):
     from conftest import get_test_async_session
 
     monkeypatch.setattr(app.database, "async_session", get_test_async_session())
+    # The analytics side-writes have their OWN pool (#326) and therefore their
+    # own factory; it needs the same redirect or every emitted event in the
+    # suite would land in the DEV database.
+    monkeypatch.setattr(app.database, "analytics_session", get_test_async_session())
     # Modules that imported the name directly get the same redirect.
     import app.services.translation
 
