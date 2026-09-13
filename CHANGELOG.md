@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **Reviews must run on a rebased branch, and one PR at a time (owner directive 2026-09-13)** —
+  rule 13 and the `pr-reviewer` charter now require `git fetch origin main && git rebase
+  origin/main` plus a `MERGEABLE` / zero-commits-behind check *before* a verdict is requested, and
+  the reviewer hands a stale branch straight back in one line instead of spending a full analysis
+  to report "rebase first". Measured cost of not doing this in the v1.14.1 cycle: **five review
+  rounds** consumed by stale-base findings alone (#357 r1, #364 r1, #365 r1, and a blocker each in
+  #366 and #367). A stale review is also misleading — it clears code against a base that will
+  never merge. Batching several PRs into one review run is likewise forbidden: verdicts arrive
+  late and together, and fixes for the first cannot start until the last is analysed.
+- **`scripts/dedup_changelog_unreleased.py`** — merging two `[Unreleased]` sections duplicates
+  headings *and* entries independently, so a heading-only check passes while entries are doubled.
+  That shipped to review twice (#354, #362) and cost a round each; the helper is now committed
+  with the verification one-liner beside it.
+
 ### Security
 - **Open redirect in the CV download link, closed at its source (#376)** — `getDownloadUrl` returned
   any absolute URL from the API response verbatim into `window.open`. **Two earlier attempts at this

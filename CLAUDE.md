@@ -101,6 +101,7 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
 | hook | `pre-merge-gate.sh` | PreToolUse Bash: refuses `gh pr merge` without an APPROVE verdict, with an APPROVE that predates the head, or with `Closes #NN` against unticked criteria (rule 13 enforced, not asked) |
 | hook | `guard-stack-resources.sh` | PreToolUse Bash: free-disk floor + ONE Docker compose project before any `up`/`build`/`run`/`pull` (v1.14.0 retro — three parallel stacks crashed the daemon) |
 | hook | `hook-parse-lib.sh` | the ONE quote-aware command-parsing model, sourced by all four hooks (#237) |
+| lint | `scripts/dedup_changelog_unreleased.py` | run after ANY rebase touching `CHANGELOG.md`: merges duplicated `[Unreleased]` sections into Keep-a-Changelog order AND drops repeated entries — a heading-only check passes while entries are doubled (v1.14.1: cost a review round on #354 and #362) |
 | lint | `scripts/check_compose_env.sh` | every documented `Settings` knob must reach the backend container in BOTH compose files — pre-push + CI (v1.13.0 retro; #296/#297/#298 each shipped this bug) |
 | lint | `scripts/run_frontend_suites.sh` | runs the Vitest projects independently and retries ONCE on the worker-teardown race (present on 4.x AND 5.x, #309); replaces `npm test` in the pre-push gate AND wraps each frontend job in CI (#319) |
 | lint | `scripts/check_live_freshness.test.sh` | self-test for the one live-vs-released verdict script shared by Live Freshness + the post-rollout gate; pins the 3-way verdict and staleness-beats-outage precedence — pre-push + CI (#280) |
@@ -290,6 +291,21 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
     one was ever merged without it, post a retrospective review and fix-forward on any finding.
     (`pr-reviewer` posts a `gh pr review`/`gh pr comment` verdict; same-identity `--approve` may be
     blocked, so a clear COMMENT verdict counts.)
+
+    **REBASE BEFORE YOU REQUEST A REVIEW, and request ONE PR per review.** (Owner directive
+    2026-09-13: *"Never starting review before rebase and pulling the code from main branch, this
+    unacceptable spending resources"*, and *"Never use the review agent for multiple PRs — one for
+    one PR"*.) Before asking for any verdict: `git fetch origin main && git rebase origin/main`,
+    resolve, confirm `gh pr view <N> --json mergeable` is `MERGEABLE` and
+    `git rev-list --count <head>..origin/main` is **0**. A review of a stale branch is wasted
+    twice over — it burns a full analysis to produce "rebase first" as its blocker, and it clears
+    code against a base that will never merge. **Measured in the v1.14.1 cycle: five review rounds
+    lost to stale-base findings alone** (#357 r1, #364 r1, #365 r1, plus a blocker each in #366 and
+    #367). The reviewer now checks this first and hands a stale branch straight back. The same
+    applies to the `[Unreleased]` CHANGELOG section, which is where these collisions land: after
+    any rebase, verify one heading per category and that the branch adds only its own bullets —
+    merging two `[Unreleased]` sections duplicates *headings* and *entries* independently, and a
+    heading-only check will pass while entries are doubled.
 
 ## Issue tracking, milestones & labels (development flow)
 

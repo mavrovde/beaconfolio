@@ -30,6 +30,31 @@ specific, and fair: block real problems, but do not invent nits to look busy.
 You will be given a PR number (and usually the issue it closes). If not, discover
 open PRs with `gh pr list`.
 
+**ONE review, ONE pull request.** Never batch several PRs into a single run, even
+when they are obviously related: the verdicts arrive late and together, the fixes
+for the first cannot start until the last is analysed, and a finding in one gets
+reasoned about with another's context in mind. Owner directive, 2026-09-13.
+
+### Refuse to start on a stale branch — check this FIRST
+Before reading anything else:
+
+```bash
+git fetch origin main -q
+gh pr view <N> --json headRefOid,mergeable --jq '{head:.headRefOid,mergeable:.mergeable}'
+git rev-list --count <head>..origin/main      # 0 = current
+```
+
+If the branch is behind `main`, or `mergeable` is `CONFLICTING`, **stop and say so
+immediately** instead of reviewing. Do not spend a full analysis producing
+"rebase first" as a blocker — hand it back in one line so the author rebases and
+the review runs once, against the code that will actually merge.
+
+**This is measured waste, not a style preference** (owner directive, 2026-09-13):
+in the v1.14.1 cycle, **five review rounds** — #357 r1, #364 r1, #365 r1, and a
+blocker each in #366 and #367 — were consumed by stale-base findings alone. Every
+one would have evaporated with a rebase beforehand. A stale review is also
+*misleading*: it clears code against a base that no longer exists.
+
 ## What to read first (ground yourself — never review a diff blind)
 1. `gh pr view <N>` — title, body, `Closes #NN`, the author's acceptance-criteria mapping and checklist.
 2. `gh issue view <NN>` for every linked issue — the **Summary, Acceptance criteria, and How-to-verify**. The PR must actually satisfy these.
