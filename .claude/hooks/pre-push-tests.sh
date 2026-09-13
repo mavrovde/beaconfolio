@@ -1,11 +1,22 @@
 #!/usr/bin/env bash
 # Pre-push gate for Beaconfolio.
 #
-# Runs a full local check round — docs + backend pytest + backend lint/type
-# (ruff + mypy) + frontend unit tests — and BLOCKS a `git push` if anything
-# fails. It self-gates by inspecting the
-# PreToolUse tool-call JSON on stdin, so it returns "allow" instantly for every
-# Bash command that is not a git push (never interferes with normal work).
+# Runs a local check round — docs + backend pytest + backend lint/type
+# (ruff + mypy + bandit) + frontend unit tests + the repo-contract lints and
+# hook self-tests — and BLOCKS a `git push` if anything fails. It self-gates by
+# inspecting the PreToolUse tool-call JSON on stdin, so it returns "allow"
+# instantly for every Bash command that is not a git push (never interferes
+# with normal work).
+#
+# SCOPED TO THE DIFF (#377). The round used to run EVERY leg on EVERY push, so
+# a two-file docs commit paid 11m44s (measured) for suites its diff could not
+# touch; it now costs 13s.
+# The legs are now selected from `git diff --name-only @{push}..HEAD` via
+# .claude/hooks/prepush-select-lib.sh. Read that file's header before touching
+# the mapping — the polarity (unmapped path / unobtainable diff / unknown
+# branch ⇒ run EVERYTHING) is the whole safety argument. main, release/* and
+# PREPUSH_FULL=1 always run the full round; the PII/de-brand guard always runs.
+# CI (deploy.yml) is untouched and still runs every leg on every push.
 #
 # COMMAND-POSITION AWARE (#237): "is this a push?" is decided by parsing, not
 # by substring. The old matcher (*"git push"*) treated quoted PROSE as a
@@ -31,6 +42,14 @@ set -uo pipefail
 #   PREPUSH_RUN_RUFF       1/0 — within the lint leg, run `ruff check .` + `ruff format --check .`
 #   PREPUSH_RUN_MYPY       1/0 — within the lint leg, run `mypy app --ignore-missing-imports`
 #   PREPUSH_RUN_FRONTEND   1/0 — run frontend shared/public/admin unit tests
+#   PREPUSH_RUN_BANDIT     1/0 — within the lint leg, run `bandit -r app -ll --skip B101`
+#   PREPUSH_FULL           1/0 — force the FULL round regardless of the diff
+#                          (#377). The escape hatch when you distrust the
+#                          mapping; main/release branches force it anyway.
+#   PREPUSH_PRINT_LEGS     1/0 — print the selected legs and exit WITHOUT
+#                          running anything and WITHOUT emitting a permission
+#                          decision. For the self-test (#377) only; like
+#                          PREPUSH_DRY_RUN it cannot be mistaken for an allow.
 #   PREPUSH_DRY_RUN        1/0 — print GATE or ALLOW (the self-gate decision)
 #                          and exit WITHOUT running any checks or emitting hook
 #                          JSON. For the self-test (#237) only.
@@ -256,32 +275,96 @@ command_is_git_push() {
 
 command_is_git_push || allow
 
-# --- From here on, this IS a real push: run the full gate. ------------------
+# --- From here on, this IS a real push: run the gate. -----------------------
 if [ "$PREPUSH_DRY_RUN" = "1" ]; then printf 'GATE\n'; exit 0; fi
 
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 LOG="$PREPUSH_LOG"
 
+# --- LEG SELECTION (#377) ---------------------------------------------------
+# Run the legs this diff can break, not all of them. The mapping, the
+# fail-closed default and the mandatory-full rules all live in
+# prepush-select-lib.sh; read its header before changing anything here.
+#
+# POLARITY, restated where it is easy to break: every path out of this block
+# that is not a confident narrow selection must end in `ALL`. A push whose
+# range cannot be computed, a branch that cannot be named, a path nobody
+# mapped — all of them run everything.
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/prepush-select-lib.sh"
+
+SELECT_REASON=""
+BRANCH="$(git -C "$ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || printf '')"
+if FULL_REASON="$(prepush_force_full_reason "$BRANCH" "$CMD")"; then
+  LEGS=" ALL "
+  SELECT_REASON="FULL — $FULL_REASON"
+else
+  if CHANGED="$(prepush_changed_files "$ROOT")"; then
+    LEGS="$(printf '%s\n' "$CHANGED" | prepush_select_legs)"
+    if [ "$LEGS" = " ALL " ]; then
+      SELECT_REASON="FULL — the diff touches an unmapped path (or is empty); fail closed"
+    else
+      SELECT_REASON="scoped to $(printf '%s\n' "$CHANGED" | grep -c '[^[:space:]]') changed file(s) on $BRANCH"
+    fi
+  else
+    LEGS=" ALL "
+    SELECT_REASON="FULL — the changed-file list could not be computed; fail closed"
+  fi
+fi
+
+LEGS_PRETTY="$(printf '%s' "$LEGS" | sed -E 's/^ +//; s/ +$//')"
+
+# Is this leg selected? `ALL` answers yes to everything.
+leg() {
+  case "$LEGS" in
+    *" ALL "*)   return 0 ;;
+    *" $1 "*)    return 0 ;;
+  esac
+  return 1
+}
+
+# Was this leg selected BY NAME — i.e. do we positively know this area changed?
+# `ALL` means "could not tell", which is not the same as "this changed", and one
+# check below needs the distinction (see the mutation-contract comment).
+leg_exact() {
+  case "$LEGS" in
+    *" ALL "*) return 1 ;;
+    *" $1 "*)  return 0 ;;
+  esac
+  return 1
+}
+
+# Self-test seam (same shape as PREPUSH_DRY_RUN above): print the decision and
+# exit WITHOUT running any check and WITHOUT emitting a permission decision, so
+# this can never be mistaken for an allow.
+if [ "${PREPUSH_PRINT_LEGS:-0}" = "1" ]; then
+  printf '%s\n' "$LEGS_PRETTY"
+  exit 0
+fi
+
 run_checks() {
+  echo "== leg selection (#377): $SELECT_REASON =="
+  echo "== legs: $LEGS_PRETTY =="
   if [ "$PREPUSH_CHECK_DOCS" = "1" ]; then
-    echo "== docs check =="
-    grep -q "Unreleased" "$ROOT/CHANGELOG.md" || { echo "CHANGELOG.md is missing an [Unreleased] section"; return 1; }
-    test -s "$ROOT/README.md" || { echo "README.md is missing or empty"; return 1; }
-    echo "== version-consistency check (#172) =="
-    ( cd "$ROOT" && ./bump_version.sh --check ) || return 1
-    # ...and the checker's own self-test, so an edit to the version tooling fails
-    # here rather than first at deploy time (#186).
-    ( cd "$ROOT" && bash test-bump-version.sh >/dev/null ) || {
-      echo "  ✗ test-bump-version.sh failed — run 'bash test-bump-version.sh' to see which case"
-      return 1
-    }
-    # setup.sh's .env helpers hold the user's secrets file to an idempotency
-    # contract — pinned by its own self-test (#61/#256), same pattern.
+    if leg docs; then
+      echo "== docs check =="
+      grep -q "Unreleased" "$ROOT/CHANGELOG.md" || { echo "CHANGELOG.md is missing an [Unreleased] section"; return 1; }
+      test -s "$ROOT/README.md" || { echo "README.md is missing or empty"; return 1; }
+      echo "== version-consistency check (#172) =="
+      ( cd "$ROOT" && ./bump_version.sh --check ) || return 1
+      # ...and the checker's own self-test, so an edit to the version tooling fails
+      # here rather than first at deploy time (#186).
+      ( cd "$ROOT" && bash test-bump-version.sh >/dev/null ) || {
+        echo "  ✗ test-bump-version.sh failed — run 'bash test-bump-version.sh' to see which case"
+        return 1
+      }
+    fi
     # PII guard (#66): the demo-persona swap must never silently regress — plus
     # the #313 de-branding contract (the maintainer's domain must not creep back
     # onto surfaces that instruct a forker). Its self-test runs too: check B is a
     # new gate, and a gate nobody proved can fail is no gate (lessons §18).
-    if [ -f "$ROOT/scripts/check_no_pii.sh" ]; then
+    # NOT path-selectable (#377): `pii` is added to every non-empty selection,
+    # so this runs whatever changed — it is cheap and its failure mode is public.
+    if leg pii && [ -f "$ROOT/scripts/check_no_pii.sh" ]; then
       ( cd "$ROOT" && bash scripts/check_no_pii.sh >/dev/null ) || {
         echo "  ✗ check_no_pii.sh failed — run 'bash scripts/check_no_pii.sh' to see the hits"
         return 1
@@ -297,7 +380,7 @@ run_checks() {
     # a Settings key the docs promise must reach the backend container in BOTH
     # compose files. Self-test runs too — a checker nobody proved can fail is
     # indistinguishable from no checker (lessons §18).
-    if [ -f "$ROOT/scripts/check_compose_env.sh" ]; then
+    if leg compose && [ -f "$ROOT/scripts/check_compose_env.sh" ]; then
       ( cd "$ROOT" && bash scripts/check_compose_env.sh >/dev/null ) || {
         echo "  ✗ check_compose_env.sh failed — run 'bash scripts/check_compose_env.sh' to see which knob never reaches the container"
         return 1
@@ -313,13 +396,13 @@ run_checks() {
     # The CHANGELOG dedup helper REWRITES release history, so its own self-test
     # is part of the gate (#371 review: it entered the repo with no test and a
     # whitelist that silently deleted unrecognised sections).
-    if [ -f "$ROOT/scripts/dedup_changelog_unreleased.test.sh" ]; then
+    if leg dedup && [ -f "$ROOT/scripts/dedup_changelog_unreleased.test.sh" ]; then
       ( cd "$ROOT" && bash scripts/dedup_changelog_unreleased.test.sh >/dev/null ) || {
         echo "  ✗ dedup_changelog_unreleased.test.sh failed — the CHANGELOG fixer itself is broken"
         return 1
       }
     fi
-    if [ -f "$ROOT/scripts/check_live_freshness.test.sh" ]; then
+    if leg freshness && [ -f "$ROOT/scripts/check_live_freshness.test.sh" ]; then
       ( cd "$ROOT" && bash scripts/check_live_freshness.test.sh >/dev/null ) || {
         echo "  ✗ check_live_freshness.test.sh failed — the freshness checker itself is broken"
         return 1
@@ -328,7 +411,7 @@ run_checks() {
     # AI-config map drift (#246): the CLAUDE.md map is how the next contributor
     # — human or agent — learns what tooling exists. A tool added without a row,
     # or a row naming a deleted file, misleads silently. Cheap, dependency-free.
-    if [ -f "$ROOT/scripts/check_aiconfig_map.sh" ]; then
+    if leg aiconfig && [ -f "$ROOT/scripts/check_aiconfig_map.sh" ]; then
       ( cd "$ROOT" && bash scripts/check_aiconfig_map.sh >/dev/null ) || {
         echo "  ✗ check_aiconfig_map.sh failed — run it to see which tool/row drifted"
         echo "    (update the AI-config map in the SAME PR that changed the tooling)"
@@ -344,7 +427,7 @@ run_checks() {
     # single-head alone and every gate they ran was green — the fork existed only
     # in the merge, and `alembic upgrade head` then refuses to run on a backend
     # that executes it at every container start.
-    if [ -f "$ROOT/scripts/check_migration_heads.sh" ]; then
+    if leg migrations && [ -f "$ROOT/scripts/check_migration_heads.sh" ]; then
       if git -C "$ROOT" rev-parse --verify --quiet origin/main >/dev/null 2>&1; then
         ( cd "$ROOT" && bash scripts/check_migration_heads.sh --against origin/main >/dev/null ) || {
           echo "  ✗ check_migration_heads.sh failed — run 'bash scripts/check_migration_heads.sh --against origin/main' to see the fork"
@@ -361,7 +444,7 @@ run_checks() {
         return 1
       }
     fi
-    if [ -f "$ROOT/setup.test.sh" ]; then
+    if leg setup && [ -f "$ROOT/setup.test.sh" ]; then
       ( cd "$ROOT" && bash setup.test.sh >/dev/null ) || {
         echo "  ✗ setup.test.sh failed — run 'bash setup.test.sh' to see which case"
         return 1
@@ -369,21 +452,40 @@ run_checks() {
     fi
   fi
 
-  if [ "$PREPUSH_RUN_GUARDTEST" = "1" ] && [ -f "$ROOT/.claude/hooks/guard-destructive.test.sh" ]; then
-    echo "== destruction-guard self-test =="
-    bash "$ROOT/.claude/hooks/guard-destructive.test.sh" || return 1
-    if [ -f "$ROOT/.claude/hooks/pre-push-tests.test.sh" ]; then
-      echo "== pre-push self-gate self-test (#237) =="
-      bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" || return 1
+  # Hook self-tests. Selected PER HOOK (#377) — except that a change to
+  # hook-parse-lib.sh selects all four, because they share that parsing model.
+  if [ "$PREPUSH_RUN_GUARDTEST" = "1" ]; then
+    if leg hook:guard-destructive && [ -f "$ROOT/.claude/hooks/guard-destructive.test.sh" ]; then
+      echo "== destruction-guard self-test =="
+      bash "$ROOT/.claude/hooks/guard-destructive.test.sh" || return 1
     fi
-    if [ -f "$ROOT/.claude/hooks/guard-stack-resources.test.sh" ]; then
+    if leg hook:pre-push-tests && [ -f "$ROOT/.claude/hooks/pre-push-tests.test.sh" ]; then
+      # --mutations ONLY when a hook actually changed. That contract is what
+      # proves this gate's own selector can go red — a selector that quietly
+      # selects NOTHING is the same anti-pattern as a check that cannot fail
+      # (lessons §18/§46) — but it costs ~100s, and MEASURED the full round went
+      # 704s -> 808s against the 900s PreToolUse timeout in .claude/settings.json.
+      # A timed-out hook does not deny, so spending that headroom in every
+      # fail-closed full round would trade a speed problem for a fail-OPEN one.
+      # `leg_exact` is the distinction: in a full round we do not know what
+      # changed, so we run the cases exactly as before #377; when the selection
+      # NAMES this hook, we additionally run the mutation contract.
+      if leg_exact hook:pre-push-tests; then
+        echo "== pre-push self-gate + leg-selection self-test + mutation contract (#237/#377) =="
+        bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" --mutations || return 1
+      else
+        echo "== pre-push self-gate + leg-selection self-test (#237/#377) =="
+        bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" || return 1
+      fi
+    fi
+    if leg hook:guard-stack-resources && [ -f "$ROOT/.claude/hooks/guard-stack-resources.test.sh" ]; then
       # --mutations for the same reason as the merge gate below: this guard's
       # value is entirely in the denies, and a guard nobody proved can deny is
       # documentation (lessons §18).
       echo "== stack-resource guard self-test + mutation contract =="
       bash "$ROOT/.claude/hooks/guard-stack-resources.test.sh" --mutations || return 1
     fi
-    if [ -f "$ROOT/.claude/hooks/pre-merge-gate.test.sh" ]; then
+    if leg hook:pre-merge-gate && [ -f "$ROOT/.claude/hooks/pre-merge-gate.test.sh" ]; then
       # --mutations is the point: the FIRST version of that self-test passed
       # 14/14 against a gate whose blocking had been removed. Running the cases
       # without the mutation contract would repeat exactly that.
@@ -392,7 +494,7 @@ run_checks() {
     fi
   fi
 
-  if [ "$PREPUSH_RUN_BACKEND" = "1" ]; then
+  if [ "$PREPUSH_RUN_BACKEND" = "1" ] && leg backend; then
     echo "== backend pytest =="
     # ISOLATION, not arbitration (2026-09-06). This gate used to run SERIALLY against
     # the shared `test_beaconfolio` and refuse to start whenever any other pytest was
@@ -419,8 +521,8 @@ run_checks() {
         ./venv/bin/pytest -q -n auto --cov-fail-under=100 ) || return 1
   fi
 
-  if [ "$PREPUSH_RUN_LINT" = "1" ]; then
-    echo "== backend lint/type (ruff + mypy) =="
+  if [ "$PREPUSH_RUN_LINT" = "1" ] && leg lint; then
+    echo "== backend lint/type (ruff + mypy + bandit) =="
     if [ "$PREPUSH_RUN_RUFF" = "1" ]; then
       echo "-- ruff check --"
       ( cd "$ROOT/backend" && ./venv/bin/ruff check . ) || return 1
@@ -431,30 +533,54 @@ run_checks() {
       echo "-- mypy --"
       ( cd "$ROOT/backend" && ./venv/bin/mypy app --ignore-missing-imports --no-error-summary ) || return 1
     fi
+    # bandit, exactly as deploy.yml:101 runs it (#377 mapping). Seconds, and it
+    # is the one CI backend leg this gate never mirrored — a backend push could
+    # be locally green and fail CI on a security finding.
+    if [ "${PREPUSH_RUN_BANDIT:-1}" = "1" ] && [ -x "$ROOT/backend/venv/bin/bandit" ]; then
+      echo "-- bandit --"
+      ( cd "$ROOT/backend" && ./venv/bin/bandit -r app -ll --skip B101 -q ) || return 1
+    fi
   fi
 
-  if [ "$PREPUSH_RUN_FRONTEND" = "1" ]; then
-    echo "== frontend cd-safety (zoneless repaint hazards, #118) =="
-    ( cd "$ROOT/frontend" && node scripts/check-cd-safety.mjs ) || return 1
-    echo "== frontend tests (shared + public + admin) =="
-    # NOT `npm test`: that chains the three projects with `&&`, so ONE project's
-    # failure hides the other two — and twice in v1.13.0 a Vitest worker-
-    # teardown race (`Closing rpc while "onUserConsoleLog" is pending`, upstream
-    # vitest-dev/vitest#8649/#9872) hard-failed this gate with 337/337 tests
-    # PASSING, aborting before `admin` ran at all — once while pushing a release
-    # tag. The runner below runs every project, and retries a project exactly
-    # ONCE when the output carries that signature AND reports zero failed tests.
-    # A real failure is never retried and always denies (see its self-test).
-    ( cd "$ROOT" && bash scripts/run_frontend_suites.sh ) || return 1
-    ( cd "$ROOT" && bash scripts/run_frontend_suites.test.sh >/dev/null ) || {
-      echo "  ✗ run_frontend_suites.test.sh failed — the frontend runner's own retry contract is broken"
-      return 1
-    }
+  if [ "$PREPUSH_RUN_FRONTEND" = "1" ] && { leg fe:cdsafety || leg fe:shared || leg fe:public || leg fe:admin || leg fe:runner; }; then
+    if leg fe:cdsafety; then
+      echo "== frontend cd-safety (zoneless repaint hazards, #118) =="
+      ( cd "$ROOT/frontend" && node scripts/check-cd-safety.mjs ) || return 1
+    fi
+    # PER-PROJECT selection (#377): a projects/public/** change must not pay for
+    # `admin`. `shared` is upstream of both apps, so a change there selects all
+    # three — see prepush-select-lib.sh.
+    FE_PROJECTS=""
+    leg fe:shared && FE_PROJECTS="$FE_PROJECTS shared"
+    leg fe:public && FE_PROJECTS="$FE_PROJECTS public"
+    leg fe:admin  && FE_PROJECTS="$FE_PROJECTS admin"
+    FE_PROJECTS="${FE_PROJECTS# }"
+    if [ -n "$FE_PROJECTS" ]; then
+      echo "== frontend tests ($FE_PROJECTS) =="
+      # NOT `npm test`: that chains the three projects with `&&`, so ONE project's
+      # failure hides the other two — and twice in v1.13.0 a Vitest worker-
+      # teardown race (`Closing rpc while "onUserConsoleLog" is pending`, upstream
+      # vitest-dev/vitest#8649/#9872) hard-failed this gate with 337/337 tests
+      # PASSING, aborting before `admin` ran at all — once while pushing a release
+      # tag. The runner runs every SELECTED project, and retries a project exactly
+      # ONCE when the output carries that signature AND reports zero failed tests.
+      # A real failure is never retried and always denies (see its self-test).
+      # FRONTEND_PROJECTS is the runner's own documented knob — CI passes it too
+      # (one project per job, #319), so this is the supported narrowing, not a
+      # new code path.
+      ( cd "$ROOT" && FRONTEND_PROJECTS="$FE_PROJECTS" bash scripts/run_frontend_suites.sh ) || return 1
+    fi
+    if leg fe:runner; then
+      ( cd "$ROOT" && bash scripts/run_frontend_suites.test.sh >/dev/null ) || {
+        echo "  ✗ run_frontend_suites.test.sh failed — the frontend runner's own retry contract is broken"
+        return 1
+      }
+    fi
   fi
 }
 
 if run_checks >"$LOG" 2>&1; then
   allow
 else
-  deny "Pre-push checks FAILED (docs / backend pytest / backend lint+type ruff+mypy / frontend tests). See $LOG. Configure via env: PREPUSH_RUN_BACKEND, PREPUSH_RUN_LINT, PREPUSH_RUN_RUFF, PREPUSH_RUN_MYPY, PREPUSH_RUN_FRONTEND, PREPUSH_CHECK_DOCS, TEST_DATABASE_URL."
+  deny "Pre-push checks FAILED. Legs run this push: $LEGS_PRETTY ($SELECT_REASON). See $LOG. Force the full round with PREPUSH_FULL=1; configure via env: PREPUSH_RUN_BACKEND, PREPUSH_RUN_LINT, PREPUSH_RUN_RUFF, PREPUSH_RUN_MYPY, PREPUSH_RUN_BANDIT, PREPUSH_RUN_FRONTEND, PREPUSH_CHECK_DOCS, TEST_DATABASE_URL."
 fi

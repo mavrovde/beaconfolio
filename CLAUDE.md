@@ -96,11 +96,12 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
 | skill | `e2e-validation` | the E2E loop + its traps, for agents (#117) |
 | skill | `env-gotchas` | macOS/BSD/gh platform pitfalls (#119) |
 | skill | `ssr-cd-safety` | zoneless repaint + SSR HTTP contract (#118) |
-| hook | `pre-push-tests.sh` | PreToolUse Bash: docs + backend + frontend gates before every real `git push` (command-position aware, #237) |
+| hook | `pre-push-tests.sh` | PreToolUse Bash: docs + backend + frontend gates before every real `git push` (command-position aware, #237), SCOPED TO THE DIFF since #377 — main/`release/*`/`PREPUSH_FULL=1` still run everything |
 | hook | `guard-destructive.sh` | PreToolUse Bash: blocks irreversible local/infra destruction (rule 9) |
 | hook | `pre-merge-gate.sh` | PreToolUse Bash: refuses `gh pr merge` without an APPROVE verdict, with an APPROVE that predates the head, or with `Closes #NN` against unticked criteria (rule 13 enforced, not asked) |
 | hook | `guard-stack-resources.sh` | PreToolUse Bash: free-disk floor + ONE Docker compose project before any `up`/`build`/`run`/`pull` (v1.14.0 retro — three parallel stacks crashed the daemon) |
 | hook | `hook-parse-lib.sh` | the ONE quote-aware command-parsing model, sourced by all four hooks (#237) |
+| hook | `prepush-select-lib.sh` | the diff→leg map the pre-push gate selects with; the default arm, an empty diff and an unobtainable range all select ALL, and every rule is killed by `pre-push-tests.test.sh --mutations` (#377) |
 | tooling | `scripts/dedup_changelog_unreleased.py` | run after ANY rebase touching `CHANGELOG.md` (via `/prep-pr` step 2): merges duplicated `[Unreleased]` sections and drops repeated ENTRIES — a heading-only check passes while entries are doubled (#354/#362 each cost a round). Never loses content: unrecognised headings, preamble text and fenced code are preserved; self-test in the pre-push gate |
 | lint | `scripts/check_compose_env.sh` | every documented `Settings` knob must reach the backend container in BOTH compose files — pre-push + CI (v1.13.0 retro; #296/#297/#298 each shipped this bug) |
 | lint | `scripts/run_frontend_suites.sh` | runs the Vitest projects independently and retries ONCE on the worker-teardown race (present on 4.x AND 5.x, #309); replaces `npm test` in the pre-push gate AND wraps each frontend job in CI (#319) |
@@ -122,8 +123,21 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
   telemetry, incidents) into edits to the charters/skills/hooks themselves.
 - **Hooks** (`.claude/hooks/`, via committed `.claude/settings.json`, all `PreToolUse Bash`):
   `pre-push-tests.sh` runs docs + backend pytest + backend lint/type (ruff check + ruff format --check
-  + mypy) + frontend tests before every `git push` (env-configurable: `PREPUSH_RUN_LINT`/
-  `PREPUSH_RUN_RUFF`/`PREPUSH_RUN_MYPY` …, self-gating); `guard-destructive.sh` blocks irreversible
+  + mypy + bandit) + frontend tests before every `git push` (env-configurable: `PREPUSH_RUN_LINT`/
+  `PREPUSH_RUN_RUFF`/`PREPUSH_RUN_MYPY`/`PREPUSH_RUN_BANDIT` …, self-gating). Since **#377 it runs only
+  the legs the DIFF can break**, selected by `.claude/hooks/prepush-select-lib.sh` from
+  `git diff --name-only @{push}..HEAD` (falling back to `@{upstream}`, then to
+  merge-base(`origin/main`)): measured on one machine, a docs-only push went **11m44s → 13s**, a
+  backend-only push **11m44s → 1m21s**, and a `projects/public/**` push **11m44s → 15s**; a push to a
+  protected branch stays the full round (11m11s, unchanged within noise).
+  The polarity is the whole design — an unmapped path, an empty or unobtainable diff, an unnameable
+  branch, `main`, any `release/*` and `PREPUSH_FULL=1` all run EVERYTHING, and the PII/de-brand guard
+  is never selectable away. Frontend selection is per Vitest project (`projects/shared/**` fans out to
+  all three because both apps consume it; `projects/public/**` never runs `admin`), and a change to
+  `hook-parse-lib.sh` runs all four hook self-tests. **CI is unchanged and still runs every leg.**
+  `pre-push-tests.test.sh --mutations` neuters one selection rule at a time — including "select
+  nothing at all" — and requires the cases to go red, because a selector that silently selects
+  nothing would pass every "X must not be selected" case; `guard-destructive.sh` blocks irreversible
   local/infra destruction (rule 9) — bypass one command with `GUARD_DESTRUCTIVE=0`;
   `guard-stack-resources.sh` refuses a `docker compose up`/`build`/`run`/`pull` below a free-disk
   floor (`DOCKER_DISK_FLOOR_GB`, default 5) or one that would start a SECOND compose project beside a
