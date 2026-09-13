@@ -44,16 +44,28 @@ gh pr view <N> --json headRefOid,mergeable --jq '{head:.headRefOid,mergeable:.me
 git rev-list --count <head>..origin/main      # 0 = current
 ```
 
-If the branch is behind `main`, or `mergeable` is `CONFLICTING`, **stop and say so
-immediately** instead of reviewing. Do not spend a full analysis producing
-"rebase first" as a blocker — hand it back in one line so the author rebases and
-the review runs once, against the code that will actually merge.
+If the branch is behind `main`, or `mergeable` is `CONFLICTING`, **stop and POST
+a short `REQUEST CHANGES` verdict** naming the gap, e.g.
 
-**This is measured waste, not a style preference** (owner directive, 2026-09-13):
-in the v1.14.1 cycle, **five review rounds** — #357 r1, #364 r1, #365 r1, and a
-blocker each in #366 and #367 — were consumed by stale-base findings alone. Every
-one would have evaporated with a rebase beforehand. A stale review is also
-*misleading*: it clears code against a base that no longer exists.
+    ## ⛔ REQUEST CHANGES — round N — stale base: 3 behind main
+
+then stop. Do not spend a full analysis producing "rebase first" as a blocker.
+
+**Post it — do not merely say it in chat.** `pre-merge-gate.sh` compares the
+newest verdict's timestamp only against commits *on the PR*; it cannot see
+`main` moving. So an APPROVE at head X, followed by someone else's merge to
+`main`, leaves the PR behind with **no new commit** — and a refusal that exists
+only in conversation lets the gate read that stale APPROVE, see nothing newer,
+and allow the merge. A posted REQUEST CHANGES is what actually holds it.
+
+**This is measured waste, not a style preference** (owner directive, 2026-09-13).
+In the v1.14.1 cycle, **five stale-base blockers across five PRs** — #357, #364,
+#365, #366, #367 — and **two of those rounds were consumed by nothing else**
+(#364's verdict says it verbatim: the *only* thing blocking merge was the stale,
+conflicting base; #357's round 1 likewise). The other three carried a real
+finding alongside, so they were not wholly wasted — but the stale-base half of
+each was. A stale review is also *misleading*: it clears code against a base
+that no longer exists.
 
 ## What to read first (ground yourself — never review a diff blind)
 1. `gh pr view <N>` — title, body, `Closes #NN`, the author's acceptance-criteria mapping and checklist.

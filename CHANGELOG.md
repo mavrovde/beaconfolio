@@ -4,21 +4,6 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Changed
-- **Reviews must run on a rebased branch, and one PR at a time (owner directive 2026-09-13)** —
-  rule 13 and the `pr-reviewer` charter now require `git fetch origin main && git rebase
-  origin/main` plus a `MERGEABLE` / zero-commits-behind check *before* a verdict is requested, and
-  the reviewer hands a stale branch straight back in one line instead of spending a full analysis
-  to report "rebase first". Measured cost of not doing this in the v1.14.1 cycle: **five review
-  rounds** consumed by stale-base findings alone (#357 r1, #364 r1, #365 r1, and a blocker each in
-  #366 and #367). A stale review is also misleading — it clears code against a base that will
-  never merge. Batching several PRs into one review run is likewise forbidden: verdicts arrive
-  late and together, and fixes for the first cannot start until the last is analysed.
-- **`scripts/dedup_changelog_unreleased.py`** — merging two `[Unreleased]` sections duplicates
-  headings *and* entries independently, so a heading-only check passes while entries are doubled.
-  That shipped to review twice (#354, #362) and cost a round each; the helper is now committed
-  with the verification one-liner beside it.
-
 ### Security
 - **Open redirect in the CV download link, closed at its source (#376)** — `getDownloadUrl` returned
   any absolute URL from the API response verbatim into `window.open`. **Two earlier attempts at this
@@ -148,6 +133,26 @@ All notable changes to this project will be documented in this file.
   public repo (free, PR decoration without Developer Edition).
 
 ### Changed
+- **Reviews must run on a rebased branch, and one PR at a time (owner directive 2026-09-13)** —
+  rule 13 and the `pr-reviewer` charter now require `git fetch origin main && git rebase
+  origin/main` plus a `MERGEABLE` / zero-commits-behind check *before* a verdict is requested, and
+  the reviewer posts a short `REQUEST CHANGES` naming the gap instead of spending a full analysis
+  to report "rebase first". Measured in the v1.14.1 cycle: **five stale-base blockers across five
+  PRs** (#357, #364, #365, #366, #367), **two of which consumed a review round and nothing else** —
+  #364's verdict states verbatim that the stale, conflicting base was the *only* thing blocking it.
+  The refusal must be **posted, not said in chat**: `pre-merge-gate.sh` compares a verdict only
+  against commits *on the PR*, so it cannot see `main` move, and an un-posted refusal would leave a
+  stale APPROVE standing on a branch that is behind but has no new commit. A stale review is also misleading — it clears code against a base that will
+  never merge. Batching several PRs into one review run is likewise forbidden: verdicts arrive
+  late and together, and fixes for the first cannot start until the last is analysed.
+- **`scripts/dedup_changelog_unreleased.py` + its self-test** — merging two `[Unreleased]`
+  sections duplicates headings *and* entries independently, so a heading-only check passes while
+  entries are doubled; that shipped to review twice (#354, #362) and cost a round each. The helper
+  **never loses content**: headings it does not recognise (`### Docs`, `### Deprecated`,
+  `### Documentation` — all real in this repo's history) are kept rather than dropped, preamble
+  text before the first heading is kept, and entry splitting is fence-aware so a `- ` inside a code
+  block is not torn out. 15 self-test cases, each loss case taken from a real defect caught in
+  review, plus a no-loss check against the repo's own 224-entry / 27-release CHANGELOG.
 - **CI frontend jobs use the same worker-teardown retry as the pre-push gate (#319)** — each of the
   three Vitest project steps in `deploy.yml` now runs through `scripts/run_frontend_suites.sh`
   (signature-narrow single retry for the upstream Vitest teardown race, #309) instead of a bare

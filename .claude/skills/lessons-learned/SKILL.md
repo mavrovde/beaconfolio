@@ -1482,6 +1482,31 @@ the deterministic pytest is the **seam**, not the load: spy which session factor
 (the written row is identical either way), exhaust a 1-connection pool for real and assert the
 emits still land, and count peak simultaneous sessions against the configured bound.
 
+## 58. A tool that REWRITES history must fail by doing LESS, never by dropping silently (#371)
+
+A helper was added to merge duplicated `[Unreleased]` CHANGELOG sections after a rebase. It
+carried a five-name whitelist — Security/Added/Changed/Fixed/Removed — and **silently deleted
+every other section it found**. `### Documentation` is real in this repo's history; replaying the
+CHANGELOG commits, **66** of them had a heading that whitelist would have destroyed. It also
+dropped any text between `## [Unreleased]` and the first `###`, and tore a `- ` line out of a
+fenced code block as if it were a new entry.
+
+None of it was caught before review, because the file entered the repo **outside every gate**:
+`ruff`/`mypy` run under `backend/`, `bandit -r app` is backend-only, and no `*.test.sh` existed.
+The PR that introduced it *also shipped the exact duplicate-heading defect it was written to
+prevent* — proof the author had never run it on their own branch.
+
+**The rules:**
+- A script that rewrites a file of record gets an **allowlist of transformations, not an allowlist
+  of content**. Unknown input is *preserved and reported*, never dropped. Its acceptable failure is
+  "did less than asked".
+- Its self-test leads with the **loss cases**, and one case runs it against the repo's **real**
+  file asserting nothing disappears (here: 27 release headings and 224 entries, unchanged).
+- A new `scripts/` file is outside `backend/`'s linters by default. Wire the self-test into the
+  pre-push gate in the SAME PR, or it is unexamined by anything.
+- **Run your own tool on your own branch before asking for review.** The reviewer proved it had
+  not been, in one command.
+
 ## Where the rules live (AI-config map)
 
 - **`CLAUDE.md`** — the authoritative numbered rules (engineering rules 1–13, issue-tracking flow,
