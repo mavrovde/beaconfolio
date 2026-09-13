@@ -24,7 +24,7 @@ jobs:
       actions: read
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Fail fast without a token
         run: |
           if [ -z "${{ secrets.SNYK_TOKEN }}" ]; then
@@ -32,10 +32,10 @@ jobs:
           fi
       - uses: snyk/actions/setup@806182742461562b67788a64410098c9d9b96adb
       # Snyk needs resolvable dependency trees for SCA: install both stacks' manifests.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
       - name: Install frontend lockfile (metadata only)
@@ -75,14 +75,20 @@ jobs:
       - name: Check SARIF is present and non-empty
         id: sarif
         run: |
-          if [ -s snyk-code.sarif ] && grep -q '"runs"' snyk-code.sarif 2>/dev/null; then
+          # Parse it, don't grep it: a truncated or error-JSON file can still
+          # contain the text "runs" while being unuploadable.
+          if python3 -c "import json,sys; d=json.load(open('snyk-code.sarif')); sys.exit(0 if d.get('runs') else 1)" 2>/dev/null; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
+            python3 -c "import json; d=json.load(open('snyk-code.sarif')); print(f\"::notice::Snyk Code SARIF OK — {sum(len(r.get('results',[])) for r in d['runs'])} finding(s)\")"
           else
             echo "ok=false" >> "$GITHUB_OUTPUT"
             echo "::warning::no valid Snyk SARIF to upload — skipping (see the Snyk Code step)"
           fi
       - name: Upload SARIF to code scanning
         if: steps.sarif.outputs.ok == 'true'
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: snyk-code.sarif
+          # Distinct category per tool: without it, whichever upload runs last
+          # displaces the others' results in the Security tab.
+          category: snyk-code
