@@ -16,11 +16,16 @@ All notable changes to this project will be documented in this file.
     has to be too: both steps now run **inside** the loop, which re-runs while either changes the
     segment. All seven spellings now `deny`; a benign `echo "hello" | /usr/bin/env bash` still
     `allow`s, so the fix buys no false denials.
-  - **Per-segment fork cost cut** (#235 bounded this loop with a deadline; below the deadline the
-    cost was unchanged). A builtin `case` prefilter now skips the `quoted_payloads` and
-    `mask_quotes` forks entirely for segments containing no quote character — where both are
-    provably no-ops — and the whitespace-squeeze `sed` runs only when irregular whitespace is
-    actually present. Guard self-test: **286 cases pass**, including the existing cost budgets.
+  - **Payload-pass fork cost: a modest, measured reduction — and a corrected premise.** A builtin
+    `case` prefilter now skips the `quoted_payloads` and `mask_quotes` forks for segments with no
+    quote character (both are provable no-ops there), and the whitespace-squeeze `sed` runs only
+    when irregular whitespace is actually present. Measured on a 40-segment pipeline ending in a
+    shell: **1219 → 1178 forks (-3.4%)**. That is far less than #253 anticipated, because the
+    issue's "~3 forks per segment" was wrong: the payload pass costs **~19 forks per segment**
+    (768 forks for 40 segments), and the bulk of them are inside the recursive
+    `inspect_inner_script` path, not the two calls prefiltered here. The remaining cost is
+    therefore still bounded by the #235 deadline rather than eliminated. Guard self-test:
+    **286 cases pass**, including the existing cost budgets.
 
 ### Security
 - **Merge gate now filters verdicts by trusted author association (#316)** — on this PUBLIC repo any
