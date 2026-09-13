@@ -48,3 +48,10 @@ exclude:
     - '**/*.spec.ts'
     - '**/e2e/**'
     - backend/tests_integration/**
+    # Local DEVELOPER DIAGNOSTICS, not shipped product. `verify_proxy_routes.py`
+    # probes the local stack's self-signed certificate on purpose (it is also
+    # `# nosec B501` for Bandit) and runs on nobody's server. An in-code
+    # `deepcode ignore` was tried first and measurably did NOT clear the alert,
+    # so the exclusion is the honest mechanism rather than a comment that looks
+    # like one.
+    - verify_proxy_routes.py

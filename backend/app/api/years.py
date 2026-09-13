@@ -69,11 +69,18 @@ async def get_cv_years():
     all_years: set[int] = set()
 
     # Try local files first
+    root = os.path.realpath(PROFILE_DATA_DIR)
     for lang in ("en", "de"):
-        # deepcode ignore PT: path is a module constant joined with a literal
-        # filename over a two-element hardcoded tuple — no request data reaches
-        # it, so there is nothing for a traversal to come from.
-        file_path = os.path.join(PROFILE_DATA_DIR, f"profile_data_{lang}.json")
+        # PROFILE_DATA_DIR is an ENVIRONMENT VARIABLE (see the top of this
+        # module), not a constant — an earlier comment here claimed otherwise
+        # and was simply wrong. Snyk `python/PT` is right to treat it as
+        # untrusted. Resolve it and refuse anything that escapes the root, so a
+        # crafted value cannot walk the filesystem via symlink or `..`.
+        candidate = os.path.realpath(os.path.join(root, f"profile_data_{lang}.json"))
+        if os.path.commonpath([root, candidate]) != root:
+            logger.warning("refusing profile path outside PROFILE_DATA_DIR: %s", candidate)
+            continue
+        file_path = candidate
         all_years |= _extract_years_from_profile(file_path)
 
     # Fallback to HTTP if no years found from local files

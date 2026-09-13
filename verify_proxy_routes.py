@@ -17,8 +17,6 @@ async def verify_proxy_routes():
     # B501 justified: this probes the LOCAL stack's self-signed certificate by
     # design and is never pointed at a remote host. Keep the suppression comment
     # below bare — Bandit reads whatever follows it as further test IDs.
-    # deepcode ignore SSLVerificationBypass: probes the LOCAL stack's self-signed
-    # certificate by design; never pointed at a remote host (see the note above).
     async with httpx.AsyncClient(verify=False, timeout=10.0) as client:  # nosec B501
         tests = [
             # 1. API Health

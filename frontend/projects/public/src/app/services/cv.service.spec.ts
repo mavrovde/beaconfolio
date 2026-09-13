@@ -71,8 +71,31 @@ describe('CvService', () => {
         (environment as any).apiUrl = originalApiUrl;
     });
 
-    it('should return absolute URL as is', () => {
-        const absolute = 'http://example.com/cv.pdf';
-        expect(service.getDownloadUrl(absolute)).toBe(absolute);
+    // STALE ASSERTION REPLACED (#376): this used to pin
+    //   expect(service.getDownloadUrl(absolute)).toBe(absolute)
+    // i.e. the open-redirect passthrough itself. A spec that pins the
+    // vulnerability is why the fix needed a test change, and why the old
+    // assertion had to be found rather than left to fail later.
+    it('reduces an absolute URL to its path — no redirect off-origin', () => {
+        (environment as any).apiUrl = 'https://api.example.org';
+        expect(service.getDownloadUrl('http://evil.example.com/cv.pdf'))
+            .toBe('https://api.example.org/cv.pdf');
+    });
+
+    it('strips a protocol-relative URL to its path too', () => {
+        (environment as any).apiUrl = 'https://api.example.org';
+        expect(service.getDownloadUrl('//evil.example.com/cv.pdf'))
+            .toBe('https://api.example.org/cv.pdf');
+    });
+
+    it('keeps the query string when reducing an absolute URL', () => {
+        (environment as any).apiUrl = 'https://api.example.org';
+        expect(service.getDownloadUrl('https://evil.example.com/cv.pdf?t=1'))
+            .toBe('https://api.example.org/cv.pdf?t=1');
+    });
+
+    it('normalises a path that lacks a leading slash', () => {
+        (environment as any).apiUrl = 'https://api.example.org';
+        expect(service.getDownloadUrl('cv.pdf')).toBe('https://api.example.org/cv.pdf');
     });
 });
