@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Security
+- **Open redirect in the CV download link, closed at its source (#376)** — `getDownloadUrl` returned
+  any absolute URL from the API response verbatim into `window.open`. **Two earlier attempts at this
+  were not enough, and both are worth recording**: `noopener` guards reverse tabnabbing, a *different*
+  vulnerability; and a regex gate on `http`/`//` missed backslash authority forms
+  (`/\evil.com/x`, `\\evil.com/x` — the WHATWG parser treats a backslash as a separator) *and* only
+  applied when `environment.apiUrl` was set, which **neither shipped environment does** — both are
+  `''`, so the guard never ran in production. **A third attempt still leaked**: `URL.pathname` can
+  begin with *two* slashes (`..//evil.com/x` over-pops the base, leaving an empty first segment), and
+  a `startsWith('/')` guard accepts that happily — 5 of 80 vectors escaped, again only in the
+  `apiUrl = ''` configuration that production actually ships. The URL is now parsed
+  **unconditionally** against a throwaway base, keeping only `pathname + search`, and **every leading
+  slash or backslash is collapsed to exactly one** — closing the class rather than the spellings.
+  Measured 0 escapes across 80 vectors with `/a//b` preserved. Pinned by cases that run with
+  `apiUrl = ''` — the shipped value — after the first set tested a configuration production never uses.
+  The cases now assert an **invariant** (the result is never protocol-relative and never
+  scheme-bearing) rather than a list of vectors: three rounds of green suites coexisted with a live
+  bypass precisely because the table only held the spellings someone had thought of.
+- **`x-powered-by` is no longer advertised** — `app.disable('x-powered-by')` in the SSR server; it was
+  the header the bare Express 404 leaked before #324. Asserted on the wire in the `not-found` E2E,
+  since `src/server.ts` is excluded from unit coverage.
+- **`PROFILE_DATA_DIR` is treated as the untrusted input it is (#376)** — it is an *environment
+  variable*, not the "module constant" an earlier suppression claimed. Each profile path is now
+  `realpath`-resolved and refused if it escapes its root, covered by a symlink-escape test;
+  `app/api/years.py` is back at **100%**.
 - **Merge gate now filters verdicts by trusted author association (#316)** — on this PUBLIC repo any
   passer-by could post an approval-shaped comment; `pre-merge-gate.sh` now admits a verdict only from
   an `OWNER`/`MEMBER`/`COLLABORATOR` entry (missing/unknown association = untrusted, fail-closed).
@@ -91,9 +115,10 @@ All notable changes to this project will be documented in this file.
   Snyk, Bandit and CodeQL results coexist instead of displacing one another.
   - The token is scan-quota only and **never reaches a test or E2E stack** (rule 10, stated in the
     workflow); a missing `SNYK_TOKEN` fails loudly rather than pseudo-passing.
-  - Robustness measured against real runs: the backend venv install is best-effort because
-    `linkedin-api==2.2.1` is a prod-patched wheel absent from PyPI (rule 6) and Snyk reads the
-    manifest directly; SARIF is **parsed** before upload, so a rejected token or an unpublished
+  - Robustness measured against real runs: the backend venv install runs the repo's own
+    `scripts/patch_linkedin.sh` first, because the `linkedin-api==2.2.1` sdist ships a malformed
+    `entry_points.txt` that aborts pip (`Invalid script entry point` — the package itself is on
+    PyPI and downloads fine); SARIF is **parsed** before upload, so a rejected token or an unpublished
     image warns and skips instead of failing the run with a misleading upload error. Recorded
     gotcha: **Snyk Code answers HTTP 403 when `sastEnabled` is off on the Snyk org** — an
     org-settings toggle, not a bad credential.
@@ -173,6 +198,18 @@ All notable changes to this project will be documented in this file.
   trigger is written into CLAUDE.md.
 
 ### Fixed
+- **Snyk scan follow-ups from the #368 review (#358)** — three corrections to the scanning surface,
+  each one measured rather than assumed:
+  - **`.snyk` now declares `version: v1.25.0`.** Without it the policy can be judged invalid and
+    **silently ignored** — the worst failure mode an exclude list has, since it looks like it works.
+  - **The backend scan venv uses the repo's own `scripts/patch_linkedin.sh`**, like every other
+    install leg (`backend/Dockerfile`, `deploy.yml`, `copilot-setup-steps.yml`). The previous
+    comment blamed "absent from PyPI"; the run log actually says
+    `ERROR: For req: linkedin-api==2.2.1. Invalid script entry point` — the sdist ships a malformed
+    `entry_points.txt` that aborts pip. It now resolves properly instead of limping on a
+    best-effort fallback.
+  - Undocumented `**/` glob prefixes dropped from `.snyk` — the documented form already matches at
+    any depth.
 - **Unmatched URLs now render the site's own 404 instead of Express's bare page (#324)** — the public
   app declared no `**` route, so an unknown URL never reached Angular at all: the SSR engine declined
   the request and Express answered its own `Cannot GET /…` body (measured: 404, `x-powered-by:

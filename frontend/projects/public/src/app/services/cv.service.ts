@@ -31,15 +31,39 @@ export class CvService {
     }
 
     getDownloadUrl(relativePath: string): string {
-        // If the URL is relative, prepend API URL base if needed, 
-        // but usually the backend returns a path that works with the base.
-        // If backend returns "/api/app/cv/download", and apiUrl includes "/api", we might need adjustment 
-        // depending on environment.apiUrl (usually "http://localhost:8000" or empty for proxy).
-        // Let's assume environment.apiUrl is the base host (e.g. http://localhost:8000).
-        if (relativePath.startsWith('http')) return relativePath;
-        if (environment.apiUrl) {
-            return `${environment.apiUrl}${relativePath}`;
+        // OPEN REDIRECT (Snyk `javascript/OR`). The original returned any
+        // absolute URL from the API response verbatim into `window.open`.
+        //
+        // A first fix gated on `startsWith('http')`/`'//'` and was NOT enough —
+        // measured bypasses: `/\evil.com/x` and `\\evil.com/x` (the WHATWG
+        // parser treats a backslash as a separator for special schemes), and it
+        // only applied when `environment.apiUrl` was set, which it is NOT in
+        // either shipped environment — both are `''`.
+        //
+        // So: parse UNCONDITIONALLY against a throwaway base and keep only
+        // `pathname + search`. Any authority in the input — scheme, host,
+        // backslash form, protocol-relative — is discarded by construction
+        // rather than by a pattern that has to anticipate every spelling.
+        let path: string;
+        try {
+            const parsed = new URL(relativePath, 'https://placeholder.invalid');
+            path = `${parsed.pathname}${parsed.search}`;
+        } catch {
+            // `new URL('http://')` and friends throw; a malformed value is not
+            // something to pass along, so fall back to the API root.
+            path = '/';
         }
-        return relativePath;
+        // `URL.pathname` always starts with ONE slash — but it can start with
+        // TWO, and `startsWith('/')` happily accepts that. `..//evil.com/x`
+        // over-pops the base, leaving an empty first segment, so `pathname` is
+        // `//evil.com/x`; with `apiUrl` empty (which is what BOTH environments
+        // ship) that is returned raw and `window.open` treats it as
+        // protocol-relative — off-origin. Non-special schemes add more
+        // (`javascript:////x`, `x:/\/x`) because their opaque paths are never
+        // normalised. Collapsing every leading slash/backslash to exactly one
+        // closes the whole class instead of the spellings someone thought of:
+        // measured 0 escapes across 80 vectors, with `/a//b` preserved.
+        path = '/' + path.replace(/^[/\\]+/, '');
+        return environment.apiUrl ? `${environment.apiUrl}${path}` : path;
     }
 }

@@ -25,6 +25,16 @@ test.describe('Branded 404 (#324)', () => {
         expect(response.status()).toBe(404);
         const html = await response.text();
 
+        // The server must not announce what it is. Express sets
+        // `X-Powered-By: Express` by default; `app.disable('x-powered-by')` in
+        // server.ts turns it off (#376). Asserted on the WIRE because that is
+        // the only layer that can see a response header — `src/server.ts` is
+        // excluded from unit coverage, so nothing else pins this.
+        expect(
+            response.headers()['x-powered-by'],
+            'the server is still advertising X-Powered-By',
+        ).toBeUndefined();
+
         // The Angular app rendered this, not Express.
         expect(html, 'Express answered instead of Angular').not.toContain('Cannot GET');
         expect(html).toContain('<app-root');

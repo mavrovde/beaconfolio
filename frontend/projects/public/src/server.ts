@@ -17,6 +17,10 @@ import {
 const browserDistFolder = join(import.meta.dirname, '../browser');
 
 const app = express();
+// Express advertises `X-Powered-By: Express` on every response by default —
+// free reconnaissance, and the exact header the bare 404 leaked before #324
+// gave unmatched URLs a real Angular page. Snyk `javascript/DisablePoweredBy`.
+app.disable('x-powered-by');
 
 // Angular SSR (>=21.2) hardens the Node engine against SSRF in two ways, and
 // BOTH of them silently break pre-rendered SSR behind a reverse proxy unless

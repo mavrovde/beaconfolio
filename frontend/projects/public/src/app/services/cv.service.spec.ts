@@ -71,8 +71,69 @@ describe('CvService', () => {
         (environment as any).apiUrl = originalApiUrl;
     });
 
-    it('should return absolute URL as is', () => {
-        const absolute = 'http://example.com/cv.pdf';
-        expect(service.getDownloadUrl(absolute)).toBe(absolute);
+    // STALE ASSERTION REPLACED (#376): this used to pin
+    //   expect(service.getDownloadUrl(absolute)).toBe(absolute)
+    // i.e. the open-redirect passthrough itself.
+    //
+    // These cases run with apiUrl = '' — the value BOTH shipped environments
+    // actually use. An earlier version of this block set it to a host, which
+    // tested a configuration production never runs and let the live bypass
+    // through review.
+    describe('getDownloadUrl — open redirect (production config, apiUrl empty)', () => {
+        beforeEach(() => {
+            (environment as any).apiUrl = '';
+        });
+
+        // These pin the CLASS, not the spellings. Three rounds of this fix
+        // passed a green suite while a live bypass remained, each time because
+        // the table listed the vectors someone had thought of. The invariant
+        // below is what actually matters: whatever comes back must be a
+        // same-origin path — never protocol-relative, never scheme-bearing.
+        const ESCAPES = (out: string) => /^\/\//.test(out) || /^[a-z][a-z0-9+.-]*:/i.test(out);
+
+        it.each([
+            'http://evil.example.com/cv.pdf',
+            '//evil.example.com/cv.pdf',
+            '/\\evil.example.com/cv.pdf',
+            '\\\\evil.example.com/cv.pdf',
+            'https://evil.example.com/cv.pdf?t=1',
+            'javascript:alert(1)',
+            '..//evil.example.com/cv.pdf',
+            '....//evil.example.com/cv.pdf',
+            'javascript:////evil.example.com/x',
+            'x://///evil.example.com/x',
+            'x:/\\/evil.example.com/x',
+            '/\\\\evil.example.com/x',
+            '///evil.example.com/x',
+            'https:/\\evil.example.com/x',
+        ])('%s cannot escape to another origin', (input) => {
+            const out = service.getDownloadUrl(input);
+            // The ONLY thing that makes a value dangerous here is whether the
+            // browser would treat it as another origin. A path *segment* that
+            // happens to read `evil.example.com` is harmless — an earlier
+            // version asserted `not.toContain(...)` and failed on
+            // `/evil.example.com/cv.pdf`, which is same-origin and fine.
+            expect(ESCAPES(out), `escaped with ${out}`).toBe(false);
+            expect(out.startsWith('/')).toBe(true);
+            expect(out.startsWith('//')).toBe(false);
+        });
+
+        it('leaves an ordinary relative path alone', () => {
+            expect(service.getDownloadUrl('/api/app/cv/download')).toBe('/api/app/cv/download');
+        });
+
+        it('normalises a path with no leading slash', () => {
+            expect(service.getDownloadUrl('cv.pdf')).toBe('/cv.pdf');
+        });
+
+        it('falls back to the root on a malformed URL that throws', () => {
+            expect(service.getDownloadUrl('http://')).toBe('/');
+        });
+    });
+
+    it('prepends apiUrl when one is configured', () => {
+        (environment as any).apiUrl = 'https://api.example.org';
+        expect(service.getDownloadUrl('http://evil.example.com/cv.pdf'))
+            .toBe('https://api.example.org/cv.pdf');
     });
 });

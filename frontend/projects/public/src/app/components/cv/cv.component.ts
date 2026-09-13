@@ -60,7 +60,14 @@ export class CvComponent implements OnInit {
                     this.successMessage = response.message;
                     // Open download link in new tab
                     const fullUrl = this.cvService.getDownloadUrl(response.download_url);
-                    window.open(fullUrl, '_blank');
+                    // `noopener` severs `window.opener`, so the opened page cannot
+                    // navigate THIS one (reverse tabnabbing). Note this is NOT what
+                    // Snyk `javascript/OR` reports — that is an OPEN REDIRECT, and
+                    // it is fixed at its source in `cv.service.getDownloadUrl`,
+                    // which now reduces any absolute URL to a path on our origin.
+                    // Keeping `noopener` anyway: it is correct hygiene for any
+                    // `window.open`, and cheap.
+                    window.open(fullUrl, '_blank', 'noopener');
                     this.cvForm.reset();
                 }
                 // Zoneless: this async callback mutates plain props read by the
