@@ -316,6 +316,20 @@ run_checks() {
         return 1
       }
     fi
+    # AI-config map drift (#246): the CLAUDE.md map is how the next contributor
+    # — human or agent — learns what tooling exists. A tool added without a row,
+    # or a row naming a deleted file, misleads silently. Cheap, dependency-free.
+    if [ -f "$ROOT/scripts/check_aiconfig_map.sh" ]; then
+      ( cd "$ROOT" && bash scripts/check_aiconfig_map.sh >/dev/null ) || {
+        echo "  ✗ check_aiconfig_map.sh failed — run it to see which tool/row drifted"
+        echo "    (update the AI-config map in the SAME PR that changed the tooling)"
+        return 1
+      }
+      ( cd "$ROOT" && bash scripts/check_aiconfig_map.test.sh >/dev/null ) || {
+        echo "  ✗ check_aiconfig_map.test.sh failed — the drift checker itself is broken"
+        return 1
+      }
+    fi
     # Alembic single-head contract (v1.14.0 retrospective, #323/#325). Measured
     # AGAINST origin/main, not just the working tree: both of those branches were
     # single-head alone and every gate they ran was green — the fork existed only

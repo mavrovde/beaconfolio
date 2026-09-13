@@ -408,6 +408,13 @@ jobs:
         run: bash .claude/hooks/guard-stack-resources.test.sh
       - name: Self-test the pre-push hook
         run: bash .claude/hooks/pre-push-tests.test.sh
+      # AI-config map drift (#246): a tool without a map row, a row naming a
+      # deleted file, or an enabled plugin with no rationale all mislead the
+      # next reader. Dependency-free, so it needs no toolchain here.
+      - name: AI-config map matches reality
+        run: bash scripts/check_aiconfig_map.sh
+      - name: Self-test the AI-config drift checker
+        run: bash scripts/check_aiconfig_map.test.sh
       # Alembic single-head contract (v1.14.0 retrospective): #323 and #325 both
       # chained onto `trans0009`. Each branch was single-head in isolation, so
       # the Backend Migrations job passed on both — the fork existed only in the
