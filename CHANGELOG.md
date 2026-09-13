@@ -17,7 +17,6 @@ All notable changes to this project will be documented in this file.
   admin-route-stale, down, mixed-down+stale) with stubbed curl/jq, asserting exit code AND verdict
   line; the mixed state pins the staleness-beats-outage precedence (#254) and fails against a
   regressed `*)` branch. Runs in the pre-push docs leg and the CI Version Consistency job.
-
 - **v1.14.0 release retrospective, and the gates it produced (#328)** — the cycle's evidence turned
   into committed configuration, archived as `docs/retrospectives/v1.14.0.md` with the trend row in
   that directory's README:
@@ -38,7 +37,6 @@ All notable changes to this project will be documented in this file.
     survived.** The documented `DOCKER_STACK_GUARD=0` bypass is read from the COMMAND TEXT per
     segment, like both sibling hooks — the first version read only the hook's own environment, which
     nothing in this harness sets, so the printed remedy was a deny loop with no exit.
-
 - **Snyk adopted for code, dependencies and the four published images (#358)** — three scan
   surfaces now feed the Security tab: **Snyk Code** (SAST), **Snyk Open Source** (both dependency
   trees — the npm lockfile and the backend requirements via a scan-only venv) and **Snyk Container**
@@ -55,26 +53,6 @@ All notable changes to this project will be documented in this file.
     org-settings toggle, not a bad credential.
   - Release triage (rule 8) and the `security-triage` charter now name the Snyk and Bandit feeds
     alongside CodeQL and Dependabot, with the per-category triage note.
-- **v1.14.0 release retrospective, and the gates it produced (#328)** — the cycle's evidence turned
-  into committed configuration, archived as `docs/retrospectives/v1.14.0.md` with the trend row in
-  that directory's README:
-  - **`scripts/check_migration_heads.sh` + self-test** — exactly ONE Alembic head, measured on the
-    working tree **unioned with a git ref** (`--against origin/main`). Dependency-free (no alembic
-    import, no database, no Python), wired into the pre-push gate and CI's Version Consistency job.
-    #323 and #325 both chained onto `trans0009`; each branch was single-head in isolation, so every
-    gate on both was green, and `alembic upgrade head` — which `docker-entrypoint.sh` runs on every
-    container start — refuses to run on the merged result. The self-test replays that exact incident
-    from this repo's history: **26 cases** pass locally (23 in CI, where a depth-1 clone cannot
-    resolve the historical commits — a `MIN_CASES` floor keeps that note enforceable), and three
-    mutations turn **9 / 6 / 1** of them red.
-  - **`.claude/hooks/guard-stack-resources.sh` + self-test** — a free-disk floor
-    (`DOCKER_DISK_FLOOR_GB`, default 5) and ONE Docker compose project, checked before
-    `up`/`build`/`run`/`pull` only; `down`/`ps`/`logs`/`exec`/`builder prune` are never blocked,
-    because those are what you run to recover from a full disk. Three parallel stacks filled the disk
-    and crashed the daemon this cycle, costing ~2 hours. **44 cases, 11 mutations killed, 0
-    survived.** The documented `DOCKER_STACK_GUARD=0` bypass is read from the COMMAND TEXT per
-    segment, like both sibling hooks — the first version read only the hook's own environment, which
-    nothing in this harness sets, so the printed remedy was a deny loop with no exit.
 
 ### Changed
 - **CI frontend jobs use the same worker-teardown retry as the pre-push gate (#319)** — each of the
@@ -118,62 +96,6 @@ All notable changes to this project will be documented in this file.
     `docs/retrospectives/` and `LICENSE`. (`specs/` and `docs/agent-runs/` are removed, not
     rewritten — their content is unchanged in git history; an early sweep pass touched two
     retrospective lines and was reverted verbatim before merge.)
-
-- **`.claude/hooks/pre-merge-gate.sh`: an APPROVE must be NEWER than every commit on the PR.**
-  Replaying the release's own threads as they stood at merge time, **4 of 10 reviewed merges** carried
-  commits no approval had seen — including the fixes to a reviewer's own findings, two merges of
-  `main`, and the release PR itself. The remedy is the delta-confirm verdict this repo already posts.
-  Self-test 85 → 94 cases (3 fail against the pre-change hook), mutation contract 18 → 20 killed.
-- **Charters, playbook, skills and commands** taught the cycle's defect classes with the measurement
-  behind each: assert a control at the SEAM (#322's PII test passed with the control deleted), jsdom
-  never applies the component stylesheet (#325 — 447 unit tests green with the CSS gone), a
-  conditional `test.skip` reports green against a dead stack (#323), a test pinning today's payload
-  pins today's bug (#323's expiry off-by-one), one machine/one Docker stack and a worktree per
-  concurrent agent, and — found by this PR's own review — that an `ENV=value` **prefix is command
-  text**, so a hook documenting a bypass must parse it per segment or the documented remedy is a deny
-  loop with no exit. Recorded as `lessons-learned` §49–§55; `env-gotchas` gains the shared-checkout
-  trap (a moved `HEAD` sends a commit to `main`) and the shallow-fetch trap (proving a CI step
-  locally with `git fetch --depth=1` shallows your own repository), both measured while writing this
-  retrospective.
-
-- **Rebranded to Beaconfolio; repository renamed to `mavrovde/beaconfolio` (#330, executing #88)** —
-  the product name, the repository slug and the GitHub description/homepage now say **Beaconfolio**,
-  and `beaconfolio.com` is registered. The prior working name could not ship: `hirefolio.com` has been
-  registered since 2011 and serves a live job-search product in the identical niche. `beaconfolio` was
-  verified free across `.com`, `.dev`, `.io`, the GitHub org namespace, npm and PyPI via registry RDAP
-  and the authenticated GitHub API before registration.
-  - **Image paths moved with the slug.** `IMAGE_NAME` derives from `github.repository`, so builds
-    publish to `ghcr.io/mavrovde/beaconfolio-*` from **v1.14.1** onward; every tag through **`1.14.0`
-    exists only at `ghcr.io/mavrovde/hirefolio-*`**. Deploying a pre-rename tag now requires pinning
-    `IMAGE_REPO` explicitly. The four new GHCR packages are created **private** — visibility does not
-    follow a repository rename — and must be made public once (`docs/DEPLOYMENT.md`, Registry notes).
-  - **Every identifier renamed, as a HARD BREAK with no compat window** — defensible because
-    nothing is deployed anywhere (the prod host has no Docker yet): the env prefix is now
-    `BEACONFOLIO_*` (9 keys, was `HIREFOLIO_*`), the npm scope `@beaconfolio/shared` (was
-    `@mavrov/shared`), the importer's `BEACONFOLIO_API_URL` (was `MAVROV_API_URL`), the default
-    database `beaconfolio` / test database `test_beaconfolio`, the compose project `beaconfolio`,
-    the deploy dir default `/opt/beaconfolio`, and the domain defaults `beaconfolio.com` (proxy
-    `server_name`, CORS, `PUBLIC_URL`, SEO surfaces, live-freshness target). An existing `.env`
-    written for the old names must be renamed key-for-key.
-  - **The de-brand guard now hunts the OLD identity too** (`scripts/check_no_pii.sh`): check B
-    matches `mavrov.de` **and** `hirefolio` (case-insensitive) across the whole tree minus the
-    historical surfaces — the former #313 deferral exclusions (compose files, proxy defaults,
-    workflows, CLAUDE.md, backend/frontend/agents/importer code) are all IN SCOPE now that #330
-    renamed them. Exempt: `de-brand:` markers and the legacy GHCR pins. The self-test grew to
-    **62 cases**, including one that replays the sweep's own miss (mixed-case `Mavrov.de` — the
-    guard caught 3 of those in real code the moment it was tightened).
-  - **Legacy subsystems removed** (owner directive during #330): `specs/` (pre-issue-flow spec
-    documents), the root `agents/` A2A multi-agent team (`intake.py`, `orchestrator.py`, the a2a
-    venv — independent of the `.claude/` toolkit, which is untouched), and `docs/agent-runs/`
-    (the A2A system's four July run logs). All stay reachable in git history. The shared
-    `PLAYBOOK.md` — which the eight `.claude/agents/` charters cite as their working flow —
-    moved to `.claude/PLAYBOOK.md` with content intact; the CI playbook-drift step and the
-    pre-push hook step that exercised `agents/tests/` were removed with the subsystem.
-  - **Immutable records verified byte-identical to `main`**: this changelog's shipped entries,
-    `docs/retrospectives/` and `LICENSE`. (`specs/` and `docs/agent-runs/` are removed, not
-    rewritten — their content is unchanged in git history; an early sweep pass touched two
-    retrospective lines and was reverted verbatim before merge.)
-
 - **`.claude/hooks/pre-merge-gate.sh`: an APPROVE must be NEWER than every commit on the PR.**
   Replaying the release's own threads as they stood at merge time, **4 of 10 reviewed merges** carried
   commits no approval had seen — including the fixes to a reviewer's own findings, two merges of
