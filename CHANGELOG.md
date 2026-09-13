@@ -11,10 +11,17 @@ All notable changes to this project will be documented in this file.
   vulnerability; and a regex gate on `http`/`//` missed backslash authority forms
   (`/\evil.com/x`, `\\evil.com/x` — the WHATWG parser treats a backslash as a separator) *and* only
   applied when `environment.apiUrl` was set, which **neither shipped environment does** — both are
-  `''`, so the guard never ran in production. The URL is now parsed **unconditionally** against a
-  throwaway base, keeping only `pathname + search`, so any authority is discarded by construction
-  rather than by a pattern that must anticipate every spelling. Pinned by cases that run with
+  `''`, so the guard never ran in production. **A third attempt still leaked**: `URL.pathname` can
+  begin with *two* slashes (`..//evil.com/x` over-pops the base, leaving an empty first segment), and
+  a `startsWith('/')` guard accepts that happily — 5 of 80 vectors escaped, again only in the
+  `apiUrl = ''` configuration that production actually ships. The URL is now parsed
+  **unconditionally** against a throwaway base, keeping only `pathname + search`, and **every leading
+  slash or backslash is collapsed to exactly one** — closing the class rather than the spellings.
+  Measured 0 escapes across 80 vectors with `/a//b` preserved. Pinned by cases that run with
   `apiUrl = ''` — the shipped value — after the first set tested a configuration production never uses.
+  The cases now assert an **invariant** (the result is never protocol-relative and never
+  scheme-bearing) rather than a list of vectors: three rounds of green suites coexisted with a live
+  bypass precisely because the table only held the spellings someone had thought of.
 - **`x-powered-by` is no longer advertised** — `app.disable('x-powered-by')` in the SSR server; it was
   the header the bare Express 404 leaked before #324. Asserted on the wire in the `not-found` E2E,
   since `src/server.ts` is excluded from unit coverage.

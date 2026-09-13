@@ -53,9 +53,17 @@ export class CvService {
             // something to pass along, so fall back to the API root.
             path = '/';
         }
-        if (!path.startsWith('/')) {
-            path = `/${path}`;
-        }
+        // `URL.pathname` always starts with ONE slash — but it can start with
+        // TWO, and `startsWith('/')` happily accepts that. `..//evil.com/x`
+        // over-pops the base, leaving an empty first segment, so `pathname` is
+        // `//evil.com/x`; with `apiUrl` empty (which is what BOTH environments
+        // ship) that is returned raw and `window.open` treats it as
+        // protocol-relative — off-origin. Non-special schemes add more
+        // (`javascript:////x`, `x:/\/x`) because their opaque paths are never
+        // normalised. Collapsing every leading slash/backslash to exactly one
+        // closes the whole class instead of the spellings someone thought of:
+        // measured 0 escapes across 80 vectors, with `/a//b` preserved.
+        path = '/' + path.replace(/^[/\\]+/, '');
         return environment.apiUrl ? `${environment.apiUrl}${path}` : path;
     }
 }

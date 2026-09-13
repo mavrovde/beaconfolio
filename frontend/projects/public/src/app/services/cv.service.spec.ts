@@ -84,15 +84,38 @@ describe('CvService', () => {
             (environment as any).apiUrl = '';
         });
 
+        // These pin the CLASS, not the spellings. Three rounds of this fix
+        // passed a green suite while a live bypass remained, each time because
+        // the table listed the vectors someone had thought of. The invariant
+        // below is what actually matters: whatever comes back must be a
+        // same-origin path — never protocol-relative, never scheme-bearing.
+        const ESCAPES = (out: string) => /^\/\//.test(out) || /^[a-z][a-z0-9+.-]*:/i.test(out);
+
         it.each([
-            ['http://evil.example.com/cv.pdf', '/cv.pdf'],
-            ['//evil.example.com/cv.pdf', '/cv.pdf'],
-            ['/\\evil.example.com/cv.pdf', '/cv.pdf'],
-            ['\\\\evil.example.com/cv.pdf', '/cv.pdf'],
-            ['https://evil.example.com/cv.pdf?t=1', '/cv.pdf?t=1'],
-            ['javascript:alert(1)', '/alert(1)'],
-        ])('reduces %s to a same-origin path', (input, expected) => {
-            expect(service.getDownloadUrl(input)).toBe(expected);
+            'http://evil.example.com/cv.pdf',
+            '//evil.example.com/cv.pdf',
+            '/\\evil.example.com/cv.pdf',
+            '\\\\evil.example.com/cv.pdf',
+            'https://evil.example.com/cv.pdf?t=1',
+            'javascript:alert(1)',
+            '..//evil.example.com/cv.pdf',
+            '....//evil.example.com/cv.pdf',
+            'javascript:////evil.example.com/x',
+            'x://///evil.example.com/x',
+            'x:/\\/evil.example.com/x',
+            '/\\\\evil.example.com/x',
+            '///evil.example.com/x',
+            'https:/\\evil.example.com/x',
+        ])('%s cannot escape to another origin', (input) => {
+            const out = service.getDownloadUrl(input);
+            // The ONLY thing that makes a value dangerous here is whether the
+            // browser would treat it as another origin. A path *segment* that
+            // happens to read `evil.example.com` is harmless — an earlier
+            // version asserted `not.toContain(...)` and failed on
+            // `/evil.example.com/cv.pdf`, which is same-origin and fine.
+            expect(ESCAPES(out), `escaped with ${out}`).toBe(false);
+            expect(out.startsWith('/')).toBe(true);
+            expect(out.startsWith('//')).toBe(false);
         });
 
         it('leaves an ordinary relative path alone', () => {
