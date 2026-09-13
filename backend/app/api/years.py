@@ -78,7 +78,9 @@ async def get_cv_years():
         # crafted value cannot walk the filesystem via symlink or `..`.
         candidate = os.path.realpath(os.path.join(root, f"profile_data_{lang}.json"))
         if os.path.commonpath([root, candidate]) != root:
-            logger.warning("refusing profile path outside PROFILE_DATA_DIR: %s", candidate)
+            logger.warning(
+                "refusing profile path outside PROFILE_DATA_DIR: %s", candidate
+            )
             continue
         file_path = candidate
         all_years |= _extract_years_from_profile(file_path)
