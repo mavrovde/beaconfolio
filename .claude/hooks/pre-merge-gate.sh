@@ -365,7 +365,11 @@ past_deadline && deny "could not finish within ${DEADLINE_SECONDS}s — an unana
 # was "the newest verdict" the moment it was posted, so a merge attempted then
 # would have been ALLOWED while the standing reviewer verdict was REQUEST
 # CHANGES. In this repo the reviewer and the author post under the SAME identity,
-# so no author-based filter can separate them — the position of the marker can.
+# so author-vs-reviewer is not separable by author — the position of the marker
+# separates those. What IS separable by author is trusted-vs-untrusted (#316):
+# on a PUBLIC repo any passer-by can post an approval-shaped comment, so a
+# verdict candidate must also carry a trusted authorAssociation (OWNER/MEMBER/
+# COLLABORATOR); a missing or unknown association is untrusted, fail-closed.
 #
 # A verdict therefore states itself in its FIRST NON-EMPTY LINE. Decoration
 # around it is fine (`## ⛔ REQUEST CHANGES`, `✅ **APPROVED** — round 2`,
@@ -409,9 +413,11 @@ past_deadline && deny "could not finish within ${DEADLINE_SECONDS}s — an unana
 # NEGATIVE — that instance is decision-CHANGING, and it is the cheap signal.
 SELECTED="$(printf '%s' "$PR_JSON" | jq -c '
   def heading: (.body // "") | split("\n") | map(select(test("\\S"))) | (.[0] // "");
-  [ ((.reviews // [])[]  | {at: .submittedAt, body: (.body // "")}),
-    ((.comments // [])[] | {at: .createdAt,   body: (.body // "")}) ]
-  | map(select(.at != null and (heading | test("APPROVE|APPROVED|REQUEST CHANGES"; "i"))))
+  [ ((.reviews // [])[]  | {at: .submittedAt, body: (.body // ""), assoc: (.authorAssociation // "NONE")}),
+    ((.comments // [])[] | {at: .createdAt,   body: (.body // ""), assoc: (.authorAssociation // "NONE")}) ]
+  | map(select(.at != null
+      and (.assoc == "OWNER" or .assoc == "MEMBER" or .assoc == "COLLABORATOR")
+      and (heading | test("APPROVE|APPROVED|REQUEST CHANGES"; "i"))))
   | sort_by(.at) | (last // {at: null, body: ""})' 2>/dev/null)"
 VERDICT="$(printf '%s' "$SELECTED" | jq -r '.body // ""' 2>/dev/null)"
 # The same selection's TIMESTAMP — check 1b below asks what landed after it.

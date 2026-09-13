@@ -293,8 +293,9 @@ jobs:
         working-directory: ./frontend
         run: npm i --legacy-peer-deps
       - name: Test shared library (100% coverage)
-        working-directory: ./frontend
-        run: npm run test:coverage:shared
+        # run_frontend_suites.sh = the same signature-narrow retry for the upstream
+        # Vitest worker-teardown race the pre-push gate already has (#319, #309)
+        run: FRONTEND_PROJECTS=shared bash scripts/run_frontend_suites.sh --coverage
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:
@@ -318,8 +319,8 @@ jobs:
         working-directory: ./frontend
         run: npm i --legacy-peer-deps
       - name: Test public app (100% coverage)
-        working-directory: ./frontend
-        run: npm run test:coverage:public
+        # same retry harness as the pre-push gate (#319, #309)
+        run: FRONTEND_PROJECTS=public bash scripts/run_frontend_suites.sh --coverage
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:
@@ -343,8 +344,8 @@ jobs:
         working-directory: ./frontend
         run: npm i --legacy-peer-deps
       - name: Test admin app (100% coverage)
-        working-directory: ./frontend
-        run: npm run test:coverage:admin
+        # same retry harness as the pre-push gate (#319, #309)
+        run: FRONTEND_PROJECTS=admin bash scripts/run_frontend_suites.sh --coverage
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v7
         with:
@@ -387,6 +388,11 @@ jobs:
         run: bash scripts/check_compose_env.sh
       - name: Self-test the compose-env checker itself
         run: bash scripts/check_compose_env.test.sh
+      # Freshness contract (#280): one verdict script feeds the Live Freshness
+      # workflow and the post-rollout gate — its self-test proves the 3-way
+      # verdict (fresh/stale/down) and the staleness-beats-outage precedence.
+      - name: Self-test the live-freshness checker
+        run: bash scripts/check_live_freshness.test.sh
       # Alembic single-head contract (v1.14.0 retrospective): #323 and #325 both
       # chained onto `trans0009`. Each branch was single-head in isolation, so
       # the Backend Migrations job passed on both — the fork existed only in the
