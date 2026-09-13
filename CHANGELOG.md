@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **Snyk scan follow-ups from the #368 review (#358)** — three corrections to the scanning surface,
+  each one measured rather than assumed:
+  - **`.snyk` now declares `version: v1.25.0`.** Without it the policy can be judged invalid and
+    **silently ignored** — the worst failure mode an exclude list has, since it looks like it works.
+  - **The backend scan venv uses the repo's own `scripts/patch_linkedin.sh`**, like every other
+    install leg (`backend/Dockerfile`, `deploy.yml`, `copilot-setup-steps.yml`). The previous
+    comment blamed "absent from PyPI"; the run log actually says
+    `ERROR: For req: linkedin-api==2.2.1. Invalid script entry point` — the sdist ships a malformed
+    `entry_points.txt` that aborts pip. It now resolves properly instead of limping on a
+    best-effort fallback.
+  - Undocumented `**/` glob prefixes dropped from `.snyk` — the documented form already matches at
+    any depth.
+
 ### Security
 - **Merge gate now filters verdicts by trusted author association (#316)** — on this PUBLIC repo any
   passer-by could post an approval-shaped comment; `pre-merge-gate.sh` now admits a verdict only from

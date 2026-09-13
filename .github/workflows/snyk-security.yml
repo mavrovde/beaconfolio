@@ -52,14 +52,20 @@ jobs:
         # Keeping the venv out of the tree fixes that at the source; `.snyk`
         # additionally excludes the other vendored/generated trees.
         #
-        # Best-effort install: linkedin-api==2.2.1 is a prod-patched wheel not on
-        # PyPI (CLAUDE.md rule 6), so a clean-index install cannot fully resolve
-        # — and it must never hard-fail the scan job.
+        # Use the repo's OWN patch script, like every other install leg
+        # (backend/Dockerfile, deploy.yml, copilot-setup-steps.yml). The real
+        # failure is not "absent from PyPI" — the run log says
+        # `ERROR: For req: linkedin-api==2.2.1. Invalid script entry point`:
+        # the sdist ships a malformed entry_points.txt that aborts pip.
+        # patch_linkedin.sh strips it, so this now resolves properly instead of
+        # limping along on a best-effort fallback (#368 review).
         run: |
           python -m venv "$RUNNER_TEMP/snyk-venv" && . "$RUNNER_TEMP/snyk-venv/bin/activate"
+          python -m pip install --quiet --upgrade pip
+          bash scripts/patch_linkedin.sh
           pip install -q -r requirements.txt -r requirements-dev.txt \
             || pip install -q -r requirements.txt \
-            || echo "::warning::partial dependency resolution (patched wheel absent) — Snyk reads the manifest directly"
+            || echo "::warning::partial dependency resolution — Snyk SCA reads the manifest directly"
       - name: Snyk Code (SAST) → SARIF
         env: { SNYK_TOKEN: "${{ secrets.SNYK_TOKEN }}" }
         # A rejected token (HTTP 403 — Snyk Code not enabled for the org, or an

@@ -1,3 +1,7 @@
+# Snyk policy file format version. Without it the policy can be treated as
+# invalid and SILENTLY IGNORED — the worst failure mode for an exclude list.
+version: v1.25.0
+
 # Snyk policy file — what Snyk Code must NOT analyse.
 #
 # WHY THIS EXISTS (measured, #358 follow-up): the first real Snyk Code run after
@@ -18,11 +22,11 @@ exclude:
     - backend/.snyk-venv/**
     # any other local virtualenv a developer may have
     - backend/venv/**
-    - '**/.venv/**'
-    - '**/site-packages/**'
+    - '.venv/**'
+    - 'site-packages/**'
     # JS dependency and build trees
-    - '**/node_modules/**'
-    - '**/dist/**'
+    - 'node_modules/**'
+    - 'dist/**'
     - frontend/.angular/**
     # coverage and scanner working output
     - frontend/coverage/**
