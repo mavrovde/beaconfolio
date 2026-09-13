@@ -216,7 +216,11 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
    secrets) rolled out + health-gated on the live host*; while those secrets are absent, live
    state must be verified manually (`docs/DEPLOYMENT.md`, issues #112/#156). Babysit the
    run and react to results (fix forward on red), then tag `vX.Y.Z`. **Check GitHub security reports
-   (CodeQL + Dependabot) every release** and triage them. **Then run the release retrospective
+   (CodeQL + Dependabot + secret scanning, plus the Security-tab SARIF from Snyk Code, Snyk Open
+   Source, Snyk Container and Bandit) every release** and triage them. Each scanner uploads under
+   its own SARIF `category`, so they coexist rather than overwrite — triage them per category, and
+   note that **Snyk Code requires `sastEnabled` on the Snyk org**; when it is off the scan returns
+   HTTP 403 and the workflow reports that rather than failing (#358). **Then run the release retrospective
    (`/retro`, owner directive 2026-09-06): analyse the release's issues, PRs, review threads and
    effort telemetry, and turn what happened into committed changes to the agents/skills/hooks/rules
    — a release is finished when what it taught is written down, not when the tag is pushed.**
