@@ -73,29 +73,44 @@ describe('CvService', () => {
 
     // STALE ASSERTION REPLACED (#376): this used to pin
     //   expect(service.getDownloadUrl(absolute)).toBe(absolute)
-    // i.e. the open-redirect passthrough itself. A spec that pins the
-    // vulnerability is why the fix needed a test change, and why the old
-    // assertion had to be found rather than left to fail later.
-    it('reduces an absolute URL to its path — no redirect off-origin', () => {
+    // i.e. the open-redirect passthrough itself.
+    //
+    // These cases run with apiUrl = '' — the value BOTH shipped environments
+    // actually use. An earlier version of this block set it to a host, which
+    // tested a configuration production never runs and let the live bypass
+    // through review.
+    describe('getDownloadUrl — open redirect (production config, apiUrl empty)', () => {
+        beforeEach(() => {
+            (environment as any).apiUrl = '';
+        });
+
+        it.each([
+            ['http://evil.example.com/cv.pdf', '/cv.pdf'],
+            ['//evil.example.com/cv.pdf', '/cv.pdf'],
+            ['/\\evil.example.com/cv.pdf', '/cv.pdf'],
+            ['\\\\evil.example.com/cv.pdf', '/cv.pdf'],
+            ['https://evil.example.com/cv.pdf?t=1', '/cv.pdf?t=1'],
+            ['javascript:alert(1)', '/alert(1)'],
+        ])('reduces %s to a same-origin path', (input, expected) => {
+            expect(service.getDownloadUrl(input)).toBe(expected);
+        });
+
+        it('leaves an ordinary relative path alone', () => {
+            expect(service.getDownloadUrl('/api/app/cv/download')).toBe('/api/app/cv/download');
+        });
+
+        it('normalises a path with no leading slash', () => {
+            expect(service.getDownloadUrl('cv.pdf')).toBe('/cv.pdf');
+        });
+
+        it('falls back to the root on a malformed URL that throws', () => {
+            expect(service.getDownloadUrl('http://')).toBe('/');
+        });
+    });
+
+    it('prepends apiUrl when one is configured', () => {
         (environment as any).apiUrl = 'https://api.example.org';
         expect(service.getDownloadUrl('http://evil.example.com/cv.pdf'))
             .toBe('https://api.example.org/cv.pdf');
-    });
-
-    it('strips a protocol-relative URL to its path too', () => {
-        (environment as any).apiUrl = 'https://api.example.org';
-        expect(service.getDownloadUrl('//evil.example.com/cv.pdf'))
-            .toBe('https://api.example.org/cv.pdf');
-    });
-
-    it('keeps the query string when reducing an absolute URL', () => {
-        (environment as any).apiUrl = 'https://api.example.org';
-        expect(service.getDownloadUrl('https://evil.example.com/cv.pdf?t=1'))
-            .toBe('https://api.example.org/cv.pdf?t=1');
-    });
-
-    it('normalises a path that lacks a leading slash', () => {
-        (environment as any).apiUrl = 'https://api.example.org';
-        expect(service.getDownloadUrl('cv.pdf')).toBe('https://api.example.org/cv.pdf');
     });
 });

@@ -1,6 +1,7 @@
 """Tests for the CV years API endpoint."""
 
 import json
+import logging
 from datetime import UTC
 from unittest.mock import patch
 
@@ -282,3 +283,46 @@ class TestYearsEndpoint:
         years = response.json()["years"]
         assert 2024 in years
         assert 2004 in years
+
+
+@pytest.mark.asyncio
+async def test_years_refuses_profile_path_outside_root(tmp_path, caplog):
+    """A PROFILE_DATA_DIR whose profile file resolves OUTSIDE the root is refused.
+
+    `PROFILE_DATA_DIR` is an environment variable, so it is untrusted input
+    (Snyk `python/PT`). The endpoint resolves each candidate with `realpath` and
+    skips anything that escapes the root — this covers that refusal branch, which
+    a symlinked profile file is the realistic way to reach.
+    """
+    from httpx import ASGITransport, AsyncClient
+
+    from app.main import app
+
+    root = tmp_path / "assets"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+
+    # A real profile, but parked outside the root and symlinked in.
+    real = outside / "secret_profile.json"
+    real.write_text(json.dumps({"experience": [{"startDate": {"year": 1999}}]}))
+    for lang in ("en", "de"):
+        (root / f"profile_data_{lang}.json").symlink_to(real)
+
+    transport = ASGITransport(app=app)
+    with caplog.at_level(logging.WARNING):
+        async with AsyncClient(transport=transport, base_url="http://test") as ac:
+            with patch("app.api.years.PROFILE_DATA_DIR", str(root)):
+                with patch("app.api.years._fetch_years_via_http", return_value=set()):
+                    response = await ac.get("/api/app/cv/years")
+
+    # Every candidate escaped the root, so nothing was read and the endpoint has
+    # no years to serve — a 404 here IS the refusal working. The point of the
+    # assertion is that 1999 (which lives only in the escaping file) never
+    # reaches the response, whichever status it carries.
+    assert response.status_code in (200, 404)
+    assert "1999" not in str(response.json())
+    assert any(
+        "refusing profile path outside PROFILE_DATA_DIR" in r.message
+        for r in caplog.records
+    )

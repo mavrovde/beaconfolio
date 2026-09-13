@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Security
+- **Open redirect in the CV download link, closed at its source (#376)** — `getDownloadUrl` returned
+  any absolute URL from the API response verbatim into `window.open`. **Two earlier attempts at this
+  were not enough, and both are worth recording**: `noopener` guards reverse tabnabbing, a *different*
+  vulnerability; and a regex gate on `http`/`//` missed backslash authority forms
+  (`/\evil.com/x`, `\\evil.com/x` — the WHATWG parser treats a backslash as a separator) *and* only
+  applied when `environment.apiUrl` was set, which **neither shipped environment does** — both are
+  `''`, so the guard never ran in production. The URL is now parsed **unconditionally** against a
+  throwaway base, keeping only `pathname + search`, so any authority is discarded by construction
+  rather than by a pattern that must anticipate every spelling. Pinned by cases that run with
+  `apiUrl = ''` — the shipped value — after the first set tested a configuration production never uses.
+- **`x-powered-by` is no longer advertised** — `app.disable('x-powered-by')` in the SSR server; it was
+  the header the bare Express 404 leaked before #324. Asserted on the wire in the `not-found` E2E,
+  since `src/server.ts` is excluded from unit coverage.
+- **`PROFILE_DATA_DIR` is treated as the untrusted input it is (#376)** — it is an *environment
+  variable*, not the "module constant" an earlier suppression claimed. Each profile path is now
+  `realpath`-resolved and refused if it escapes its root, covered by a symlink-escape test;
+  `app/api/years.py` is back at **100%**.
 - **Merge gate now filters verdicts by trusted author association (#316)** — on this PUBLIC repo any
   passer-by could post an approval-shaped comment; `pre-merge-gate.sh` now admits a verdict only from
   an `OWNER`/`MEMBER`/`COLLABORATOR` entry (missing/unknown association = untrusted, fail-closed).

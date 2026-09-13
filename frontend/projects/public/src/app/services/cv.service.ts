@@ -31,20 +31,27 @@ export class CvService {
     }
 
     getDownloadUrl(relativePath: string): string {
-        // OPEN REDIRECT (Snyk `javascript/OR`). The previous form began with
-        //     if (relativePath.startsWith('http')) return relativePath;
-        // which handed any absolute URL in the API response straight to
-        // `window.open`. The backend only ever emits a RELATIVE path
-        // (`backend/app/api/cv.py`), so that branch bought nothing and turned a
-        // compromised or spoofed response into a redirect to any origin.
+        // OPEN REDIRECT (Snyk `javascript/OR`). The original returned any
+        // absolute URL from the API response verbatim into `window.open`.
         //
-        // Now the origin is ours by construction: an absolute URL is reduced to
-        // its path before the base is applied. `new URL(...)` needs a base for
-        // relative input, hence the dummy — only `.pathname`/`.search` are used.
-        let path = relativePath;
-        if (/^[a-z][a-z0-9+.-]*:/i.test(relativePath) || relativePath.startsWith('//')) {
+        // A first fix gated on `startsWith('http')`/`'//'` and was NOT enough —
+        // measured bypasses: `/\evil.com/x` and `\\evil.com/x` (the WHATWG
+        // parser treats a backslash as a separator for special schemes), and it
+        // only applied when `environment.apiUrl` was set, which it is NOT in
+        // either shipped environment — both are `''`.
+        //
+        // So: parse UNCONDITIONALLY against a throwaway base and keep only
+        // `pathname + search`. Any authority in the input — scheme, host,
+        // backslash form, protocol-relative — is discarded by construction
+        // rather than by a pattern that has to anticipate every spelling.
+        let path: string;
+        try {
             const parsed = new URL(relativePath, 'https://placeholder.invalid');
             path = `${parsed.pathname}${parsed.search}`;
+        } catch {
+            // `new URL('http://')` and friends throw; a malformed value is not
+            // something to pass along, so fall back to the API root.
+            path = '/';
         }
         if (!path.startsWith('/')) {
             path = `/${path}`;
