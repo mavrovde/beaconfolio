@@ -18,6 +18,15 @@ All notable changes to this project will be documented in this file.
   served-app rebranding stays runtime backend config (#65), never a rebuild. The other #61
   items (root MIT `LICENSE` via #256, one-command `setup.sh`, template-first README,
   comprehensive root sample) had already shipped in earlier work.
+- **Identity startup report + `PUBLIC_URL`/`SITE_URL` cross-warning (#335)** — every backend
+  start prints `IDENTITY: site_url=… owner=…`, appending a loud `DEFAULTS IN USE` marker when
+  the Jane Doe demo persona is live (it shipped silently on the prod domain on 2026-09-10),
+  and a `CONFIG WARNING` when `PUBLIC_URL` is set while `SITE_URL` is defaulted — the two are
+  near-synonyms and only `SITE_URL` feeds SEO/og:url/JSON-LD; `PUBLIC_URL` is the freshness/
+  health-gate probe target (now forwarded into the backend container in both compose files so
+  the warning can see it). Docs answer "WHICH .env IS LIVE?" in `.env.example`,
+  `docs/DEPLOYMENT.md` and the deployment wiki: production reads only the deploy dir's file.
+  Four new unit tests (loud + silent paths for both warnings).
 - **Certificate-expiry alarm in the Live Freshness workflow (#310)** — a daily "Certificate
   expiry" step measures `notAfter` for every hostname in the `TLS_HOSTNAMES` repository variable
   (default: the maintainer's three) and goes red under 21 days remaining — Caddy renews at ~30

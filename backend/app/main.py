@@ -65,12 +65,51 @@ def _warn_retired_env() -> None:
         )
 
 
+# Identity fields whose class default means "the demo persona is live" (#335).
+IDENTITY_DEFAULT_FIELDS = ("site_url", "owner_name")
+
+
+def _report_identity() -> None:
+    """#335 first-deploy DX: identity is runtime env (#65) and the Jane Doe
+    fallback is deliberately valid (#66) — which on a real domain reads as
+    "my site says Jane Doe" with nothing explaining why. One always-on line
+    names what is live and gets LOUD when the defaults are; a second warning
+    untangles PUBLIC_URL from SITE_URL (the 2026-09-10 first deploy set the
+    former expecting site identity — PUBLIC_URL only names the freshness/
+    health-gate probe target and does nothing for the site)."""
+    from app.config import settings
+
+    defaults_in_use = [
+        field.upper()
+        for field in IDENTITY_DEFAULT_FIELDS
+        if getattr(settings, field) == type(settings).model_fields[field].default
+    ]
+    line = f"IDENTITY: site_url={settings.site_url} owner={settings.owner_name}"
+    if defaults_in_use:
+        line += (
+            " [DEFAULTS IN USE (" + ", ".join(defaults_in_use) + ") — the demo "
+            "persona is live; set SITE_URL / OWNER_* in the DEPLOYMENT'S .env "
+            "(see '.env.example: Site identity') to rebrand — no rebuild needed]"
+        )
+    print(f"[{datetime.now(UTC)}] {line}")
+
+    if os.getenv("PUBLIC_URL") and "SITE_URL" in defaults_in_use:
+        print(
+            f"[{datetime.now(UTC)}] CONFIG WARNING: PUBLIC_URL is set but "
+            "SITE_URL is not. PUBLIC_URL only names the deployment probe / "
+            "health-gate target (Live Freshness, rollout gate); the SITE'S "
+            "identity — SEO canonical, og:url, JSON-LD — comes from SITE_URL. "
+            f"Set SITE_URL too, or public pages keep advertising {settings.site_url}."
+        )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print(f"[{datetime.now(UTC)}] LIFESPAN START: Beaconfolio API")
     app.state.start_time = datetime.now(UTC)
 
     _warn_retired_env()
+    _report_identity()
 
     # SECURITY (issue #177): fail fast when the JWT signing secret is unset or
     # still the publicly-known placeholder — a deployment that signs admin
