@@ -29,6 +29,17 @@ All notable changes to this project will be documented in this file.
     measured") was drafted as **2 ✅** and re-derived at blocker-or-major level as **5 ❌**. Class B's
     published list is also corrected: `CLAUDE.md` records a *different* five, measured under a looser
     predicate, and #373 was in neither class — its base was `0 behind main, CLEAN`.
+- **Lessons §60 + `pr-reviewer` charter — a "read-only" agent that runs `git checkout` mutates the
+  shared working tree.** During #389's round-3 review the reviewer ran `git checkout <sha>` in the
+  main tree to trace how a table changed across commits, and left HEAD detached. The next fix
+  commit landed on **no branch**; `git push` failed with `git push origin HEAD:<name-of-remote-branch>`,
+  which reads like a usage hint and actually means the commit is orphaned. Recovered losslessly
+  (`git checkout <branch> && git merge --ff-only <sha>`) only because the orphan's parent happened
+  to be the branch tip. The charter's "no Edit/Write tools by design" bounded the wrong surface:
+  `git checkout` is neither Edit nor Write and is the most state-mutating command in the repo.
+  Review-only now means **read-only to repository state**, with `git show <sha>:<path>` /
+  `git diff a..b` / `git log -p` named as the replacements, and a `git status -sb` check before any
+  commit in a long session.
 - **Lessons §58b correction (#390 review follow-up)** — the entry said "the `rstrip` and CRLF
   mutants survived"; there was no CRLF *mutant* at that head. The two that survived at 26/0 were
   `rstrip` (a fixture hole) and drop-the-final-newline (the one real assertion hole), and the CR
