@@ -459,6 +459,19 @@ check "pipe: bash + trailing VT"     "echo \"$DV $V\" | bash"$'\v'              
 check "pipe: bash + trailing FF"     "echo \"$DV $V\" | bash"$'\f'                 deny
 # ...and the collapse must not invent a denial where there is none.
 check "pipe: benign CR line"         'npm run build'$'\r'                          allow
+# QUOTED spellings of the shell (#370): the shell list matched raw segment
+# text, so every quoted spelling of the same binary piped a payload unguarded
+# — measured allow×4 on main@32555b3 (issue table). Now argv_split (the ONE
+# quoting model) reduces the segment before matching. All four spellings from
+# the issue, each a distinct quoting mechanism; plus a quoted stdin FLAG,
+# which the same raw-text matching also missed.
+check "pipe: quoted \"bash\""        "echo \"$DV $V\" | \"bash\""                  deny
+check "pipe: quoted 'bash'"          "echo \"$DV $V\" | 'bash'"                    deny
+check "pipe: split ba\"sh\""         "echo \"$DV $V\" | ba\"sh\""                  deny
+check "pipe: ansi \$'bash'"          "echo \"$DV $V\" | \$'bash'"                  deny
+check "pipe: bash quoted \"-s\""     "echo \"$DV $V\" | bash \"-s\""               deny
+# ...and unquoting must not reclassify a benign quoted argument as a shell.
+check "pipe: quoted non-shell"       "echo \"x\" | \"grep\" x"                     allow
 check "pipe: sudo -E bash"           "echo \"$D $T\" | sudo -E bash"               deny
 check "pipe: xargs -0 bash -c"       "echo \"$DV $V\" | xargs -0 bash -c"          deny
 check "pipe: zsh"                    "echo \"$D $T\" | zsh"                        deny

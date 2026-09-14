@@ -81,6 +81,14 @@ All notable changes to this project will be documented in this file.
   (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24, 2001:db8::/32) — the `.env.example` sample IP
   was once pasted verbatim into prod and surfaced only as an opaque 403; self-test +7 checks
   (warning fires per range, real entries stay silent, allow lines unchanged).
+- **`guard-destructive`: a QUOTED spelling of the shell no longer bypasses `pipes_into_shell`
+  (#370)** — `"bash"`, `'bash'`, `ba"sh"` and `$'bash'` all matched nothing in the raw-text
+  shell list and piped a destruction payload unguarded (measured allow×4 on `main@32555b3`).
+  The segment is now reduced through `argv_split` — the ONE quoting model (#217/#237) — inside
+  the peel loop, fork-free and only when a quote character is present; an unterminated quote
+  leaves the fragment raw, exactly as before. Also closes the same class for a quoted stdin
+  flag (`bash "-s"`). Five new self-test deny cases (each measured `allow` against the pre-fix
+  hook) plus a quoted-non-shell allow pin; full suite incl. every `cost:` budget case green.
 - **Reverted the premature v1.14.3 version bump (#411)** — the release PR was cut with only
   #381 and the v1.14.2 retrospective delivered while 12 issues planned under `release:v1.14.3`
   were still open; the deploy run was cancelled before rollout, so prod stayed at 1.14.2 and no

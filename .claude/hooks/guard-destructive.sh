@@ -491,6 +491,28 @@ pipes_into_shell() {
     # peel_wrapper model (#217) so this cannot drift from inspect_segment's.
     via_xargs=0
     while :; do
+      # QUOTED spellings of the shell reduce by the ONE quoting model (#370):
+      # `"bash"`, `'bash'`, `ba"sh"` and `$'bash'` are the same binary as
+      # `bash`, and matching the raw segment text made the shell list an
+      # allowlist of unquoted spellings — all four piped a destruction payload
+      # unguarded (measured on main@32555b3). argv_split is the existing
+      # quote-aware splitter (fork-free, linear), paid only when the segment
+      # still carries a quote character; a case-arm unquoter here would be a
+      # fourth quoting model, which is the #217/#237 drift class. Rejoining
+      # with single spaces matches the whitespace-collapsed shape the parsing
+      # below assumes. An UNTERMINATED quote means this segment is a fragment
+      # cut at a newline — leave it raw, exactly as before this change.
+      case "$seg" in
+        *[\"\']*)
+          argv_split "$seg"
+          if [ "$ARGV_SPLIT_UNTERMINATED" = 0 ] && [ "${#ARGV_SPLIT_RESULT[@]}" -gt 0 ]; then
+            # printf -v, not "${arr[*]}": IFS is newline inside this loop, so
+            # [*] would join tokens with newlines, not spaces. No fork either way.
+            printf -v first '%s ' "${ARGV_SPLIT_RESULT[@]}"
+            first="${first% }"
+            if [ "$first" != "$seg" ]; then seg="$first"; continue; fi
+          fi ;;
+      esac
       case "$seg" in
         xargs|"xargs "*)
           via_xargs=1
