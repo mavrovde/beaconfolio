@@ -392,6 +392,7 @@ fast, diff-scoped contract checks plus a **formatting/compilation confirmation**
 code — `ruff check` + `ruff format --check` for backend Python (~0.1s), a per-selected-project
 `tsc --noEmit` for frontend TS (~1s each). The **deep** suites — pytest, mypy, bandit, the Vitest
 projects — run in CI on every push/PR and at merge time; `PREPUSH_DEEP=1` opts a push into
+running them locally.
 Measured on one machine, and **the two published sets describe different gates — read the head,
 not just the number** (v1.14.2 retro §3, where this ambiguity was itself a class-F finding):
 

@@ -25,7 +25,7 @@ All notable changes to this project will be documented in this file.
 - **A release figure is now written ONCE (`release-retro` skill)** — the retro file and the trend
   table are canonical; every other document links instead of restating. Motivated by #389's 13
   round-1 blockers (*"the cost figures disagree with themselves across three files … four
-  readings"*) and by the 24 restatements of the v1.14.1 figures still live in the two wiki
+  readings"*) and by the 14 restatements of the v1.14.1 figures still live in the two wiki
   articles. Demonstrated rather than asserted: this PR adds **no** v1.14.2 figure to
   `docs/wiki/`.
 - **Verdicts are counted replayed at `mergedAt`** (`release-retro` skill + the directory's

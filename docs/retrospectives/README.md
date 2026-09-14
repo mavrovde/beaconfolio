@@ -132,8 +132,10 @@ canonical verdicts were posted **after** their PR merged (retrospective back-fil
 record). Counting them naively reports **five round-1 approvals (36%)**; replayed at `mergedAt`
 the figure is **0 of 14**, because every PR that was reviewed before merge opened with a REQUEST
 CHANGES. The loose/canonical cells keep 40/38 because that is what the documented filter returns
-as run; **Approved r1, Mean rounds and Rework share are the replayed figures** — 32 verdicts were
-posted pre-merge (2.29/PR; **3.56** over the 9 PRs actually reviewed). This also closes the
+as run, and **Mean rounds (2.71) and Rework share (63%) stay NAIVE for comparability with the
+four prior rows, which are all naive; only Approved r1 is the replayed figure.** Replayed, the
+other two read **2.29**/PR (32 pre-merge verdicts; **3.56** over the 9 PRs actually reviewed)
+and **56%** — quote those when the claim is about the gate, the cells when it is about the trend. This also closes the
 author-body hole note 10 left open: a verdict must both **open** with the marker (position is not
 authorship) **and predate the merge** (a back-fill is not a gate).
 
