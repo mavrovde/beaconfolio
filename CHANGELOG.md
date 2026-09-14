@@ -90,6 +90,60 @@ All notable changes to this project will be documented in this file.
   Discussion #387 opens both for comment.
 
 ### Changed
+- **The AI-config drift checker's own blind spots closed (#378)** — two categories that
+  **could not fail**, the exact defect class the checker exists to catch. The `| MCP |` row was
+  invisible because the kind pattern was `[a-z]+` and the row is uppercase (deleting it passed);
+  MCP is now checked **both ways against `.mcp.json`**. The `scripts/` sweep globbed `*.sh` only,
+  so a `.py` or `.mjs` tool needed no row — `dedup_changelog_unreleased.py` was already such a
+  file; it now sweeps every file, and a `tooling` row satisfies it alongside `lint`. The two
+  tolerant parses (a lint row missing `scripts/`, a leading `/` on a hook row) now fail. Seven new
+  cases, **six of them measured failing against the pre-fix checker** (the seventh is a
+  regression-guard for new behaviour). Round 1 of the review then found the fix reproducing its
+  own defect class **on the platform CI runs**: `` grep -oE '\`…\`' `` is a literal backtick to BSD
+  grep and the **start-of-buffer anchor** to GNU grep, so the reverse-MCP loop matched nothing on
+  Linux, its body never ran and that category could not fail there — green on macOS, red in CI.
+  Measured on one input: BSD prints `` `postgres` ``, GNU prints nothing. The pattern is now bare,
+  the checker now holds its backtick in a `$BT` variable so no escape exists to get wrong, a
+  self-test asserts the sequence appears **nowhere** in it, and **the whole suite is run in a
+  Debian container** as well as on macOS, **0 failed on both**. Replaying the round-1 bug as a
+  mutation is killed on **both** platforms, but not by the same cases: **one case on macOS** (the
+  meta-test alone) and **two under GNU grep** (the meta-test plus the behavioural case). That
+  asymmetry is the whole argument for the meta-test — the behavioural case cannot see this bug on
+  the platform the author is typing on. Counts are stated as cases-killed rather than
+  totals because the mutation figures in this very entry were wrong twice (a mis-measured mutant,
+  then a stale pair) and the PR body carried a third stale count — the totals themselves were only
+  ever out of date, never wrong. Same round: the `jq`
+  dependency is gone (four committed places promise bash+coreutils, and jq-less it failed closed
+  with three bogus drift errors) — `.mcp.json` is now walked by a depth-tracking `awk` that is
+  indentation-independent and does not mistake a nested `env` object for a server; `tooling` rows,
+  load-bearing since they satisfy the sweep, gained the map→real and `scripts/`-prefix checks that
+  `lint` already had; and a server listed twice in the MCP row now fails, as it already did for
+  plugins. Round 2 closed the last two cannot-fail paths it could still reach: **deleting
+  `.mcp.json` outright** left the MCP row uninspected (the checker reported "✓ matches reality"
+  while the map advertised three servers that did not exist), and a server whose value is not an
+  object was dropped in silence — the `awk` walk now counts key positions against objects opened
+  and **fails closed** when they disagree. Round 3's narrower "only a brace opens a server" then
+  *regressed* `"mcpServers": [...]` from fail-closed to a **silent pass** (the walk skipped the
+  bracket and latched onto the first inner object), and the case meant to guard it passed for the
+  wrong reason — it was the file's only bare-`rc` assertion, kept non-zero by an unrelated
+  mismatch. Both are fixed and the case now asserts the message; the malformed signal travels by
+  `awk` exit status, which no server name can forge.
+- **Three #373 residuals recorded where the reader stands (#382)** — `cv.component.ts` now names
+  Snyk alert **3136**, its dismissal as a false positive, and *why it can never auto-clear* (Snyk
+  does not model `URL.pathname` as a sanitizer), instead of leaving the argument in a PR comment;
+  `.snyk` states the triage's **shape** with the live feed's measured numbers (2 open / 7
+  dismissed / 313 fixed at 2026-09-14) rather than a count that was wrong three times; and
+  `cv.service.spec.ts`'s escape invariant now also rejects `/\`, which is as protocol-relative as
+  `//` — unreachable today, and stated anyway, because an invariant that leans on the
+  implementation holding is not an invariant.
+- **Four v1.14.1 review residuals cleared (#384)** — `/prep-pr` step 2 now sorts both sides
+  (`diff` is order-sensitive, so the dedup fixer's legitimate re-ordering made it cry wolf) and
+  states **both** meanings of a `<` line with their opposite remedies (behind `main` → rebase;
+  up to date → content was lost → restore), pointing at #391's mechanical check as the real
+  defence; `verify_all.sh` stage labels renumbered `[1/4]`…`[4/4]` after the drift check became a
+  stage; `check_aiconfig_map.sh` records **why hook counts are deliberately unguarded** (4 real
+  hooks vs 6 map rows, because two are shared libraries — a count regex would fail on correct
+  content); and the freshness comment sits with the block it describes again.
 - **The pre-push gate now runs only the legs the DIFF can break (#377)** — it ran the entire round
   on every push regardless of what changed, so a two-file documentation commit paid
   **11m44s** for backend pytest, ruff, mypy, three Vitest projects and ~12 script/hook

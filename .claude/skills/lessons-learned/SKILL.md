@@ -1669,6 +1669,60 @@ on feature branches; it is explicitly not the last line of defence.
 `projects/public/**` 11m44s → 15s, push to a protected branch 11m44s → 11m11s (unchanged, by design). The second-order win matters as much as the first: a gate that
 costs twelve minutes gets bypassed, and a bypassed gate protects nothing.
 
+## 61. A MUTATION needs an assertion that it is the INTENDED mutant — a needle check is not enough (#400)
+
+**What happened.** To prove a self-test can detect a bug, you reintroduce the bug and watch the
+suite go red. The mutation that reintroduced #400's round-1 bug (an escaped backtick in an ERE) was
+applied from a Python heredoc that emitted **two** backslashes instead of one. The resulting pattern
+required a literal backslash before the backtick, so it matched nothing on *any* grep — a strictly
+**stronger** break than the bug being replayed.
+
+The measurement was self-consistent and completely wrong: the behavioural case failed on macOS and
+Linux alike, reading as "detection is platform-independent". The truth is the opposite, and it is
+the entire reason the meta-test exists — on macOS that bug is caught by **one** case, under GNU grep
+by **two**, because the behavioural case *cannot see it* on the platform the author is typing on.
+The false claim reached a committed CHANGELOG and cost a review round.
+
+**This is not a one-person mistake.** The reviewer made the identical error, in the same PR, from
+the same Python-heredoc workflow. Two independent people, same trap, same afternoon.
+
+**What caught it there is the generalisable half:** not `repr()`, but a **contradicted prediction**
+— they expected 30/1, measured 29/2, and went looking for why. `repr()` only confirmed what the
+mismatch had already flagged. So the habit worth copying is *predict the mutation's result before
+running it*; a mutation whose outcome you did not predict cannot surprise you, and surprise is the
+only signal that the instrument is wrong. Nobody predicted the author's run, which is why it stood
+for two rounds.
+
+**The rule.** The existing guard — assert the needle still exists, fail the run INVALID if it
+rotted — is necessary and **not sufficient**. (That guard lives in the `--mutations` harnesses
+themselves, e.g. `scripts/check_changelog_merge.test.sh:203` and the four hook self-tests, *not* in
+§58b: the citation here originally pointed at §58b/#388 and was wrong on both halves, which is a
+fitting bug for this particular lesson to have shipped with.) It proves you changed *something*; it does not
+prove you changed it into the thing you meant. Assert the shape of the MUTANT too:
+
+```python
+assert a in s, "needle rotted — INVALID"
+assert b.count("\\") == 2 and "\\\\" not in b, "not the intended single-backslash mutant — INVALID"
+```
+
+…and then **look at the mutated line** (`grep -n … | cat -v`) before trusting any number it
+produces. One `cat -v` would have shown the two-backslash form where the one-backslash form was
+intended.
+
+The `== 2` is deliberate and checked: the intended mutant carries **one** backslash before each of
+**two** backticks, so two in total; the invalid one carried two before each, so four. (A reviewer
+read this as three — hence this sentence, because a lesson about unverified numbers is the worst
+possible place to leave one unshown.)
+
+**Why it matters more than a rotted needle.** A rotted needle yields a missing result, which is
+obvious. A wrong mutant yields a *confident wrong number* that looks exactly like evidence — and
+evidence is what a mutation contract exists to produce. Same family as §58b: the hole was in the
+FIXTURE, not the assertion.
+
+Related: [[verify-that-gates-actually-gate]]. See also §58b (a verifier fails open, and the fixture
+is as suspect as the assertion) and the `env-gotchas` entry on BSD-vs-GNU `\`` in single-quoted
+EREs, which is the bug this mutation was replaying.
+
 ## Where the rules live (AI-config map)
 
 - **`CLAUDE.md`** — the authoritative numbered rules (engineering rules 1–13, issue-tracking flow,

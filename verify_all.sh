@@ -32,14 +32,14 @@ fi
 # a stale map misleads every later reader, human or agent.
 echo ""
 echo "========================================"
-echo "[0/3] repo: 🗺️  AI-config map drift"
+echo "[1/4] repo: 🗺️  AI-config map drift"
 echo "========================================"
 bash "$(dirname "$0")/scripts/check_aiconfig_map.sh" || exit 1
 
 # 1. Backend Checks (via Docker to ensure consistent environment)
 echo ""
 echo "========================================"
-echo "[1/3] backend: 🐍 Static Analysis & Tests"
+echo "[2/4] backend: 🐍 Static Analysis & Tests"
 echo "========================================"
 # Start DB if not running
 # Start DB with DEV config to ensure ports are exposed
@@ -55,7 +55,7 @@ cd ..
 # 2. Frontend Checks
 echo ""
 echo "========================================"
-echo "[2/3] frontend: 🅰️  Lint, Tests & Build"
+echo "[3/4] frontend: 🅰️  Lint, Tests & Build"
 echo "========================================"
 cd frontend
 echo "Running Lint..."
@@ -69,7 +69,7 @@ cd ..
 # 3. E2E Checks
 echo ""
 echo "========================================"
-echo "[3/3] e2e: 🎭 Docker Stack + E2E Tests"
+echo "[4/4] e2e: 🎭 Docker Stack + E2E Tests"
 echo "========================================"
 # Ensure full stack is running
 echo "Starting full stack..."

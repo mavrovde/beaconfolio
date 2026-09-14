@@ -26,6 +26,9 @@ skeleton() { # skeleton <dir>
   cat > "$d/.claude/settings.json" <<'JSON'
 { "enabledPlugins": { "context7@claude-plugins-official": true } }
 JSON
+  cat > "$d/.mcp.json" <<'JSON'
+{ "mcpServers": { "postgres": {}, "github": {} } }
+JSON
   cat > "$d/CLAUDE.md" <<'MD'
 # CLAUDE.md — demo
 
@@ -37,6 +40,7 @@ JSON
 | hook | `pre-push-tests.sh` | gates before push |
 | lint | `scripts/check_demo.sh` | a demo lint |
 | plugin | `context7` | live docs |
+| MCP | `postgres`, `github` | demo servers |
 
 - **Subagents** (`.claude/agents/`): all one — `backend-dev`.
 
@@ -190,6 +194,270 @@ if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -qi "MORE THAN ONCE"; then
   ok "a plugin listed twice FAILS"
 else bad "duplicate plugin" "rc=$rc; $out"; fi
 rm -rf "$d"
+
+
+# --- #378: the MCP category must be able to fail ----------------------------
+D="$(mktemp -d)"; skeleton "$D"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("| MCP | `postgres`, `github` | demo servers |\n", ""))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "NO | MCP | row"; then
+  ok "#378: deleting the | MCP | row FAILS (the category can fail now)"
+else bad "#378: deleting the MCP row must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+D="$(mktemp -d)"; skeleton "$D"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("`postgres`, `github`", "`postgres`"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "MCP server 'github' is in .mcp.json but not"; then
+  ok "#378: a server in .mcp.json with no row entry FAILS"
+else bad "#378: server-without-row must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+D="$(mktemp -d)"; skeleton "$D"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("`postgres`, `github`", "`postgres`, `github`, `ghost`"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "MCP server 'ghost' is in the map's MCP row but not"; then
+  ok "#378: a row entry naming a server absent from .mcp.json FAILS"
+else bad "#378: row-without-server must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# --- #378: a non-.sh tool in scripts/ needs a row ---------------------------
+D="$(mktemp -d)"; skeleton "$D"
+: > "$D/scripts/sneaky_tool.py"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "sneaky_tool.py"; then
+  ok "#378: a rowless scripts/*.py FAILS (the sweep sees every extension)"
+else bad "#378: a rowless .py tool must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# a `tooling` row satisfies the sweep (the real map distinguishes gates from helpers)
+D="$(mktemp -d)"; skeleton "$D"
+: > "$D/scripts/helper_tool.py"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("| plugin | `context7` | live docs |",
+  "| tooling | `scripts/helper_tool.py` | a helper |\n| plugin | `context7` | live docs |"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -eq 0 ]; then ok "#378: a kind-tooling row satisfies the scripts/ sweep"
+else bad "#378: a tooling row must satisfy the sweep" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# --- #378: the two formerly tolerant parses now fail ------------------------
+D="$(mktemp -d)"; skeleton "$D"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("| lint | `scripts/check_demo.sh` |", "| lint | `check_demo.sh` |"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "does not carry the scripts/ prefix"; then
+  ok "#378: a lint row without the scripts/ prefix FAILS"
+else bad "#378: prefixless lint row must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+D="$(mktemp -d)"; skeleton "$D"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("| hook | `pre-push-tests.sh` |", "| hook | `/pre-push-tests.sh` |"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "starts with '/'"; then
+  ok "#378: a hook row with a leading / FAILS"
+else bad "#378: leading-/ hook row must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# --- #400 review round 1: the fix's own holes -------------------------------
+# The blocker: `\`` inside a single-quoted ERE is a LITERAL backtick to BSD grep
+# and the START-OF-BUFFER ANCHOR to GNU grep, so the reverse-MCP loop matched
+# nothing on the Linux runner and that category could not fail there. The case
+# below cannot see the platform difference (it runs on one grep), so pin the
+# cause instead: no single-quoted ERE in the checker may contain `\``.
+# The sequence backslash-backtick must appear NOWHERE in the checker. Round 2
+# measured four ways around a narrower "only after -oE" regex (grep -qE,
+# grep -o -E, sed -E, a pattern held in a variable), and a check whose regex is
+# narrower than its promise is itself a cannot-fail check. Parsing shell quoting
+# to find the risky ones is worse than the disease — an apostrophe in a comment
+# breaks the parse. So the checker holds its backtick in $BT instead, there is
+# no escape anywhere in it, and this becomes a fixed-string search that cannot
+# be argued with (#400 r2).
+if LC_ALL=C grep -qF '\`' "$SCRIPT"; then
+  bad "#400: the checker contains backslash-backtick — under GNU grep that is the start-of-buffer anchor, so the pattern matches nothing" "$(LC_ALL=C grep -nF '\`' "$SCRIPT")"
+else ok "#400: backslash-backtick appears nowhere in the checker (it uses \$BT)"; fi
+
+# The lint promises bash+coreutils in four committed places; a broken or absent
+# jq must therefore change nothing. A stub that always fails stands in for
+# "jq is not installed here".
+D="$(mktemp -d)"; skeleton "$D"
+mkdir -p "$D/fakebin"
+printf '#!/bin/sh\nexit 127\n' > "$D/fakebin/jq"; chmod +x "$D/fakebin/jq"
+out="$(PATH="$D/fakebin:$PATH" CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -eq 0 ]; then ok "#400: a broken/absent jq changes nothing (the lint is dependency-free)"
+else bad "#400: the lint must not need jq" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# `tooling` satisfies the scripts/ sweep, so it is load-bearing and needs the
+# map->real direction too.
+D="$(mktemp -d)"; skeleton "$D"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("| plugin | `context7` | live docs |",
+  "| tooling | `scripts/ghost_helper.py` | a helper nobody wrote |\n| plugin | `context7` | live docs |"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "ghost_helper.py"; then
+  ok "#400: a tooling row naming a nonexistent file FAILS"
+else bad "#400: tooling row -> real file must be checked" "rc=$rc $out"; fi
+rm -rf "$D"
+
+D="$(mktemp -d)"; skeleton "$D"
+: > "$D/scripts/helper_tool.py"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("| plugin | `context7` | live docs |",
+  "| tooling | `helper_tool.py` | a helper |\n| plugin | `context7` | live docs |"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "does not carry the scripts/ prefix"; then
+  ok "#400: a tooling row without the scripts/ prefix FAILS"
+else bad "#400: prefixless tooling row must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+D="$(mktemp -d)"; skeleton "$D"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("`postgres`, `github`", "`postgres`, `github`, `postgres`"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "listed MORE THAN ONCE in the map's MCP row"; then
+  ok "#400: a server listed twice in the MCP row FAILS"
+else bad "#400: duplicate MCP entry must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# The awk .mcp.json walk must not depend on indentation — same servers, minified.
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":{"postgres":{"command":"npx","args":["-y","x"]},"github":{"env":{"T":"${T}"}}}}\n' > "$D/.mcp.json"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -eq 0 ]; then ok "#400: the .mcp.json walk is indentation-independent (minified JSON parses)"
+else bad "#400: minified .mcp.json must parse the same" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# …and a NESTED object must not be mistaken for a server (github's "env" here).
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":{"postgres":{},"github":{"env":{"TOKEN":"x"}}}}\n' > "$D/.mcp.json"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -eq 0 ] && ! printf '%s' "$out" | grep -q "'env'"; then
+  ok "#400: a nested object inside a server is not read as a server"
+else bad "#400: nested objects must not become servers" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# Deleting .mcp.json must not make the MCP row UNINSPECTED (#400 r2 finding 1).
+D="$(mktemp -d)"; skeleton "$D"
+rm -f "$D/.mcp.json"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "NO .mcp.json"; then
+  ok "#400: an MCP row with no .mcp.json at all FAILS (the file cannot be deleted into silence)"
+else bad "#400: deleting .mcp.json must not skip the MCP row" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# …and with neither the file nor the row, there is nothing to disagree about.
+D="$(mktemp -d)"; skeleton "$D"
+rm -f "$D/.mcp.json"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("| MCP | `postgres`, `github` | demo servers |\n", ""))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -eq 0 ]; then ok "#400: no .mcp.json and no MCP row is consistent, not an error"
+else bad "#400: absent file + absent row must pass" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# A server whose value is not an object must fail CLOSED, not vanish silently.
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":{"postgres":{},"github":"oops"}}\n' > "$D/.mcp.json"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "whose value is not an object"; then
+  ok "#400: a non-object server value FAILS CLOSED (it is not dropped in silence)"
+else bad "#400: a non-object server value must fail closed" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# An ARRAY value is not a server object (#400 r3 nit).
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":{"postgres":{},"github":[]}}\n' > "$D/.mcp.json"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "whose value is not an object"; then
+  ok "#400: an ARRAY server value FAILS CLOSED (it is not counted as an object)"
+else bad "#400: an array server value must fail closed" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# The malformed signal travels by EXIT STATUS, so no server name can forge it.
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":{"postgres":{},"__MALFORMED__":{}}}\n' > "$D/.mcp.json"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("`postgres`, `github`", "`postgres`, `__MALFORMED__`"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -eq 0 ]; then ok "#400: a server named __MALFORMED__ cannot forge the error channel"
+else bad "#400: the malformed signal must not be forgeable by a server name" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# mcpServers itself as an array is not silently 'no servers'.
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":[{"postgres":{}}]}\n' > "$D/.mcp.json"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+# Assert the MESSAGE, not just rc. As a bare rc check this case passed for the
+# WRONG REASON — the skeleton's row lists two servers while the array parse
+# yielded one, so an unrelated mismatch kept rc non-zero while the malformation
+# itself went undetected (#400 r4). It was the only bare-rc case in this file.
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "whose value is not an object"; then
+  ok "#400: mcpServers as an ARRAY fails AS MALFORMED (not via an unrelated mismatch)"
+else bad "#400: mcpServers as an array must fail as malformed" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# The r4 regression shape: a row that AGREES with what the array parse yields,
+# so no unrelated mismatch can mask the malformation.
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":[{"postgres":{}}]}\n' > "$D/.mcp.json"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("`postgres`, `github`", "`postgres`"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "whose value is not an object"; then
+  ok "#400: an ARRAY mcpServers whose row AGREES still fails (the r4 silent pass)"
+else bad "#400: agreeing-row array must still fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# The one MCP mechanism the reviewer found UNPINNED: neutering the
+# "parsed nothing" guard left the suite at 38/0, so nothing tested it (#400 r4).
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":{}}\n' > "$D/.mcp.json"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "no servers could be parsed"; then
+  ok "#400: an EMPTY mcpServers block FAILS (the parsed-nothing guard is pinned)"
+else bad "#400: empty mcpServers must fail" "rc=$rc $out"; fi
+rm -rf "$D"
 
 printf '\ncheck_aiconfig_map self-test: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

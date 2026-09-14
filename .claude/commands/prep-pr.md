@@ -27,12 +27,27 @@ E2E assertion). Consult the `env-gotchas` skill for platform pitfalls while runn
 
    ```bash
    python3 scripts/dedup_changelog_unreleased.py CHANGELOG.md
-   diff <(git show origin/main:CHANGELOG.md | sed -n '/^## \[Unreleased\]/,/^## \[[0-9]/p' | grep '^- ') \
-        <(sed -n '/^## \[Unreleased\]/,/^## \[[0-9]/p' CHANGELOG.md | grep '^- ')
+   diff <(git show origin/main:CHANGELOG.md | sed -n '/^## \[Unreleased\]/,/^## \[[0-9]/p' | grep '^- ' | sort) \
+        <(sed -n '/^## \[Unreleased\]/,/^## \[[0-9]/p' CHANGELOG.md | grep '^- ' | sort)
    ```
 
-   The diff must show only `>` lines, and only this branch's own entries. Any `<` line means the
-   rebase **lost** something from `main`.
+   **`| sort` is load-bearing** (#384): `diff` is order-sensitive, so without it the dedup fixer's
+   legitimate re-ordering shows entries that merely MOVED as `<` lines, and the check cries wolf.
+
+   The diff must show only `>` lines, and only this branch's own entries. A `<` line has **two
+   possible meanings, with opposite remedies** — decide which before acting:
+   - **`main` moved ahead of you** (the common case): the entry exists on `main` and your branch
+     simply predates it. Remedy: **rebase**. Confirm with
+     `git rev-list --count HEAD..origin/main` — non-zero means you are behind.
+   - **The rebase LOST it**: you are already up to date (`0` behind) and the entry is still
+     missing. Remedy: **restore** the line, and look for others — a resolution dropped content.
+   - **You REWORDED an existing entry**: a `<` for the old text paired with a `>` for the new one,
+     same subject. Nothing is lost and nothing needs rebasing — but say so in the PR, because a
+     reviewer reading the diff cannot tell a deliberate rewording from a dropped line (#400).
+
+   Since #391 this is also enforced mechanically: `scripts/check_changelog_merge.sh` runs in the
+   pre-push gate and CI and measures the real merged result, so this step is the human-readable
+   early warning, not the only line of defence.
 3. **Stale old-behavior assertions.** If the diff changes user-visible behavior, grep the WHOLE
    relevant spec tree (`frontend/e2e`, `frontend/projects/*/src/**/*.spec.ts`, `backend/tests`) for
    assertions on the OLD behavior — search for the old strings/routes/status codes the diff removes

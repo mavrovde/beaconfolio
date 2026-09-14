@@ -25,6 +25,28 @@ Facts about THIS repo's environments that keep costing cycles. Check here before
   the PATH `grep` is ugrep (accepts `-P` and `\b`) while `/usr/bin/grep` is BSD grep (rejects
   both) — a `-P` pattern that passes interactively breaks in scripts/hooks/CI that resolve the
   system grep. `**` globs need bash `globstar` (off by default) — prefer `find`.
+- **`` \` `` inside a single-quoted ERE is a GNU ANCHOR, and a literal to BSD** (#400). In shell
+  single quotes `` '\`' `` is backslash+backtick; BSD grep reads it as a literal backtick, GNU grep
+  reads `` \` `` as its **start-of-buffer anchor**, so a pattern like ``grep -oE '\`[a-z-]+\`'``
+  matches happily on macOS and matches **NOTHING** on the Linux runner. Measured both ways on the
+  same input: BSD prints `` `postgres` ``, GNU prints nothing. Write the backtick BARE —
+  ``grep -oE '`[A-Za-z0-9_-]+`'`` — since single quotes already protect it from the shell. The
+  escape is only needed inside DOUBLE quotes (`"\`$m\`"`), which is why the two forms sit side by
+  side in the same file and look interchangeable. They are not.
+  **Why this one is expensive:** the failing pattern is usually inside a `for`/`while` that only
+  *reports* problems, so no-match means the loop body never runs and the check reports SUCCESS.
+  A whole category silently cannot fail on the platform CI uses, while the self-test is green on
+  the author's machine — which is how this shipped inside the very PR that existed to close
+  cannot-fail categories. **A shell lint's self-test is only evidence on the platform it ran on.**
+  Cheapest proof before pushing — measured at **2.0 s** against an image already on the box
+  (`docker image ls`; no pull, so the stack-resources guard is uninvolved):
+
+  ```bash
+  docker run --rm --entrypoint bash -v "$PWD":/w -w /w \
+    ghcr.io/mavrovde/beaconfolio-backend:1.14.0 -c 'bash scripts/<tool>.test.sh'
+  ```
+
+  It catches every BSD-vs-GNU divergence on this list, not just the backtick one.
 - **`date`**: BSD `date` has no `date -d`; use `date -v-1d` forms or python.
 - **zsh is the interactive shell**; CI and hooks run bash. `echo ===` in zsh can trigger
   `== not found` (zsh treats `=cmd` as a path expansion); `setopt`-dependent behavior and word

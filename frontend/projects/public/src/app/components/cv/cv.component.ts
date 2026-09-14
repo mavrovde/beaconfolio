@@ -67,6 +67,15 @@ export class CvComponent implements OnInit {
                     // which now reduces any absolute URL to a path on our origin.
                     // Keeping `noopener` anyway: it is correct hygiene for any
                     // `window.open`, and cheap.
+                    //
+                    // Snyk alert 3136 on THIS line is dismissed as a false
+                    // positive, and cannot ever auto-clear: Snyk does not model
+                    // `URL.pathname` as a sanitizer, so it keeps seeing an
+                    // API-supplied value reach `window.open` however the value
+                    // is actually constrained. The real fix lives in
+                    // `cv.service.getDownloadUrl`, which reduces any absolute
+                    // URL to a path on our origin and is pinned by an
+                    // invariant-based spec, not a vector table (#382/#376).
                     window.open(fullUrl, '_blank', 'noopener');
                     this.cvForm.reset();
                 }
