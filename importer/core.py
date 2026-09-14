@@ -20,6 +20,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -48,11 +49,13 @@ class Config:
     @classmethod
     def from_env(cls, **overrides) -> "Config":
         base = Path(os.getenv("SCRAPER_DIR", "scraper"))
+        api_url = os.getenv("BEACONFOLIO_API_URL", "http://localhost:8000").rstrip("/")
+        state_env = os.getenv("IMPORT_STATE")
         cfg = dict(
-            api_url=os.getenv("BEACONFOLIO_API_URL", "http://localhost:8000").rstrip("/"),
+            api_url=api_url,
             token=os.getenv("LINKEDIN_IMPORT_TOKEN", ""),
             posts_json=Path(os.getenv("POSTS_JSON", base / "posts_data.json")),
-            state_path=Path(os.getenv("IMPORT_STATE", "importer/state.json")),
+            state_path=Path(state_env) if state_env else default_state_path(api_url),
             default_language=os.getenv("IMPORT_DEFAULT_LANGUAGE", "en"),
             publish=os.getenv("IMPORT_PUBLISH", "").lower() in ("1", "true", "yes"),
             retries=int(os.getenv("IMPORT_RETRIES", "3")),
@@ -62,6 +65,25 @@ class Config:
         )
         cfg.update(overrides)
         return cls(**cfg)
+
+
+def default_state_path(api_url: str) -> Path:
+    """Per-target ledger path (#334): ``importer/state.<host>.json``.
+
+    The ledger remembers *that* a post was imported — with one global file it
+    forgot *where to*, so pointing the importer at a brand-new server silently
+    skipped everything an OLD server had already received (measured 2026-09-10:
+    21 of 25 posts "skip (unchanged)" against a database containing zero
+    posts). Deriving the file from the target host gives each target its own
+    memory; ``IMPORT_STATE`` still overrides for exotic setups.
+    """
+    host = urlparse(api_url).netloc or "local"
+    # ':' appears in host:port targets and is unfriendly in filenames (and
+    # illegal on some filesystems); '-' keeps the name readable.
+    return Path(f"importer/state.{host.replace(':', '-')}.json")
+
+
+LEGACY_STATE_PATH = Path("importer/state.json")
 
 
 def detect_language(text: str, default: str = "en") -> str:
@@ -237,6 +259,17 @@ def run(cfg: Config, client: Optional[httpx.Client] = None) -> Summary:
     log.info(
         "importing %d post(s) -> %s (dry_run=%s)", len(posts), cfg.api_url, cfg.dry_run
     )
+    # Name the ledger AND the target up front (#334): the 2026-09-10 incident
+    # was only diagnosable because someone noticed "unchanged" contradicting an
+    # empty database — this line makes the pairing visible on every run.
+    log.info("ledger %s for target %s", cfg.state_path, cfg.api_url)
+    if LEGACY_STATE_PATH.exists() and Path(cfg.state_path) != LEGACY_STATE_PATH:
+        log.info(
+            "legacy ledger %s ignored (ledgers are per-target since #334; "
+            "set IMPORT_STATE=%s to keep using it)",
+            LEGACY_STATE_PATH,
+            LEGACY_STATE_PATH,
+        )
     try:
         for post in posts:
             summary.record(import_one(client, cfg, post, ledger))
