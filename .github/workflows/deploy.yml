@@ -408,14 +408,18 @@ jobs:
       # cost optimisation opened a real bypass, and CI would have stayed green.
       # These are hermetic (stubbed `gh`, fake `npm`, no network), so they belong
       # here as much as the script lints above.
+      # `--mutations` runs HERE unconditionally (v1.14.2): the local gate runs a
+      # hook's mutation contract only when the DIFF names that hook (543s
+      # measured for the merge gate's alone — a full local round must not carry
+      # it), so CI is the layer that proves the contracts on every push.
       - name: Self-test the destructive-command guard
         run: bash .claude/hooks/guard-destructive.test.sh
-      - name: Self-test the merge gate
-        run: bash .claude/hooks/pre-merge-gate.test.sh
-      - name: Self-test the stack-resources guard
-        run: bash .claude/hooks/guard-stack-resources.test.sh
-      - name: Self-test the pre-push hook
-        run: bash .claude/hooks/pre-push-tests.test.sh
+      - name: Self-test the merge gate (with its mutation contract)
+        run: bash .claude/hooks/pre-merge-gate.test.sh --mutations
+      - name: Self-test the stack-resources guard (with its mutation contract)
+        run: bash .claude/hooks/guard-stack-resources.test.sh --mutations
+      - name: Self-test the pre-push hook (with its mutation contract)
+        run: bash .claude/hooks/pre-push-tests.test.sh --mutations
       # AI-config map drift (#246): a tool without a map row, a row naming a
       # deleted file, or an enabled plugin with no rationale all mislead the
       # next reader. Dependency-free, so it needs no toolchain here.

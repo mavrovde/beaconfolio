@@ -1790,6 +1790,38 @@ polarity first and the bugs you have left are the affordable kind.
 Related: §59 (narrowing a gate is the change that can silently switch it off), §61 (assert the
 mutant is the intended one), and [[verify-that-gates-actually-gate]].
 
+## 63. A gate's cost must track the DIFF — a gate that duplicates CI on every push gets bypassed, which is worse than scoped (v1.14.2)
+
+**What happened.** The #377 diff scoping delivered 13s docs pushes — and the owner still measured
+30-40 minutes for a one-file text push. Three rules compounded, each individually defensible:
+(a) `main`/`release/*` forced the FULL round regardless of the diff, and the release cycle's manual
+merges meant every push WAS on main; (b) two hook self-tests ran their `--mutations` contracts in
+every round that selected them (the merge gate's alone measured 543s under load) — #388 had fixed
+exactly this for the pre-push contract, and the fix was never propagated to the two sibling call
+sites next to it; (c) the file actually pushed (`sonar-project.properties`) was UNMAPPED, so it
+fail-closed to ALL — the full suite ran precisely for the file it could not exercise. Verification
+weight had also accreted: hook self-tests grew ~60s of deliberate timing-budget cases that ran
+inside every full round.
+
+**The lesson has three prongs.**
+1. **"Fail closed" needs a cost audit per closure path.** Every fail-closed arm is a place where the
+   gate's worst case lands on a user; enumerate the paths people actually push (workflow files,
+   scanner configs, dot-files) instead of letting them ride the unmapped arm forever.
+2. **When a cost fix lands on one call site, sweep its SIBLINGS in the same file.** The #388
+   `leg_exact` fix sat 15 lines above two identical call sites that kept the bug for a full release.
+3. **A local gate that duplicates a green CI layer 1:1 buys no verification — only latency.** The
+   full-round-on-main rule re-ran exactly what CI runs on that same push. The moment a gate's cost
+   stops tracking the size of the change, its owner routes around it (manual web-UI merges — which
+   also bypass the merge gate, rule 13's enforcement point). A cheaper honest gate beats an
+   expensive one that gets skipped. Owner's budget, verbatim: "the push cannot be longer than 1-3
+   minutes — it must be related to the size of the committed code, not a README during 40 minutes."
+
+Mutation contracts still run where they prove something: locally when the diff names the hook, and
+unconditionally in CI, which has the time budget.
+
+Related: §59 (the narrowing rule must fail by doing MORE — still true; this lesson is about WHAT
+the fail-closed arms may cost), §18/§46 (a gate nobody proved can fail is not a gate).
+
 ## Where the rules live (AI-config map)
 
 - **`CLAUDE.md`** — the authoritative numbered rules (engineering rules 1–13, issue-tracking flow,

@@ -13,7 +13,9 @@
 #   - NARROWNESS: a docs diff selects docs+pii and NOTHING else, a backend diff
 #     selects no frontend project, a public diff selects no admin;
 #   - FAIL-CLOSED: an unmapped path, an empty diff, an unobtainable range, an
-#     unnameable branch, main/release and PREPUSH_FULL=1 all select ALL.
+#     unnameable branch and PREPUSH_FULL=1 all select ALL. Protected branches
+#     scope to their delta since v1.14.2 (owner directive 2026-09-14: push cost
+#     must track the diff — CI runs every leg on every main push regardless).
 # `--mutations` then proves those cases CAN go red: it neuters one selection
 # rule at a time (including "select nothing at all") and requires this file to
 # fail for each. A selector that silently selects nothing would otherwise pass
@@ -326,12 +328,22 @@ sel "README promises knobs, so it runs the documented-knob contract" \
     "compose docs pii" README.md
 sel "docs/DEPLOYMENT.md promises knobs too" "compose docs pii" docs/DEPLOYMENT.md
 
+# --- files no LOCAL leg can exercise (owner directive 2026-09-14) -----------
+# CI is their only test surface; the full local round validated nothing about
+# them while costing 30-40 minutes (`sonar-project.properties` was the measured
+# case). Enumerated ⇒ docs + pii, not ALL.
+sel "a CI workflow change selects docs only — CI itself is its only test surface" \
+    "docs pii" .github/workflows/deploy.yml
+sel "scanner/config text files select docs, not the full round" \
+    "docs pii" sonar-project.properties .gitignore
+sel ".mcp.json is an AI-config surface, so it selects the drift check" \
+    "aiconfig pii" .mcp.json
+
 # --- fail-closed ------------------------------------------------------------
 sel "an UNMAPPED path selects ALL (fail closed)" "ALL" importer/ledger.py
 sel "a new top-level directory selects ALL" "ALL" brand-new-thing/x.txt
-sel "a CI workflow change selects ALL (no leg can exercise it)" "ALL" .github/workflows/deploy.yml
 sel "ONE unmapped path in an otherwise docs-only diff still selects ALL" \
-    "ALL" docs/a.md .gitignore
+    "ALL" docs/a.md importer/ledger.py
 sel "an EMPTY changed-file list selects ALL" "ALL" ""
 
 # --- (b) end to end, through the hook, against REAL git repositories --------
@@ -419,17 +431,20 @@ R="$(mkfixture fix/untracked none docs/guide.md)"
 e2e "an unpushed, untracked branch falls back to merge-base(origin/main)" \
     "docs pii" "$R" "$P -u origin HEAD"
 
+# Protected branches SCOPE since v1.14.2 (owner directive 2026-09-14): the
+# delta of a push to main is exact, CI runs every leg on that push anyway, and
+# the forced full round cost 30-40 minutes for a one-file text change.
 R="$(mkfixture main main docs/guide.md)"
-e2e "a push on main runs EVERYTHING regardless of the diff" \
-    "ALL" "$R" "$P origin HEAD"
+e2e "a push on main scopes to its delta (CI is the full backstop)" \
+    "docs pii" "$R" "$P origin HEAD"
 
 R="$(mkfixture release/1.14.2 main docs/guide.md)"
-e2e "a push on a release branch runs EVERYTHING" \
-    "ALL" "$R" "$P origin HEAD"
+e2e "a push on a release branch scopes to its delta too" \
+    "docs pii" "$R" "$P origin HEAD"
 
 R="$(mkfixture fix/docs2 main docs/guide.md)"
-e2e "a refspec targeting main runs EVERYTHING from a feature branch" \
-    "ALL" "$R" "$P origin HEAD:main"
+e2e "a refspec targeting main scopes to the delta from a feature branch" \
+    "docs pii" "$R" "$P origin HEAD:main"
 
 e2e "--tags publishes release tags, so it runs EVERYTHING" \
     "ALL" "$R" "$P --tags origin"
@@ -633,25 +648,8 @@ chk_decision "a fail-closed ALL round runs the PLAIN cases, not the mutations" \
   "PLAIN" "$R" "$P origin HEAD"
 
 R="$(mkfixture fix/mainpush main docs/guide.md)"
-chk_decision "a push to main (full round) runs the PLAIN cases, not the mutations" \
+chk_decision "a scoped push to main runs the PLAIN cases, not the mutations" \
   "PLAIN" "$R" "$P origin HEAD:main"
-
-# The structural probe expands $cmd, so it must not inherit the caller's IFS or
-# globbing (#388 review round 2). Both are pinned inside the function; these
-# cases fail if either is ever dropped.
-sel_env_ifs() { # run one selection with a hostile IFS and globbing ON
-  ( IFS=:; set +f
-    R2="$(mkfixture fix/ifs main docs/guide.md)"
-    printf '{"tool_input":{"command":%s}}' "$(jq -Rn --arg c "$P origin HEAD:main" '$c')" \
-      | CLAUDE_PROJECT_DIR="$R2" PREPUSH_PRINT_LEGS=1 PREPUSH_FULL=0 bash "$HOOK" )
-}
-got="$(norm "$(sel_env_ifs)")"
-if [ "$got" = "ALL" ]; then
-  printf 'PASS  [%s]  a hostile IFS=: and globbing ON do not break protected-branch detection\n' "$got"
-else
-  printf 'FAIL  got="%s" want="ALL"  hostile IFS/glob broke protected-branch detection\n' "$got"
-  fails=$((fails + 1))
-fi
 
 # --- the call site must actually PASS the flag (#388 review round 2) ---------
 # A decision-only case cannot see this: if the invocation stops expanding
@@ -662,22 +660,30 @@ mkstubfixture() { # mkstubfixture <branch> <path...>
   local br="$1"; shift
   local d; d="$(mkfixture "$br" main "$@")"
   mkdir -p "$d/.claude/hooks"
-  cat > "$d/.claude/hooks/pre-push-tests.test.sh" <<'EOSTUB'
+  # One stub per self-test the hook can invoke, each logging under its own
+  # prefix — the merge-gate/stack-guard call sites carry the same
+  # mutations-only-when-the-diff-names-the-hook rule (v1.14.2) and need the
+  # same argv observation.
+  local stub prefix
+  for stub in pre-push-tests:ARGV pre-merge-gate:GATE guard-stack-resources:STACK; do
+    prefix="${stub##*:}"
+    cat > "$d/.claude/hooks/${stub%%:*}.test.sh" <<EOSTUB
 #!/usr/bin/env bash
-printf '%s\n' "ARGV:$*" >> "${PREPUSH_STUB_LOG:?}"
+printf '%s\n' "$prefix:\$*" >> "\${PREPUSH_STUB_LOG:?}"
 exit 0
 EOSTUB
-  chmod +x "$d/.claude/hooks/pre-push-tests.test.sh"
+    chmod +x "$d/.claude/hooks/${stub%%:*}.test.sh"
+  done
   printf '%s\n' "$d"
 }
-observe_argv() { # observe_argv <repo> <cmd> -> prints the recorded argv line
-  local log; log="$(mktemp)"
+observe_argv() { # observe_argv <repo> <cmd> [prefix] -> prints the recorded line
+  local pref="${3:-ARGV}" log; log="$(mktemp)"
   printf '{"tool_input":{"command":%s}}' "$(jq -Rn --arg c "$2" '$c')" \
     | CLAUDE_PROJECT_DIR="$1" PREPUSH_STUB_LOG="$log" PREPUSH_FULL=0 \
       PREPUSH_CHECK_DOCS=0 PREPUSH_RUN_BACKEND=0 PREPUSH_RUN_LINT=0 \
       PREPUSH_RUN_FRONTEND=0 PREPUSH_RUN_GUARDTEST=1 \
       PREPUSH_LOG=/tmp/prepush-selftest-argv.log bash "$HOOK" >/dev/null 2>&1
-  grep '^ARGV:' "$log" 2>/dev/null | head -1; rm -f "$log"
+  grep "^$pref:" "$log" 2>/dev/null | head -1; rm -f "$log"
 }
 
 R="$(mkstubfixture fix/hookargv .claude/hooks/pre-push-tests.sh)"
@@ -710,20 +716,50 @@ else
   fails=$((fails + 1))
 fi
 
-# --- refspec spellings that still target main (#388 review, minor) ----------
-# The substring probe missed `+main` (the `+` sits where it wants a space) and
-# `refs/heads/main` (ends `/main`, not `:main`). Both are pushes to the
-# prod-deploy trigger; both used to get a SCOPED gate.
+# --- the merge-gate/stack-guard call sites follow the same rule (v1.14.2) ----
+# Their contracts used to run in EVERY round that selected the leg — which,
+# while main forced a full round, meant every push to main paid 543s (measured,
+# merge gate alone) re-proving contracts its diff never touched.
+R="$(mkstubfixture fix/gateargv .claude/hooks/pre-merge-gate.sh)"
+got="$(observe_argv "$R" "$P origin HEAD" GATE)"
+if [ "$got" = "GATE:--mutations" ]; then
+  printf 'PASS  [%s]  a diff naming the merge gate runs ITS mutation contract\n' "$got"
+else
+  printf 'FAIL  got="%s" want="GATE:--mutations"  merge-gate call site lost the flag\n' "$got"
+  fails=$((fails + 1))
+fi
+
+R="$(mkstubfixture fix/allgate importer/ledger.py)"
+got="$(observe_argv "$R" "$P origin HEAD" GATE)"
+if [ "$got" = "GATE:" ]; then
+  printf 'PASS  [%s]  an ALL round runs the merge-gate cases WITHOUT mutations\n' "$got"
+else
+  printf 'FAIL  got="%s" want="GATE:"  ALL round leaked the merge-gate mutation flag\n' "$got"
+  fails=$((fails + 1))
+fi
+
+R="$(mkstubfixture fix/allstack importer/ledger.py)"
+got="$(observe_argv "$R" "$P origin HEAD" STACK)"
+if [ "$got" = "STACK:" ]; then
+  printf 'PASS  [%s]  an ALL round runs the stack-guard cases WITHOUT mutations\n' "$got"
+else
+  printf 'FAIL  got="%s" want="STACK:"  ALL round leaked the stack-guard mutation flag\n' "$got"
+  fails=$((fails + 1))
+fi
+
+# --- refspec spellings that target main all SCOPE now (v1.14.2) -------------
+# Under the pre-v1.14.2 contract these forced a full round; the owner directive
+# scopes every branch, so every spelling must land on the same scoped answer —
+# these cases pin that no half-removed probe still special-cases one of them.
 R="$(mkfixture fix/refspec-plus main docs/guide.md)"
-e2e "a force refspec '+main' runs EVERYTHING" \
-    "ALL" "$R" "$P origin +main"
-e2e "a fully-qualified 'HEAD:refs/heads/main' runs EVERYTHING" \
-    "ALL" "$R" "$P origin HEAD:refs/heads/main"
-e2e "a force + fully-qualified '+HEAD:refs/heads/main' runs EVERYTHING" \
-    "ALL" "$R" "$P origin +HEAD:refs/heads/main"
-e2e "a fully-qualified release branch runs EVERYTHING" \
-    "ALL" "$R" "$P origin HEAD:refs/heads/release/1.2.3"
-# ...and the structural probe must not over-match a branch merely NAMED for main
+e2e "a force refspec '+main' scopes to the delta" \
+    "docs pii" "$R" "$P origin +main"
+e2e "a fully-qualified 'HEAD:refs/heads/main' scopes to the delta" \
+    "docs pii" "$R" "$P origin HEAD:refs/heads/main"
+e2e "a force + fully-qualified '+HEAD:refs/heads/main' scopes to the delta" \
+    "docs pii" "$R" "$P origin +HEAD:refs/heads/main"
+e2e "a fully-qualified release branch scopes to the delta" \
+    "docs pii" "$R" "$P origin HEAD:refs/heads/release/1.2.3"
 e2e "a feature branch whose NAME contains 'main' still scopes" \
     "docs pii" "$R" "$P origin HEAD:feature-main-nav"
 
@@ -910,25 +946,23 @@ mutate die "$LIBF" "a public-app diff leaks into admin (the per-project promise)
   'replace::prepush_fe_public_legs(){ printf=>prepush_fe_public_legs(){ prepush_fe_all_legs; printf'
 mutate die "$LIBF" "hook-parse-lib stops selecting all four hook self-tests" \
   'replace::.claude/hooks/hook-parse-lib.sh) prepush_all_hook_legs ;;=>.claude/hooks/hook-parse-lib.sh) echo hook:pre-push-tests ;;'
-mutate die "$LIBF" "main/master no longer forces the full round" \
-  'replace::    main|master) echo=>    mainXX|masterXX) echo'
-mutate die "$LIBF" "release/* no longer forces the full round" \
-  'replace::    release/*)   echo=>    releaseXX/*)   echo'
 mutate die "$LIBF" "an unnameable branch (detached HEAD) no longer forces the full round" \
   "replace::    HEAD|'')     echo=>    HEADXX)      echo"
 mutate die "$LIBF" "PREPUSH_FULL=1 is ignored" \
   'replace::[ "${PREPUSH_FULL:-0}" = "1" ] && { echo=>[ "${PREPUSH_FULL:-0}" = "9" ] && { echo'
-# The protected-branch check now has TWO layers: a substring probe and a
-# structural one that parses each word as a refspec. The structural layer
-# SUBSUMES the substring layer, so mutating the substring probe alone can no
-# longer kill -- and a mutation that cannot kill is not evidence. The contract
-# therefore targets the structural layer, which alone carries `+main` and
-# `refs/heads/main`. The substring probe is retained as deliberate redundancy on
-# a control whose failure mode is running a SCOPED gate on a prod-deploy trigger.
-mutate die "$LIBF" "the structural refspec probe stops recognising a protected branch" \
-  'replace::      main|master|release/*)=>      mainXX|masterXX|releaseXX/*)'
+# main/release no longer force a full round (v1.14.2, owner directive), so
+# those rules — and the structural refspec probe that served them — are gone
+# and carry no mutations. What REMAINS protected-branch-shaped is the
+# multi-ref publish check, and the enumerated no-local-leg mappings must not
+# quietly widen into selecting nothing:
 mutate die "$LIBF" "--all/--tags no longer force the full round" \
   'replace::    *--all*|*--mirror*|*--tags*|*--follow-tags*)=>    *--allXX*|*--mirrorXX*)'
+mutate die "$LIBF" ".github/ stops selecting its docs leg (silently selects pii alone)" \
+  'replace::  .github/*) echo docs ;;=>  .github/*) echo ;;'
+mutate die "$LIBF" "scanner/config text files stop selecting their docs leg" \
+  'replace::  sonar-project.properties|.gitignore) echo docs ;;=>  sonar-project.properties|.gitignore) echo ;;'
+mutate die "$LIBF" ".mcp.json stops selecting the AI-config drift check" \
+  'replace::  .mcp.json) echo aiconfig ;;=>  .mcp.json) echo ;;'
 mutate die "$LIBF" "an unobtainable git range reports success instead of failing" \
   'replace::  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 1=>  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo docs/fake.md; return 0; }'
 mutate die "$LIBF" "rename detection hides the SOURCE path of a git mv (#388 blocker 1)" \
@@ -940,6 +974,15 @@ mutate die "$HOOKF" "the mutation contract leaks into every full round (fail-ope
 # the round silently runs the plain cases.
 mutate die "$HOOKF" "the call site stops passing the mutation flag (seam would still claim it did)" \
   'replace::  bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" ${MUT_ARGS[@]+"${MUT_ARGS[@]}"} || return 1=>  bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" || return 1'
+# The merge-gate/stack-guard call sites carry the SAME leg_exact rule and the
+# same two failure directions: leaking the contract into every full round
+# (the 543s fail-open shape) and silently never passing the flag at all.
+mutate die "$HOOKF" "the merge-gate mutation contract leaks into every full round" \
+  'replace::if leg_exact hook:pre-merge-gate; then GATE_MUT_ARGS=(--mutations); fi=>if leg hook:pre-merge-gate; then GATE_MUT_ARGS=(--mutations); fi'
+mutate die "$HOOKF" "the merge-gate call site stops passing its mutation flag" \
+  'replace::      bash "$ROOT/.claude/hooks/pre-merge-gate.test.sh" ${GATE_MUT_ARGS[@]+"${GATE_MUT_ARGS[@]}"} || return 1=>      bash "$ROOT/.claude/hooks/pre-merge-gate.test.sh" || return 1'
+mutate die "$HOOKF" "the stack-guard mutation contract leaks into every full round" \
+  'replace::if leg_exact hook:guard-stack-resources; then STACK_MUT_ARGS=(--mutations); fi=>if leg hook:guard-stack-resources; then STACK_MUT_ARGS=(--mutations); fi'
 mutate die "$HOOKF" "the hook ignores the selector and prints a fixed narrow set" \
   'replace::| prepush_select_legs)=>| true; echo " docs ")'
 mutate die "$HOOKF" "the hook no longer fails closed when the range is unobtainable" \

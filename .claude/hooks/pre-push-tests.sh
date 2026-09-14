@@ -528,6 +528,15 @@ fi
 # mutation anywhere on this path is visible to the self-test.
 MUT_ARGS=()
 if leg_exact hook:pre-push-tests; then MUT_ARGS=(--mutations); fi
+# The SAME rule for the other two self-tests that carry a mutation contract
+# (v1.14.2, owner directive 2026-09-14): `pre-merge-gate.test.sh --mutations`
+# measured 543s alone under load, and both used to run their contracts in
+# EVERY round that selected them — which, while `main` forced a full round,
+# meant every push to main. A mutation contract proves the self-test's power;
+# it belongs to the diff that CHANGES the hook, not to every push.
+STACK_MUT_ARGS=(); GATE_MUT_ARGS=()
+if leg_exact hook:guard-stack-resources; then STACK_MUT_ARGS=(--mutations); fi
+if leg_exact hook:pre-merge-gate; then GATE_MUT_ARGS=(--mutations); fi
 
 if [ "${PREPUSH_PRINT_MUTATION_DECISION:-0}" = "1" ]; then
   if [ "${#MUT_ARGS[@]}" -gt 0 ]; then printf 'MUTATIONS\n'; else printf 'PLAIN\n'; fi
@@ -696,18 +705,20 @@ run_checks() {
       bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" ${MUT_ARGS[@]+"${MUT_ARGS[@]}"} || return 1
     fi
     if leg hook:guard-stack-resources && [ -f "$ROOT/.claude/hooks/guard-stack-resources.test.sh" ]; then
-      # --mutations for the same reason as the merge gate below: this guard's
-      # value is entirely in the denies, and a guard nobody proved can deny is
-      # documentation (lessons §18).
-      echo "== stack-resource guard self-test + mutation contract =="
-      bash "$ROOT/.claude/hooks/guard-stack-resources.test.sh" --mutations || return 1
+      # Plain cases every selected round; --mutations only when the DIFF names
+      # this guard (STACK_MUT_ARGS above). The contract still runs where it
+      # proves something — a change to the guard — and in CI on every push.
+      echo "== stack-resource guard self-test =="
+      bash "$ROOT/.claude/hooks/guard-stack-resources.test.sh" ${STACK_MUT_ARGS[@]+"${STACK_MUT_ARGS[@]}"} || return 1
     fi
     if leg hook:pre-merge-gate && [ -f "$ROOT/.claude/hooks/pre-merge-gate.test.sh" ]; then
-      # --mutations is the point: the FIRST version of that self-test passed
-      # 14/14 against a gate whose blocking had been removed. Running the cases
-      # without the mutation contract would repeat exactly that.
-      echo "== merge-gate self-test + mutation contract =="
-      bash "$ROOT/.claude/hooks/pre-merge-gate.test.sh" --mutations || return 1
+      # The FIRST version of this self-test passed 14/14 against a gate whose
+      # blocking had been removed — the mutation contract is what proves the
+      # cases can go red. It runs when the DIFF names the gate (GATE_MUT_ARGS
+      # above) and in CI; not in every round that merely selects the leg
+      # (543s measured under load — see the MUT_ARGS comment).
+      echo "== merge-gate self-test =="
+      bash "$ROOT/.claude/hooks/pre-merge-gate.test.sh" ${GATE_MUT_ARGS[@]+"${GATE_MUT_ARGS[@]}"} || return 1
     fi
   fi
 

@@ -108,6 +108,28 @@ All notable changes to this project will be documented in this file.
   Discussion #387 opens both for comment.
 
 ### Changed
+- **The pre-push gate now costs what the push changed — on EVERY branch (owner directive
+  2026-09-14: "the push cannot be longer than 1-3 minutes … it must be related to the size of the
+  committed code, not a README during 40 minutes")** — three compounding rules made a one-file
+  text push to `main` cost 30-40 minutes, and each is fixed at its root:
+  (a) **`main`/`release/*` no longer force the full round** — the #377 diff scoping now applies to
+  every branch. The delta of a push to `main` (`@{push}..HEAD`) is exact, the same fail-closed
+  path map applies to it, and CI runs every leg on every `main` push anyway, so the forced local
+  full round duplicated CI 1:1. The structural refspec parser that recognised `+main`/
+  `refs/heads/main` went with the rule it served; `--all`/`--mirror`/`--tags`/`--follow-tags`,
+  an unnameable branch, an empty/unobtainable diff and unmapped paths still run everything.
+  (b) **A hook's mutation contract runs locally only when the DIFF names that hook** — the
+  merge-gate contract (measured 543s alone under load) and the stack-guard contract ran in every
+  round that selected their legs, which under (a) meant every push to `main`; both call sites now
+  follow the same `leg_exact` rule the pre-push contract already had (#388 major 2), argv-observed
+  through planted stubs so "stops passing the flag" and "leaks into every full round" both have
+  killing mutations. **CI now runs all three hook contracts with `--mutations` unconditionally**,
+  so the contracts stay proven on every push at the layer that has the time budget.
+  (c) **`.github/**`, `sonar-project.properties`, `.gitignore` and `.mcp.json` are enumerated as
+  no-local-leg paths** (docs + pii, or the AI-config drift check for `.mcp.json`) instead of
+  unmapped-⇒-ALL — no local leg can exercise a workflow or scanner config, so the full round
+  validated nothing about exactly the files that triggered it (`sonar-project.properties` was the
+  measured 40-minute case). Genuinely unknown paths still fail closed to ALL.
 - **The AI-config drift checker's own blind spots closed (#378)** — two categories that
   **could not fail**, the exact defect class the checker exists to catch. The `| MCP |` row was
   invisible because the kind pattern was `[a-z]+` and the row is uppercase (deleting it passed);
