@@ -1865,6 +1865,33 @@ General shape: **a rule that exists only in memory/discipline WILL be violated u
 when the violation is mechanically detectable, make the hook detect it** (same arc as §54's
 stack guard and the rule-13 merge gate).
 
+## 66. A lint over a file an AUTOMATED PROCESS rewrites must be run against EVERY state that process produces (v1.14.2)
+
+`scripts/check_changelog_merge.sh` failed first contact **three times** for one reason: its
+fixtures were the states a *contributor* creates, never the states the *release process* creates.
+
+| state of `CHANGELOG.md` | who produces it | what the lint did |
+|---|---|---|
+| mid-cycle accumulation | contributors | correct — this is what it was tested on |
+| the release **rotation** | `release-manager` step 4 | **346 false "LOST" lines** on the first release PR it ever saw; cost #406 its round 1 |
+| the first entry **after** a rotation | the next contributor, deleting the seeded stub | **blocked the PR outright** — the v1.14.2 retro PR, the first post-release PR after the lint shipped |
+
+Both false failures are the same mistake: a set-membership check over a *block* cannot tell
+"moved by design" from "deleted", and a seeded sentinel (`- Placeholder for next release.`) is not
+content. Neither is exotic — each happens **once per release, forever**.
+
+So, when you add a check over a generated or process-managed artifact (`CHANGELOG.md`, `VERSION`,
+compose image tags, migration heads, SARIF categories): **enumerate the writers, not just the
+file.** For each automated writer, ask what it produces that a human never would, and pin that
+shape as a PASS case. Note the asymmetry that makes this expensive to discover late — the states
+the process produces appear **exactly when you least want a false red**: at the release, and in
+the first PR of the next one.
+
+Related: §59 (a narrowing must fail by doing MORE), §61 (a mutation needs an assertion it is the
+intended mutant). The fix here is exempt-one-exact-string plus a `stub exemption becomes BLANKET`
+mutation, because an exemption wide enough to be convenient is an exemption wide enough to hide a
+real loss.
+
 ## Where the rules live (AI-config map)
 
 - **`CLAUDE.md`** — the authoritative numbered rules (engineering rules 1–13, issue-tracking flow,

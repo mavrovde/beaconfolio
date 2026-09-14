@@ -157,8 +157,21 @@ for line in merged:
         continue
     if under_new_heading and line.strip():
         rotated.add(line.rstrip())
+# STUB-AWARE (v1.14.2 retro): the release-manager seeds a freshly rotated
+# [Unreleased] with the literal sentinel below (release-manager.md step 4), and
+# the FIRST PR after a release deletes it as it adds real entries — that is the
+# established convention (#388 and its predecessors both did exactly this).
+# Losing the stub is therefore not content loss, but check 4 read it as one and
+# blocked the first post-release PR after the lint shipped. This is the THIRD
+# first-contact failure of this lint (the other two: the release rotation that
+# cost #406 its round 1, and #400's GNU-grep inertness) — see
+# docs/retrospectives/v1.14.2.md §3, class N. The exemption is ONE exact string
+# the release process itself writes, so it cannot absolve a real entry.
+PLACEHOLDER = "- Placeholder for next release."
 merged_set = {l.rstrip() for l in unreleased_block(merged) if l.strip()}
 for l in unreleased_block(base):
+    if l.rstrip() == PLACEHOLDER:
+        continue
     if l.strip() and l.rstrip() not in merged_set and l.rstrip() not in rotated:
         failures.append(f"check 4: [Unreleased] line on base is LOST in the merge: `{l.strip()[:80]}`")
 

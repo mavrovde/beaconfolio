@@ -71,6 +71,19 @@ All notable changes to this project will be documented in this file.
   image/Dockerfile risk is genuinely covered by `snyk-container.yml`. Plus a network-free
   `patch_linkedin.test.sh` (run by CI's backend-lint job) pinning the script's derivation and both
   exit-1 guards.
+- **`scripts/check_changelog_merge.sh` no longer blocks the first PR after a release** — check 4
+  read the `- Placeholder for next release.` stub (which `release-manager.md` step 4 seeds and the
+  first post-release PR deletes by convention, as #388 did) as lost `[Unreleased]` content. The
+  lint shipped in #398 *after* the last two post-release PRs, so this retrospective's own PR was
+  the first it had ever seen, and it refused it. Left alone it would have blocked the first PR of
+  every future release. The exemption is **one exact string** the release process itself writes,
+  so it cannot absolve a real entry. Measured in both directions: the new case against the pre-fix
+  script gives **19 passed / 1 failed**; the fixed script gives **20 passed / 0 failed** with
+  **8 killed / 0 survived / 0 invalid** (was 18 cases / 7 mutations at the tag). This is the
+  **third** first-contact failure of this one lint — the other two being the release rotation that
+  cost #406 its round 1 and #400's GNU-grep inertness — and it is why the `pr-reviewer` rubric
+  change below names a `CHANGELOG.md` lint explicitly: a lint over a file an automated process
+  rewrites must be run against **every** state that process produces.
 
 ## [1.14.2] - 2026-09-14
 

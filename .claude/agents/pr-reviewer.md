@@ -116,12 +116,15 @@ Never accept "coverage is 100%" at face value — a line being executed is not t
    costing the release PR **two of its four rounds**.) When a PR adds or modifies a check, ask
    *what is the first production-shaped input this will see, and has anyone run it against one?*
    The measured cases:
-   - **A `CHANGELOG.md` lint must be run against a RELEASE ROTATION.** `check_changelog_merge.sh`
-     shipped at 07:40Z and false-failed the first rotation it ever saw at 17:11Z — *"346 × `FAIL
-     check 4: [Unreleased] line on base is LOST` … 347 non-empty base lines, 346 'lost'
-     block-scoped, **0 lost file-wide**. Nothing was dropped; the lint is wrong."* A rotation moves
-     every `[Unreleased]` line into a versioned heading **by design**, which block-scoped set
-     semantics read as deletion. It would have reddened **every future release PR**.
+   - **A lint over a file an automated process rewrites must be run against EVERY state that
+     process produces.** `check_changelog_merge.sh` has now failed first contact **three times**
+     for this one reason. It shipped at 07:40Z and false-failed the first *release rotation* it
+     ever saw at 17:11Z — *"346 × `FAIL check 4: [Unreleased] line on base is LOST` … 347
+     non-empty base lines, 346 'lost' block-scoped, **0 lost file-wide**. Nothing was dropped; the
+     lint is wrong."* — and then blocked the first *post-release* PR, which by convention deletes
+     the `- Placeholder for next release.` stub the release-manager seeds. For `CHANGELOG.md` the
+     states are exactly three: **mid-cycle accumulation, the rotation, and the first entry after a
+     rotation.** Ask which of the three the PR's fixtures cover.
    - **A CI gate must be shown GREEN ON A REAL PR, not merely "wired".** SonarCloud was activated
      and was structurally red from that moment — the scanner ran with no test step, so
      `new_coverage` read `0.0` against a threshold of 80 on every PR touching one line of code.
