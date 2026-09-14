@@ -1839,8 +1839,31 @@ misreports the repo. The cleanup cost 237 one-by-one `PATCH .../code-scanning/al
 dismissals under secondary-rate-limit pacing. **Before renaming any SARIF category, plan the
 migration: dismiss (reversible, auditable) or delete the retired category's analyses (fast, but
 destroys history — owner authorization under rule 9's spirit).** The same trap is charted in
-`.claude/agents/security-triage.md`. Related: §the "normalised red" argument in #372 — a signal
+`.claude/agents/security-triage.md`. Related: the "normalised red" argument in #372 — a signal
 that always means nothing stops being a signal.
+
+## 65. A PreToolUse hook vets the command BEFORE it runs — so a push chained after a commit is vetted against the WRONG HEAD (#406)
+
+`git commit -m … && git push` in ONE Bash call means the pre-push gate examines the
+**pre-commit** state: measured 2026-09-14 on the v1.14.2 release push, HEAD still equalled
+`origin/main`, the diff-scoped selector saw an empty range, fail-closed ALL ran against the OLD
+tree and certified trivially — then the chain committed and pushed a CHANGELOG rotation the gate
+never saw, which went red in CI. The failure is silent precisely when it matters: the gate
+*reports green*, honestly, about the wrong commit. **The push rides alone** was already a memory
+rule and was violated anyway under release pressure — so it is now STRUCTURAL:
+`pre-push-tests.sh` denies any real push chained (any separator) with a HEAD-moving git command
+(`commit`/`merge`/`rebase`/`cherry-pick`/`am`/`revert`/`reset`/`pull`/`checkout`/`switch`),
+quote-aware so prose stays data, pinned by never-stubbed `chain_check` cases + 7 mutations.
+The deny's edges matter as much as the deny (#406 round 2): it fires only where it can be RIGHT —
+after the foreign-repo pass-through (a chained wiki push mis-vets nothing), only for a push a
+head-mover PRECEDES — decided per push, not first-push-wins: `push && commit --amend` is fine
+but `push && commit --amend && push --force` denies (round 3 caught the overshoot) — never above
+the size bound
+(a hard deny must not issue from a parse already declared untrusted — that stays GATE), and never
+from heredoc prose (all bodies stripped for this decision; a miss falls back to GATE).
+General shape: **a rule that exists only in memory/discipline WILL be violated under pressure;
+when the violation is mechanically detectable, make the hook detect it** (same arc as §54's
+stack guard and the rule-13 merge gate).
 
 ## Where the rules live (AI-config map)
 

@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Placeholder for next release.
+
+## [1.14.2] - 2026-09-14
+
+### Added
 - **SonarCloud analysis is actually wired up, and Sonar findings are reachable from Claude (#359)**
   — the workflow had been secrets-gated since #359, but the repository secret store held **neither**
   `SONAR_TOKEN` nor `SONAR_HOST_URL`, so `check-secrets` reported `enabled=false` and the `Analysis`
@@ -266,6 +271,45 @@ All notable changes to this project will be documented in this file.
   whichever fired first — it failed inside the loaded pre-push gate and passed 100/0 when run alone.
 
 ### Fixed
+- **The SonarCloud quality gate stops being structurally red (#407, #406 review round 2)** — the
+  `Analysis` job ran the scanner with no test step, so the coverage reports named in
+  `sonar-project.properties` never existed at scan time and the gate read `new_coverage = 0.0 < 80`
+  on every PR regardless of content — a normalised red, the #372 shape. The job now generates the
+  coverage before scanning: backend `pytest --cov-report=xml` against a pgvector service container
+  (rule 10: explicit empty paid-API credential) and `run_frontend_suites.sh --coverage` for all
+  three Vitest projects — the same commands as deploy.yml's test jobs, deliberately duplicated in
+  the parallel workflow (runner minutes, not the push budget; a coverage-blind gate measures
+  nothing).
+- **`check_changelog_merge.sh` check 4 is rotation-aware (#406 review, blocker 1)** — a release PR
+  moves the whole `[Unreleased]` block under a brand-new released heading by design, and the lint's
+  block-scoped set semantics read that as loss: the first release PR after it shipped drew **346
+  false `LOST` failures**. A base `[Unreleased]` line now also counts as present when it lives under
+  a released heading that is NEW in the merge — and ONLY under a new one, so content under
+  pre-existing released headings still cannot absolve a real loss (the blanket-exemption direction
+  is pinned by its own mutation). Self-test: 3 new plain cases, mutations 7/0/0.
+- **The push rides ALONE — the gate now DENIES a push chained after a HEAD-moving git command
+  (#406 review, blocker 2)** — a `PreToolUse` hook fires BEFORE the command body executes, so
+  `git commit -m … && git push` is vetted against the PRE-COMMIT HEAD. Measured the same day: the
+  gate saw an empty diff (HEAD == origin/main), certified trivially, and the chain then pushed a
+  commit the gate never examined — the broken CHANGELOG rotation it would have caught went red in
+  CI instead. `pre-push-tests.sh` now structurally denies any real push chained with
+  `commit`/`merge`/`rebase`/`checkout`/`switch`/`reset`/`pull`/… (same quote-aware segment parsing,
+  so quoted prose stays data), with the message naming the remedy: run the state change first, then
+  push as its OWN command. Round 2 sharpened the deny's edges: it sits **after** the #353
+  foreign-repo pass-through (a chained wiki push mis-vets nothing — this gate does not vet that
+  repository at all), it is **order-aware per push** (`push && commit --amend` is fine — the pushed
+  HEAD was already examined — but round 3 caught the first draft's overshoot:
+  `push && commit --amend && push --force` DENIES, because the SECOND push follows the amend and is
+  the incident shape verbatim), it **stands down above the size bound** (a hard deny must never
+  issue from a parse the bound declared untrusted — `command_is_git_push` already GATEd
+  conservatively there),
+  and it strips **every** heredoc body, unquoted delimiters included, so document prose cannot
+  escalate a GATE to a DENY (missing a real head-mover only falls back to GATE, the pre-#406
+  behavior). Pinned by 15 dedicated cases (12 `chain_check`, one oversized bespoke, two
+  foreign-repo fixtures) that stay live under the mutation harness, plus 7 mutations (deny
+  removed / deny-everything polarity / `commit`
+  dropped from the head-mover list / size bound ignored / order-blind / first-push
+  short-circuit restored / unquoted-heredoc prose read as commands).
 - **Per-target importer state ledgers can no longer reach the public repo** — `.gitignore` covered
   only `importer/state.json`, but the importer writes one ledger per target
   (`state.<env>.json`), each holding personal LinkedIn URN activity data; the untracked

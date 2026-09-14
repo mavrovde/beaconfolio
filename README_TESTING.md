@@ -263,8 +263,14 @@ from `npm run test:coverage`). Project surface and exclusions are committed in
 `sonar-project.properties`, shared with CI.
 
 CI (`.github/workflows/sonarqube.yml`) is **secrets-gated**: without `SONAR_TOKEN` +
-`SONAR_HOST_URL` it skips with a note (never red). Recommended CI target when
-activated: **SonarCloud** (free for public repos, PR decoration included).
+`SONAR_HOST_URL` it skips with a note (never red). It runs against **SonarCloud**
+(activated at v1.14.2 — #359/#403), and since #407 the `Analysis` job **generates the
+coverage itself** before scanning: backend `pytest --cov-report=xml` against a pgvector
+service container and `run_frontend_suites.sh --coverage` for all three Vitest projects —
+the same commands as `deploy.yml`'s test jobs, duplicated deliberately (the scanner reads
+the report files at scan time; without them the quality gate read `new_coverage = 0.0`
+and was structurally red on every PR). Locally, `sonar_local.sh` keeps the reuse model:
+run the suites first, then the scan.
 
 ## Troubleshooting
 

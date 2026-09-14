@@ -119,6 +119,9 @@ allow() {
 }
 deny() {
   # $1 = reason (plain text, no double quotes)
+  # Under the self-test seam a deny prints DENY — distinct from GATE (run the
+  # checks) and ALLOW, so the push-rides-alone cases can pin it (#406).
+  if [ "$PREPUSH_DRY_RUN" = "1" ]; then printf 'DENY\n'; exit 0; fi
   printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"$1\"}}"
   exit 0
 }
@@ -480,6 +483,125 @@ if [ "$FOREIGN" = "1" ]; then
   printf 'pre-push gate: foreign repo (%s), gates not applicable — this project is %s\n' \
     "$THEIRS" "$OURS" >&2
   allow
+fi
+
+# --- THE PUSH RIDES ALONE (#406 review rounds 1-2) ---------------------------
+# This hook fires BEFORE the command body executes. A push chained after a git
+# command that MOVES HEAD (`git commit -m … && git push …`) is therefore vetted
+# against the PRE-COMMIT state: measured same-day incident — the gate saw
+# HEAD == origin/main (empty diff), certified trivially, and the chain then
+# pushed a commit the gate never examined; the broken CHANGELOG rotation it
+# would have caught went red in CI instead. Structural remedy: DENY the chain
+# outright. Same subcommand-extraction shape as segment_invokes_git_push, so
+# quoted prose ("run `git commit && git push`") stays data via quote_split.
+#
+# Placement is load-bearing (round-2 blocker): this sits AFTER the foreign-repo
+# pass-through, because a chained push of a DIFFERENT repository (the wiki
+# workflow #353 exists for) mis-vets nothing — this gate does not vet that
+# repository at all — so the deny would only re-teach the bypass habit #353
+# removed. Every path that reaches here IS a gated push of THIS project.
+segment_invokes_head_mover() {
+  local seg="$1" first rest tok
+  seg="${seg//$NL_SENTINEL/ }"
+  seg="$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+/ /g')"
+  first="${seg%% *}"
+  [ "$first" = "git" ] || return 1
+  [ "$first" = "$seg" ] && return 1
+  rest="${seg#* }"
+  while :; do
+    tok="${rest%% *}"
+    case "$tok" in
+      -C|-c|--git-dir|--work-tree|--namespace|--config-env)
+        [ "$tok" = "$rest" ] && return 1
+        rest="${rest#* }"; tok="${rest%% *}"
+        [ "$tok" = "$rest" ] && return 1
+        rest="${rest#* }" ;;
+      -*) [ "$tok" = "$rest" ] && return 1; rest="${rest#* }" ;;
+      *) break ;;
+    esac
+  done
+  tok="${rest%% *}"
+  tok="${tok#\"}"; tok="${tok#\'}"; tok="${tok%\"}"; tok="${tok%\'}"
+  case "$tok" in
+    commit|merge|rebase|cherry-pick|am|revert|reset|pull|checkout|switch) return 0 ;;
+  esac
+  return 1
+}
+# For the DENY decision only: drop EVERY heredoc body, quoted delimiter or not
+# (round-2 minor — strip_text_heredocs deliberately keeps unquoted-delimiter
+# bodies inspected, which is the right fail-closed shape for GATE but let prose
+# in a plain <<EOF document escalate a GATE to a hard DENY). Missing a real
+# head-mover here only falls back to GATE — the pre-#406 behavior — so the
+# false-negative direction is safe by construction.
+strip_all_heredoc_bodies() {
+  local input="$1" out="" line masked head rest delim i j n end _t
+  local -a lines=()
+  while IFS= read -r line; do lines+=("$line"); done <<< "$input"
+  n=${#lines[@]}
+  for (( i=0; i<n; i++ )); do
+    line="${lines[i]}"
+    out+="$line"$'\n'
+    case "$line" in *'<<'*) ;; *) continue ;; esac
+    # Same budget bail-out strip_text_heredocs documents as load-bearing
+    # (round-3 minor): past the deadline, hand the rest through UNstripped and
+    # let the caller's own deadline check stand down to GATE.
+    if [ "$SECONDS" -ge "$INSPECT_DEADLINE" ]; then
+      for (( j=i+1; j<n; j++ )); do out+="${lines[j]}"$'\n'; done
+      break
+    fi
+    masked="$(mask_quotes "$line")"
+    case "$masked" in *"<<"*) ;; *) continue ;; esac
+    head="${masked%%<<*}"
+    rest="${line:${#head}}"
+    [ "${rest:2:1}" = "<" ] && continue     # here-string, not a heredoc
+    delim="$(printf '%s' "$rest" | sed -nE "s/^<<-?[[:space:]]*[\"']?\\\\?([A-Za-z_][A-Za-z0-9_]*)[\"']?.*/\1/p")"
+    [ -z "$delim" ] && continue
+    end=-1
+    for (( j=i+1; j<n; j++ )); do
+      _t="${lines[j]}"
+      _t="${_t#"${_t%%[![:space:]]*}"}"
+      if [ "$_t" = "$delim" ]; then end=$j; break; fi
+    done
+    [ "$end" -lt 0 ] && continue            # no terminator: strip nothing
+    i=$end
+  done
+  printf '%s' "$out"
+}
+command_chains_head_mover() {
+  # A hard DENY must never issue from a parse the size bound already declared
+  # untrusted (round-2 major): command_is_git_push GATEd conservatively above
+  # this length, and GATE is where an oversized command stays.
+  [ "${#CMD}" -gt "$PREPUSH_MAX_CMD_LEN" ] && return 1
+  local seg OLD="$IFS" mover=0
+  IFS=$'\n'
+  for seg in $(quote_split "$(strip_all_heredoc_bodies "$CMD")"); do
+    # Past the inspection budget the parse is no longer trusted — same rule as
+    # the size bound: stand down to GATE, never DENY from an unanalysed tail.
+    [ "$SECONDS" -ge "$INSPECT_DEADLINE" ] && { IFS="$OLD"; return 1; }
+    # ORDER-AWARE, per PUSH (round-3 major): the deny is for any push that a
+    # head-mover PRECEDES — that push ships a HEAD the gate never examined.
+    # `push && commit --amend` is legitimate (the pushed HEAD was vetted), but
+    # `push && commit --amend && push --force` is the incident verbatim: the
+    # SECOND push follows the amend, so the first-push short-circuit round 2
+    # shipped would have waved it through.
+    if segment_invokes_head_mover "$seg"; then mover=1; continue; fi
+    if [ "$mover" = "1" ] && segment_invokes_git_push "$seg"; then
+      # segment_invokes_git_push answers "push" on deadline EXPIRY (its GATE
+      # polarity) — re-check before denying, so an unanalysed segment can
+      # never be the one that turns a GATE into a hard DENY (round-4 nit).
+      [ "$SECONDS" -ge "$INSPECT_DEADLINE" ] && { IFS="$OLD"; return 1; }
+      IFS="$OLD"; return 0
+    fi
+  done
+  IFS="$OLD"
+  return 1
+}
+# KNOWN LIMIT (round-4 review, accepted): segment_invokes_head_mover does not
+# peel wrappers, so `sudo git commit && git push` or a chain inside
+# `bash -c "…"` falls back to GATE rather than DENY — the safe direction (the
+# push is still gated; only the extra discipline signal is missed).
+if command_chains_head_mover; then
+  deny "PUSH RIDES ALONE: this command chains a HEAD-moving git command (commit/merge/rebase/checkout/…) before git push, so the gate would vet the WRONG commit — the hook runs before the chain executes. Run the state change first, then push as its OWN command."
 fi
 
 # --- From here on, this IS a real push: run the gate. -----------------------
