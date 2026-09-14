@@ -529,7 +529,11 @@ believed the general case had been found and had only found an instance.
    bypass. When two code paths peel wrappers, give them ONE shared peel function (item 12), and
    consume option *values* per-wrapper: consuming a value after a flag that takes none (`env -i`)
    swallows the real command — a false allow — while not consuming one (`nice -n 10`) hides the
-   command behind the value token.
+   command behind the value token. The same holds for SPELLINGS of a name (#370): `"bash"`,
+   `'bash'`, `ba"sh"`, `$'bash'` and `ba\sh` are all one binary, so match names AFTER reducing
+   through the one quoting model, never against raw text — and when you fix one quoting
+   mechanism, enumerate the others (the quote-only trigger class in round 1 left the
+   backslash spellings open, the exact class the fix was closing).
 
 16. **The same class lives in every SIBLING matcher — audit them when you fix one** (#237). While the
    guard grew command-position awareness across #204→#225, `pre-push-tests.sh` right next to it kept
