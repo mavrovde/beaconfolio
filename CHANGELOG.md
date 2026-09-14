@@ -297,9 +297,12 @@ All notable changes to this project will be documented in this file.
   so quoted prose stays data), with the message naming the remedy: run the state change first, then
   push as its OWN command. Round 2 sharpened the deny's edges: it sits **after** the #353
   foreign-repo pass-through (a chained wiki push mis-vets nothing — this gate does not vet that
-  repository at all), it is **order-aware** (`push && commit --amend` is fine; the pushed HEAD was
-  already examined), it **stands down above the size bound** (a hard deny must never issue from a
-  parse the bound declared untrusted — `command_is_git_push` already GATEd conservatively there),
+  repository at all), it is **order-aware per push** (`push && commit --amend` is fine — the pushed
+  HEAD was already examined — but round 3 caught the first draft's overshoot:
+  `push && commit --amend && push --force` DENIES, because the SECOND push follows the amend and is
+  the incident shape verbatim), it **stands down above the size bound** (a hard deny must never
+  issue from a parse the bound declared untrusted — `command_is_git_push` already GATEd
+  conservatively there),
   and it strips **every** heredoc body, unquoted delimiters included, so document prose cannot
   escalate a GATE to a DENY (missing a real head-mover only falls back to GATE, the pre-#406
   behavior). Pinned by 14 dedicated cases (11 `chain_check`, one oversized bespoke, two

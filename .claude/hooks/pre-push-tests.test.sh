@@ -185,6 +185,10 @@ chain_check "quoted prose chain is data"   "gh pr comment 1 --body \"run git com
 # bodies inspected by design; the deny uses strip_all_heredoc_bodies instead).
 chain_check "push THEN amend (order-aware)" "$P origin b && git commit --amend --no-edit" GATE
 chain_check "push THEN pull (order-aware)"  "$P origin b; git pull origin main"           GATE
+# round-3 major: order-awareness is per PUSH, not first-push-wins — the SECOND
+# push here follows the amend and ships a HEAD the gate never examined (the
+# 9303b40 incident shape verbatim).
+chain_check "push, amend, push --force"     "$P origin b && git commit --amend --no-edit && $P --force-with-lease origin b" DENY
 chain_check "unquoted-heredoc prose + push" "cat > notes.md <<EOF
 git commit -m draft
 EOF
@@ -195,7 +199,10 @@ $P origin main"                                                                 
 # measured a 24716-char commit-prose command with NO push in it being denied).
 # Bespoke case because it needs PREPUSH_MAX_CMD_LEN; live under SELECTION_ONLY
 # so its mutation can be killed.
-big_prose="git commit -m '$(printf 'about the %s %.0s' "$PU" $(seq 1 40))'"
+# commit-prose THEN a push, so the only thing standing between the oversized
+# parse and a DENY is the size guard itself (the per-push order rule would
+# otherwise absolve a command with no push after the mover).
+big_prose="git commit -m '$(printf 'about the %s %.0s' "$PU" $(seq 1 40))'; $P origin main"
 out="$(printf '{"tool_input":{"command":%s}}' "$(jq -Rn --arg c "$big_prose" '$c')" \
       | PREPUSH_DRY_RUN=1 PREPUSH_MAX_CMD_LEN=50 bash "$HOOK")"
 if [ "$out" = "GATE" ]; then
@@ -1082,7 +1089,9 @@ mutate die "$HOOKF" "commit drops out of the head-mover list" \
 mutate die "$HOOKF" "the chain deny ignores the size bound (denies from an untrusted parse)" \
   'replace::  [ "${#CMD}" -gt "$PREPUSH_MAX_CMD_LEN" ] && return 1=>  :'
 mutate die "$HOOKF" "the chain deny goes order-blind (push-then-amend denied again)" \
-  'replace::    if segment_invokes_git_push "$seg"; then IFS="$OLD"; return 1; fi=>    :'
+  'replace::if [ "$mover" = "1" ] && segment_invokes_git_push=>if segment_invokes_git_push'
+mutate die "$HOOKF" "the deny stops seeing a push AFTER the head-mover (first-push short-circuit back)" \
+  'replace::if segment_invokes_head_mover "$seg"; then mover=1; continue; fi=>if segment_invokes_head_mover "$seg"; then mover=1; break; fi'
 mutate die "$HOOKF" "the chain deny reads unquoted-heredoc prose as commands again" \
   'replace::quote_split "$(strip_all_heredoc_bodies "$CMD")"=>quote_split "$(strip_text_heredocs "$CMD")"'
 mutate die "$HOOKF" "the hook ignores the selector and prints a fixed narrow set" \

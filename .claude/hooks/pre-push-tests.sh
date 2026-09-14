@@ -542,6 +542,13 @@ strip_all_heredoc_bodies() {
     line="${lines[i]}"
     out+="$line"$'\n'
     case "$line" in *'<<'*) ;; *) continue ;; esac
+    # Same budget bail-out strip_text_heredocs documents as load-bearing
+    # (round-3 minor): past the deadline, hand the rest through UNstripped and
+    # let the caller's own deadline check stand down to GATE.
+    if [ "$SECONDS" -ge "$INSPECT_DEADLINE" ]; then
+      for (( j=i+1; j<n; j++ )); do out+="${lines[j]}"$'\n'; done
+      break
+    fi
     masked="$(mask_quotes "$line")"
     case "$masked" in *"<<"*) ;; *) continue ;; esac
     head="${masked%%<<*}"
@@ -565,14 +572,20 @@ command_chains_head_mover() {
   # untrusted (round-2 major): command_is_git_push GATEd conservatively above
   # this length, and GATE is where an oversized command stays.
   [ "${#CMD}" -gt "$PREPUSH_MAX_CMD_LEN" ] && return 1
-  local seg OLD="$IFS"
+  local seg OLD="$IFS" mover=0
   IFS=$'\n'
   for seg in $(quote_split "$(strip_all_heredoc_bodies "$CMD")"); do
-    # ORDER-AWARE (round-2 minor): only a head-mover BEFORE the first push
-    # mis-vets it — by the time `git push … && git commit --amend` runs its
-    # amend, the gate has already vetted the HEAD that was actually pushed.
-    if segment_invokes_git_push "$seg"; then IFS="$OLD"; return 1; fi
-    if segment_invokes_head_mover "$seg"; then IFS="$OLD"; return 0; fi
+    # Past the inspection budget the parse is no longer trusted — same rule as
+    # the size bound: stand down to GATE, never DENY from an unanalysed tail.
+    [ "$SECONDS" -ge "$INSPECT_DEADLINE" ] && { IFS="$OLD"; return 1; }
+    # ORDER-AWARE, per PUSH (round-3 major): the deny is for any push that a
+    # head-mover PRECEDES — that push ships a HEAD the gate never examined.
+    # `push && commit --amend` is legitimate (the pushed HEAD was vetted), but
+    # `push && commit --amend && push --force` is the incident verbatim: the
+    # SECOND push follows the amend, so the first-push short-circuit round 2
+    # shipped would have waved it through.
+    if segment_invokes_head_mover "$seg"; then mover=1; continue; fi
+    if [ "$mover" = "1" ] && segment_invokes_git_push "$seg"; then IFS="$OLD"; return 0; fi
   done
   IFS="$OLD"
   return 1
