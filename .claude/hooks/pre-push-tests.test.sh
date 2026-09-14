@@ -478,6 +478,136 @@ R="$(mkrenamefixture fix/mv-backend-to-docs backend/app/main.py docs/moved.md)"
 e2e "a rename out of backend/ still runs the BACKEND legs" \
     "backend docs lint pii" "$R" "$P origin HEAD"
 
+# --- FOREIGN REPO PASS-THROUGH (#353) ---------------------------------------
+# The hook is registered for the SESSION, so it fires on `git push` in ANY
+# checkout. Measured 2026-09-10: a docs-only push of the project WIKI (a
+# separate repository) was blocked twice by MAIN-REPO test results.
+#
+# POLARITY: skipping must be POSITIVELY established. Only a provably different
+# repository passes through; everything ambiguous still runs the gate. The
+# cases below pin BOTH directions, because a pass-through that fires too widely
+# silently disables the gate for this project too.
+# CLAUDE_PROJECT_DIR is supplied exactly as the real hook receives it from
+# .claude/settings.json — and it is REQUIRED here, not decoration: the mutation
+# harness points $HOOK at a COPY in a temp dir, where the hook's own
+# `dirname "$0"/../..` no longer lands on this project, so it cannot know which
+# repo it guards. Without this the identity control dies and the whole contract
+# reports HARNESS INVALID (measured while writing these cases). The hook still
+# fails CLOSED in that situation — unknown identity gates — which is why the
+# symptom was a spurious GATE and not a spurious skip.
+PROJECT="$(cd "$HERE/../.." && pwd)"
+check_in() { # check_in <desc> <dir> <cmd> <expect>
+  local desc="$1" dir="$2" cmd="$3" expect="$4" out
+  out="$(cd "$dir" && printf '{"tool_input":{"command":%s}}' "$(jq -Rn --arg c "$cmd" '$c')" \
+        | CLAUDE_PROJECT_DIR="$PROJECT" PREPUSH_DRY_RUN=1 bash "$HOOK" 2>/dev/null)"
+  if [ "$out" = "$expect" ]; then printf 'PASS  [%s]  %s\n' "$out" "$desc"
+  else printf 'FAIL  got=%s want=%s  %s\n' "$out" "$expect" "$desc"; fails=$((fails + 1)); fi
+}
+mkrepo() { # mkrepo <origin-url|-> -> prints dir
+  local d; d="$(mktemp -d)"; git -C "$d" init -q
+  [ "$1" != "-" ] && git -C "$d" remote add origin "$1"
+  printf '%s' "$d"
+}
+
+FR="$(mkrepo https://github.com/mavrovde/beaconfolio.wiki.git)"
+check_in "#353: a push from the project WIKI passes through (it is a different repo)" \
+         "$FR" "$P" ALLOW
+rm -rf "$FR"
+
+FR="$(mkrepo git@github.com:someone/unrelated.git)"
+check_in "#353: a push from an unrelated repo passes through" "$FR" "$P" ALLOW
+rm -rf "$FR"
+
+# …and every ambiguous shape must still GATE.
+FR="$(mkrepo -)"
+check_in "#353: a repo with NO origin still GATES (identity unprovable)" "$FR" "$P" GATE
+rm -rf "$FR"
+
+FR="$(mkrepo git@github.com:mavrovde/beaconfolio.git)"
+check_in "#353: the SAME origin in another directory still GATES (worktree shape)" \
+         "$FR" "$P" GATE
+rm -rf "$FR"
+
+# ssh and https spellings of the same remote are the SAME repository — if
+# normalisation missed this, every worktree would silently skip the gate.
+FR="$(mkrepo https://github.com/mavrovde/beaconfolio.git)"
+check_in "#353: https vs ssh spelling of our origin is NOT a foreign repo" \
+         "$FR" "$P" GATE
+rm -rf "$FR"
+
+# The wiki remote ends in .wiki.git; stripping .git must leave .wiki intact, or
+# the wiki would read as the main repo and keep being gated.
+FR="$(mkrepo https://github.com/mavrovde/beaconfolio.wiki)"
+check_in "#353: a .wiki remote without the .git suffix is still foreign" "$FR" "$P" ALLOW
+rm -rf "$FR"
+
+# A non-push command in a foreign repo was already allowed; prove the new block
+# did not change that path's reason for allowing.
+FR="$(mkrepo https://github.com/mavrovde/beaconfolio.wiki.git)"
+check_in "#353: a non-push command in a foreign repo is still ALLOW" "$FR" "git status" ALLOW
+rm -rf "$FR"
+
+# --- the push directory is the COMMAND's, not the hook's cwd (#402 blocker 1)
+# The hook stands in some ambient cwd, but `cd <dir> &&` and `git -C <dir>`
+# both push a repository it is not standing in. Reading identity from $PWD
+# alone was a FAIL-OPEN: from the wiki, a push of THIS project skipped THIS
+# project's gate. Both directions are pinned, because the fix has to move the
+# verdict for BOTH shapes without moving it for the plain one.
+FR="$(mkrepo https://github.com/mavrovde/beaconfolio.wiki.git)"
+check_in "#402: \`git -C <project> ${P#git }\` from a foreign cwd GATES (it is OUR code)" \
+         "$FR" "git -C $PROJECT ${P#git }" GATE
+check_in "#402: \`cd <project> && ${P}\` from a foreign cwd GATES (it is OUR code)" \
+         "$FR" "cd $PROJECT && $P" GATE
+check_in "#402: \`cd <wiki> && ${P}\` from the PROJECT cwd passes through" \
+         "$PROJECT" "cd $FR && $P" ALLOW
+check_in "#402: \`git -C <wiki> ${P#git }\` from the PROJECT cwd passes through" \
+         "$PROJECT" "git -C $FR ${P#git }" ALLOW
+# A grouping construct scopes the `cd`; the walker models `cd` as global, so it
+# must refuse the shape rather than leak /wiki past the `)` onto the second push.
+check_in "#402: a subshell-scoped cd does not leak onto a later push" \
+         "$PROJECT" "( cd $FR && $P ) ; $P" GATE
+# Indirection can land on another HOST entirely — the directory is unknowable
+# even when the ambient cwd is provably foreign.
+check_in "#402: a push reached through bash -c gates even from a foreign cwd" \
+         "$FR" "bash -c '$P'" GATE
+rm -rf "$FR"
+
+# --- identity is owner/repo; HOST and spelling are not identity (#402 major 2)
+# Every case here is a spelling of OUR OWN origin. Each one that reads as
+# "different" is a silent skip of this project's gate, so all of them GATE.
+for spelling in \
+  "ssh://git@ssh.github.com:443/mavrovde/beaconfolio.git" \
+  "ssh://git@github.com:22/mavrovde/beaconfolio.git" \
+  "ssh://maverick@github.com/mavrovde/beaconfolio.git" \
+  "git+ssh://git@github.com/mavrovde/beaconfolio.git" \
+  "https://GitHub.com/MavrovDe/Beaconfolio.git" \
+  "https://github.com/mavrovde/beaconfolio.git/" ; do
+  FR="$(mkrepo "$spelling")"
+  check_in "#402: \`$spelling\` is OUR origin, not a foreign repo" "$FR" "$P" GATE
+  rm -rf "$FR"
+done
+# A bare filesystem path names no repository we can compare, so it is not an
+# identity — and no identity gates.
+FR="$(mkrepo "$PROJECT")"
+check_in "#402: a local-path origin yields NO identity and GATES" "$FR" "$P" GATE
+rm -rf "$FR"
+FR="$(mkrepo "file://$PROJECT")"
+check_in "#402: a file:// origin yields NO identity and GATES" "$FR" "$P" GATE
+rm -rf "$FR"
+
+# The operator-facing note is the only evidence a skip happened at all; assert
+# it, rather than trusting that an ALLOW came from the intended branch.
+FR="$(mkrepo https://github.com/mavrovde/beaconfolio.wiki.git)"
+note="$( (cd "$FR" && printf '{"tool_input":{"command":%s}}' "$(jq -Rn --arg c "$P" '$c')" \
+        | CLAUDE_PROJECT_DIR="$PROJECT" PREPUSH_DRY_RUN=1 bash "$HOOK" 2>&1 >/dev/null) )"
+case "$note" in
+  *"foreign repo (mavrovde/beaconfolio.wiki)"*"this project is mavrovde/beaconfolio"*)
+    printf 'PASS  [NOTE]  #402: the skip names BOTH identities on stderr\n' ;;
+  *) printf 'FAIL  #402: the skip note is missing or unnamed: %s\n' "$note"
+     fails=$((fails + 1)) ;;
+esac
+rm -rf "$FR"
+
 # --- the mutation contract must NOT run in a full round (#388 review, major 2) -
 # `pre-merge-gate.test.sh --mutations` measured 543s alone under load; the hook
 # legs subtotal 646s before pytest/Vitest. Spending that in a fail-closed ALL
@@ -814,6 +944,40 @@ mutate die "$HOOKF" "the hook ignores the selector and prints a fixed narrow set
   'replace::| prepush_select_legs)=>| true; echo " docs ")'
 mutate die "$HOOKF" "the hook no longer fails closed when the range is unobtainable" \
   'replace::    SELECT_REASON="FULL — the changed-file list could not be computed; fail closed"=>    LEGS=" docs "'
+
+# --- #353: the foreign-repo pass-through must be able to fail BOTH ways ------
+# A pass-through is a hole by construction: too narrow and the wiki keeps being
+# gated (the bug), too wide and this project's OWN pushes skip the gate
+# silently. So both directions get a mutation, not just the one the fix was
+# written for.
+mutate die "$HOOKF" "the foreign-repo check passes through for ANY other directory (identity ignored)" \
+  'replace::    if [ -z "$THEIRS" ] || [ "$THEIRS" = "$OURS" ]; then FOREIGN=0; break; fi=>    :'
+mutate die "$HOOKF" "the foreign-repo pass-through never fires (the #353 bug restored)" \
+  'replace::[ -n "$ROOT_TOP" ] && [ -n "$OURS" ] && [ -n "$PUSH_DIRS" ] || FOREIGN=0=>FOREIGN=0'
+# Identity must come from the REMOTE, not the path: comparing directories alone
+# would make every git worktree of this project skip the gate.
+mutate die "$HOOKF" "repo identity falls back to the directory path instead of the remote" \
+  'replace::    THEIRS="$(prepush_repo_identity "$PTOP")"=>    THEIRS="$PTOP"'
+
+# --- #402 blocker 1: the push directory is the COMMAND's, not the hook's cwd -
+# This is the mutation that would have caught the fail-open the first round
+# shipped: identity read from $PWD while the command names another repo.
+mutate die "$HOOKF" "the push directory is taken from the cwd instead of the command" \
+  'replace::PUSH_DIRS="$(prepush_push_dirs "$CMD")"=>PUSH_DIRS="$PWD"'
+mutate die "$HOOKF" "a grouping construct no longer scopes the cd (subshell leak)" \
+  "replace::  case \"\$masked\" in *'('*|*')'*|*'{'*|*'}'*) printf '?\\n'; return 0 ;; esac=>  :"
+mutate die "$HOOKF" "a push reached through indirection is treated as a direct one" \
+  "replace::        case \"\${A[\$i]:-}\" in git|'\\git') ;; *) printf '?\\n'; return 0 ;; esac=>        :"
+
+# --- #402 major 2: every normalisation rule is load-bearing for POLARITY -----
+# Each rule below decides whether a spelling of OUR OWN origin reads as ours.
+# Losing one is a silent skip of this project's gate, so none may be unpinned.
+mutate die "$HOOKF" "origin identity stops case-folding (an uppercase spelling reads as foreign)" \
+  "replace::  path=\"\$(printf '%s' \"\$path\" | sed -E 's#/+\$##; s#\\.git\$##' | tr 'A-Z' 'a-z')\"=>  path=\"\$(printf '%s' \"\$path\" | sed -E 's#/+\$##; s#\\.git\$##')\""
+mutate die "$HOOKF" "origin identity stops stripping a trailing slash (\`…/beaconfolio.git/\`)" \
+  "replace::  path=\"\$(printf '%s' \"\$path\" | sed -E 's#/+\$##; s#\\.git\$##' | tr 'A-Z' 'a-z')\"=>  path=\"\$(printf '%s' \"\$path\" | sed -E 's#\\.git\$##' | tr 'A-Z' 'a-z')\""
+mutate die "$HOOKF" "a bare filesystem path is accepted as a repository identity" \
+  'replace::    *) return 0 ;;                         # bare filesystem path=>    *) path="$url" ;;'
 
 echo "mutation contract: $MPASS killed, $MFAIL survived, $MBAD invalid"
 [ "$MFAIL" -eq 0 ] && [ "$MBAD" -eq 0 ] || exit 1

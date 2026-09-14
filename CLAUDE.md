@@ -96,7 +96,7 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
 | skill | `e2e-validation` | the E2E loop + its traps, for agents (#117) |
 | skill | `env-gotchas` | macOS/BSD/gh platform pitfalls (#119) |
 | skill | `ssr-cd-safety` | zoneless repaint + SSR HTTP contract (#118) |
-| hook | `pre-push-tests.sh` | PreToolUse Bash: docs + backend + frontend gates before every real `git push` (command-position aware, #237), SCOPED TO THE DIFF since #377 — main/`release/*`/`PREPUSH_FULL=1` still run everything |
+| hook | `pre-push-tests.sh` | PreToolUse Bash: docs + backend + frontend gates before every real `git push` (command-position aware, #237), SCOPED TO THE DIFF since #377 — main/`release/*`/`PREPUSH_FULL=1` still run everything; since #353 a push of a DIFFERENT repository (the wiki) passes through, but only when that is positively established |
 | hook | `guard-destructive.sh` | PreToolUse Bash: blocks irreversible local/infra destruction (rule 9) |
 | hook | `pre-merge-gate.sh` | PreToolUse Bash: refuses `gh pr merge` without an APPROVE verdict, with an APPROVE that predates the head, or with `Closes #NN` against unticked criteria (rule 13 enforced, not asked); a `PR_MERGE_GATE=0` bypass is allowed but never invisible — it appends to a local audit log and posts a PR comment (#392) |
 | hook | `guard-stack-resources.sh` | PreToolUse Bash: free-disk floor + ONE Docker compose project before any `up`/`build`/`run`/`pull` (v1.14.0 retro — three parallel stacks crashed the daemon) |

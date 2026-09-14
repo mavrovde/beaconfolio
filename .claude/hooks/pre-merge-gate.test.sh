@@ -490,6 +490,41 @@ GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
   run "phrase quoted in a comment body" allow "gh pr comment 284 --body 'do not gh pr merge 284 yet'"
 GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
   run "echo of the phrase" allow "echo 'next: gh pr merge 284'"
+# --- #353: the decision must not depend on the CWD ---------------------------
+# Reported 2026-09-10: `--mutations` from a foreign cwd (the wiki checkout) died
+# with "HARNESS BROKEN: identity should survive but died". It does NOT reproduce
+# today — measured 23 killed / 0 survived / 0 invalid from BOTH the repo root and
+# a foreign cwd.
+#
+# WHY it stopped reproducing is NOT known, and the guess that was committed here
+# first — that #392/#399's hermetic `PR_MERGE_GATE_LOG` default fixed it
+# incidentally — was DISPROVED in review (#402, major 3): the pre-fix harness,
+# reconstructed with `git show 6d4307e:.claude/hooks/pre-merge-gate.test.sh` and
+# run from a foreign wiki-origin repo, reports `control survived` and
+# 20 killed / 0 survived / 0 invalid. It does not break either. A `HOME` without
+# `.claude/` was also tried and also fails to reproduce.
+#
+# So this is an unexplained non-reproduction, recorded as one. The cases below
+# are still worth their cost — they pin cwd-independence so the next refactor
+# cannot reintroduce it — but they are NOT evidence for any account of the
+# original cause, and nothing downstream should cite them as one.
+run_elsewhere() { # run_elsewhere <name> <expected> <command>
+  local name="$1" expect="$2" cmd="$3" got d
+  d="$(mktemp -d)"
+  got="$(cd "$d" && decide "$(payload "$cmd")")"
+  rm -rf "$d"
+  if [ "$got" = "$expect" ]; then PASS=$((PASS+1));
+  else FAIL=$((FAIL+1)); printf '  ✗ %s — expected %s, got %s (cwd-dependent decision)\n' "$name" "$expect" "$got"; fi
+}
+run_elsewhere "#353: a verdict-less merge denies from a FOREIGN cwd too" deny "gh pr merge 284"
+run_elsewhere "#353: an unrelated command allows from a FOREIGN cwd too" allow "git status"
+# The log path must be hermetic no matter where the suite runs — that is the
+# property whose absence caused the original report.
+case "${PR_MERGE_GATE_LOG:-}" in
+  "$STUB"/*) PASS=$((PASS+1)) ;;
+  *) FAIL=$((FAIL+1)); printf '  ✗ #353: PR_MERGE_GATE_LOG is not hermetic (%s) — the harness would write a real log\n' "${PR_MERGE_GATE_LOG:-unset}" ;;
+esac
+
 run "unrelated command" allow "git status"
 run "gh pr view is not a merge" allow "gh pr view 284 --json state"
 run "git merge is not a PR merge" allow "git merge origin/main"
