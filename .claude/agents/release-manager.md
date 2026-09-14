@@ -89,6 +89,24 @@ and `backend/docker-entrypoint.sh` (`set -e`, `db_probe.py`) crash-loops — a f
 ## Workflow
 1. **Scope.** Confirm which issues/PRs are in this release (given to you, or infer
    from merged PRs since the last tag: `gh pr list --state merged`, `git log <lastTag>..main`).
+1b. **Clear the dependency tranche BEFORE assembly starts — it carries no rule-13 carve-out.**
+   (v1.14.2 retro §1.) **This is where rule 13 breaks, twice now.** #321 merged with zero
+   verdicts at v1.14.0; at v1.14.2 **six PRs merged in an 18-minute window during assembly** —
+   four Dependabot bumps plus two small config PRs — five with **no verdict at all** and one
+   (#402) **against a standing REQUEST CHANGES**, and `pre-merge-gate.sh`'s bypass log is empty,
+   so none of them reached the gate. They were then back-filled with six `APPROVE —
+   retrospective review` comments **posted inside 19 seconds**, which is both a batched review
+   (banned by owner directive mid-v1.14.1) and, to every metric and to
+   `audit_no_verdict_merges.sh`, indistinguishable from six real reviews.
+   So, in order:
+   - Open dependency PRs are reviewed **one verdict per PR, before** you touch `VERSION` or the
+     CHANGELOG. Assembly pressure is the cause; removing the overlap is the fix.
+   - **A retrospective verdict is a fix-forward record, never a merge authorization.** If a PR
+     merged unreviewed, post one (rule 13's fix-forward clause) — and report it in the release
+     summary as a **rule-13 violation that occurred**, not as a PR that was reviewed.
+   - Before tagging, run `bash scripts/audit_no_verdict_merges.sh --since <prev-tag-date>` **and**
+     check `$HOME/.claude/merge-gate-bypass.log`. An empty log with a violation means the merge
+     never passed through the CLI; say so rather than reporting the window clean.
 2. **Assemble & verify the branch.** Usually a `release/X.Y.Z` branch already holds
    the batch. Ensure it is up to date with `main`; resolve any `CHANGELOG.md` conflicts
    by **union** (keep every entry). Sanity-check the merged tree builds conceptually

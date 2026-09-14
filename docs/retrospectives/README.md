@@ -27,12 +27,21 @@ the next retrospective checks.
 
 Update this when you add a retro. These are the numbers worth watching; everything else is context.
 
-| Release | PRs merged | Verdicts (loose / canonical-heading) | Mean rounds | Approved r1 | Rework share of verdicts | "Claim not measured" findings | Median files/PR | Tokens | Tokens / merged PR | Agent-time |
-|---|---|---|---|---|---|---|---|---|---|---|
-| [v1.12.0](v1.12.0.md) | 10 | 24 / n-a¹ | **2.4** | 20% (2/10) | 58%⁴ | **9**⁵ | 17 | 9.07M² | 907k² | 28.1h² |
-| [v1.13.0](v1.13.0.md) | 16 | 52 / **50** | **3.13** | **0% (0/16)** | 68%⁴ | **12**⁵ | 14 | not recorded³ | n-a³ | 23.5h tag→tag |
-| [v1.14.0](v1.14.0.md) | 11 | 23 / **20** | **1.82** | 27% (3/11)⁶ | 45%⁷ | **4**⁵ | 20 | **8.38M**³ | 762k³ | **35.5h**³ · 53.0h tag→tag |
-| [v1.14.1](v1.14.1.md) | 17¹¹ | 44 / **41**¹⁰ | **2.41**¹⁰ | **29% (5/17)** | 59%⁸ | **5**⁵ | 8 | **2.60M**⁹ | **153k**⁹ | **6.0h**⁹ · 107h tag→tag |
+**The three KPI columns #386 asks for already exist** and are named here so the criterion is
+checkable rather than re-added: *rounds/PR* = **Mean rounds**, *tokens/PR* = **Tokens / merged
+PR**, *round-1 approval rate* = **Approved r1**. v1.14.2 adds two columns its own evidence
+demanded — **Merged w/o valid APPROVE** (tracked only in prose footnotes until now, and v1.14.2
+introduced a second failure mode: merging against a *standing* REQUEST CHANGES) and **Class G**
+(fake-greens, the class #393 guards). Both are back-filled only where a release's own record
+measured them; **`n-a` means not measured, never estimated.**
+
+| Release | PRs merged | Verdicts (loose / canonical-heading) | Mean rounds | Approved r1 | Rework share of verdicts | "Claim not measured" (F) findings | Class G findings | Merged w/o valid APPROVE | Median files/PR | Tokens | Tokens / merged PR | Agent-time |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| [v1.12.0](v1.12.0.md) | 10 | 24 / n-a¹ | **2.4** | 20% (2/10) | 58%⁴ | **9**⁵ | n-a | n-a | 17 | 9.07M² | 907k² | 28.1h² |
+| [v1.13.0](v1.13.0.md) | 16 | 52 / **50** | **3.13** | **0% (0/16)** | 68%⁴ | **12**⁵ | n-a | 0 | 14 | not recorded³ | n-a³ | 23.5h tag→tag |
+| [v1.14.0](v1.14.0.md) | 11 | 23 / **20** | **1.82** | 27% (3/11)⁶ | 45%⁷ | **4**⁵ | n-a | 1 (#321) | 20 | **8.38M**³ | 762k³ | **35.5h**³ · 53.0h tag→tag |
+| [v1.14.1](v1.14.1.md) | 17¹¹ | 44 / **41**¹⁰ | **2.41**¹⁰ | **29% (5/17)** | 59%⁸ | **5**⁵ | **2** | 1 (#355) | 8 | **2.60M**⁹ | **153k**⁹ | **6.0h**⁹ · 107h tag→tag |
+| [v1.14.2](v1.14.2.md) | 14¹² | 40 / **38**¹³ | **2.71**¹³ | **0% (0/14)**¹³ | 63%¹³ | **22**⁵ ¹⁴ | **8** | **6 of 14 (43%)**¹⁵ | 7 | not recorded¹⁶ | n-a¹⁶ | n-a¹⁶ · **20.1h tag→tag** |
 
 ¹ v1.12.0's verdict headings predate the mandated form, so a canonical-heading re-count undercounts
 that window (15). From v1.13.0 the heading is charter-mandated **and** gate-enforced, so this column
@@ -113,6 +122,54 @@ than papered over.
 return **one more PR than the corpus**: the release PR whose merge commit *is* the previous tag
 belongs to the previous release (#327 ↔ `v1.14.0`'s `a3de0f5`).
 
+¹² **The release PR is excluded by ONE SECOND** if you bound on the tag commit's committer date.
+`e1825949` is `19:46:02Z`; #406's `mergedAt` is `19:46:03Z`. **Bound the corpus on the release
+PR's `mergedAt`**, not on `git log -1 --format=%cI <tag>`. This is the mirror of note 11 (where
+the query returned one PR too many) and bites in the opposite direction.
+
+¹³ **Replayed at `mergedAt`, which is what makes these numbers true.** Six of v1.14.2's 38
+canonical verdicts were posted **after** their PR merged (retrospective back-fills, §1 of that
+record). Counting them naively reports **five round-1 approvals (36%)**; replayed at `mergedAt`
+the figure is **0 of 14**, because every PR that was reviewed before merge opened with a REQUEST
+CHANGES. The loose/canonical cells keep 40/38 because that is what the documented filter returns
+as run; **Approved r1, Mean rounds and Rework share are the replayed figures** — 32 verdicts were
+posted pre-merge (2.29/PR; **3.56** over the 9 PRs actually reviewed). This also closes the
+author-body hole note 10 left open: a verdict must both **open** with the marker (position is not
+authorship) **and predate the merge** (a back-fill is not a gate).
+
+¹⁴ **82% of v1.14.2's class F is one PR.** 18 of the 22 are on **#389 — the v1.14.1
+retrospective PR itself**, whose round-1 verdict lists thirteen blockers, each a published number
+contradicted by measurement. The cause is structural: that retro published the same figures into
+four files. See [v1.14.2.md §3](v1.14.2.md) and the single-source rule now in the `release-retro`
+skill.
+
+¹⁵ **Not bypasses — merges that never reached the gate.** `pre-merge-gate.sh`'s bypass trace
+(#392) writes `$HOME/.claude/merge-gate-bypass.log` and posts a PR comment on every
+`PR_MERGE_GATE=0` merge; **neither exists for any of the six**. Five merged with zero verdicts
+(#394 #395 #396 #397 #403) and #402 merged against a **standing REQUEST CHANGES** — a failure
+mode no prior release had. All six were back-filled with `APPROVE — retrospective review` in a
+single 19-second batch an hour later, which is why `audit_no_verdict_merges.sh` **reports this
+window clean**: it tests presence, not ordering (→ #409). An empty bypass log is now positive
+evidence and should be quoted whenever this cell is non-zero.
+
+¹⁶ **Not recorded, and that is a miss rather than a convention.** No per-run capture was kept;
+Project 3 holds `Tokens (k)` / `Time of processing (min)` for **8 of 16** items (1,884k / 373 min)
+— a gap, not a sample, since the four Dependabot PRs, the release PR and the two largest gate PRs
+carry nothing and one filled row is still in progress. Summing it would repeat the defect note 3
+exists to stop. v1.14.1 ↔ v1.14.2 were to be the first honestly comparable token figures; they
+are not, and **#386 stays open on this criterion alone**.
+
+**v1.14.1's prediction: 2 of 6 clauses PASS, 3 FAIL, 1 ⚠️ unmeasured.** Class C findings **0** ✅
+(from 7 — #391 shipped in #398, and class B also went to zero); docs-only push **13s** ✅ (target
+≤2 min). Failed: **PRs merged with no verdict 5** ❌ (from 1, plus one merged against a standing
+REQUEST CHANGES); **mean rounds 2.71 / 4 PRs at ≥4 verdicts** ❌ (targets ≤1.6 / ≤1); **class F
+22** ❌ (target ≤2). ⚠️ **Merges on a stale approval 0 of 9 reviewed** — v1.14.1's own falsifier
+("clauses 2 and 3 can hit zero because merges stopped passing through the gate") **fired**: 6 of
+14 merges never reached it, so this is a statement about the 9 that did. Its scoring rule worked
+exactly as designed — of the three issues it filed, **#391 ✅ and #392 ✅ shipped and their class
+went to zero; #393 ✗ did not ship, and class G quadrupled 2 → 8.** See
+[v1.14.2.md §6](v1.14.2.md).
+
 **v1.14.0's standing prediction — early read at v1.14.1 (formal check still due at v1.15).** Stale
 approvals **0 of 16** ✅ (from 4 of 10 — `pre-merge-gate.sh` working); class-F blocker+major **5** ❌
 (target ≤2 — the draft scored this **2 ✅** and review re-derived it at 5); PRs merged with **no
@@ -144,6 +201,17 @@ answer is not another charter paragraph.
 
 So the series stays comparable, count the same way every time:
 
+- **The corpus is every PR merged in `(previous release PR's `mergedAt`, this release PR's
+  `mergedAt`]`.** Do **not** bound on the tag commit's committer date: at v1.14.2 the tag commit
+  read `19:46:02Z` and its own release PR merged at `19:46:03Z`, so `<= CUR` dropped #406 from
+  its own release (note 12). Get the bound with
+  `gh pr view <release-PR> --json mergedAt --jq .mergedAt`.
+- **Replay every verdict at `mergedAt` before counting it.** A verdict posted *after* the merge is
+  a retrospective record, not a gate, and counting it silently inflates the two columns that
+  matter: at v1.14.2 six post-merge back-fills turned a true **0 of 14** round-1 approvals into a
+  reported 36% (note 13). So a countable verdict must satisfy **both** halves — the marker in the
+  **first non-empty line** (position is not authorship) **and** `submittedAt`/`createdAt <=
+  mergedAt`. Report the naive number alongside it when they differ, and say which is which.
 - **Verdicts** = posted review bodies containing the UPPERCASE marker `APPROVE` or
   `REQUEST CHANGES`, counted over the release's **merged** PRs. Count these, **not** the Project 3
   `Review rounds` field — v1.12.0 found that field disagreeing with the thread (5 recorded vs 3

@@ -59,6 +59,21 @@ gh pr list --state merged --limit 100 --json number,createdAt,mergedAt,changedFi
 **Count verdicts with the heading-anchored filter** (this directory's README carries the command and
 the reason): a marker anywhere in a body also matches the AUTHOR's fix reports — 11 vs 8 on #291.
 
+**…and replay the thread at `mergedAt` before counting anything.** A countable verdict must
+satisfy **both** halves: the marker opens the body (position is not authorship) **and** it was
+posted **before the merge**. At v1.14.2 six verdicts were back-filled after their PRs merged —
+`APPROVE — retrospective review (round 1)`, all six inside 19 seconds — and the naive filter
+turned a true **0 of 14** round-1 approvals into a reported **36%**. A retrospective verdict is an
+honest fix-forward record and it is *not* a gate; a metric that cannot tell them apart will report
+a release as reviewed when it was not. The same replay is what `audit_no_verdict_merges.sh`
+currently lacks (#409).
+
+**Bound the corpus on the release PR's `mergedAt`, not on the tag commit's date.** At v1.14.2 the
+tag commit read `19:46:02Z` and its own release PR merged at `19:46:03Z`, so the obvious
+`mergedAt <= <tag date>` query dropped #406 from its own release. (v1.14.1 hit the same trap from
+the other side — one PR too many.) Always print the corpus and eyeball it against
+`git log <prev>..<tag>` before computing a single figure.
+
 ## The five questions
 
 Answer each with numbers and quotes, never impressions.
@@ -129,6 +144,36 @@ CLAUDE.md > command** — and prefer the cheapest thing that actually prevents r
 
 **Deletions count.** An instruction nobody follows, or that fires on the wrong trigger, makes the
 configuration worse: it dilutes what matters and costs tokens on every load. Say what you removed.
+
+## A release figure is written ONCE — every other document links to it
+
+**This is the highest-value rule in this skill, and it was learned the expensive way.** The
+v1.14.1 retrospective published the same figures into **four** places — `v1.14.1.md`,
+`docs/retrospectives/README.md`'s trend table, `docs/wiki/team-and-process.md` and
+`docs/wiki/delivery-statistics.md`. Its PR (#389) was blocked on **13 class-F blockers in round
+one**, every one a published number contradicted by measurement, and the reviewer's first finding
+names the mechanism exactly:
+
+> *"The cost figures disagree with themselves across three files in this PR. Same window, same
+> instrument, **four readings**."*
+
+Rounds 2 and 3 existed only because each correction had to land in four files and landed in three
+(*"`delivery-statistics.md:92-94` — still **two** guarded commands"*). **18 of v1.14.2's 22
+class-F findings are this one PR.** Four copies of a number are four chances to be wrong and one
+chance to be right.
+
+So:
+
+- **Canonical:** `docs/retrospectives/vX.Y.Z.md` (this release's figures) and
+  `docs/retrospectives/README.md`'s trend table (the series). Nothing else.
+- **Everywhere else — wiki articles, charters, `CLAUDE.md`, issue bodies — LINK.** Write
+  "see [the v1.14.2 retrospective](…)", not the number. If a narrative genuinely needs a figure
+  inline, quote **one** and link it in the same sentence, so a reader can tell instantly whether
+  it is current.
+- **Do not "refresh" a restated figure you find in another document — delete it and link.**
+  Updating it re-creates the copy you are trying to remove.
+- A correction is applied **once**, at the canonical site. If you find yourself running the same
+  `sed` across three files, stop: that is the defect, not the fix.
 
 ## Output
 
