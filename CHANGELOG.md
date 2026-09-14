@@ -4,6 +4,53 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **v1.14.1 release retrospective + the cross-release read (#386)** — `docs/retrospectives/v1.14.1.md`
+  records the release under the counting conventions, and the trend table gains its row.
+  Measured: **17 PRs, 41 canonical verdicts, 2.41 mean rounds, 29% round-1 approvals (best in the
+  series), median 8 files/PR**.
+  - **Merges on a stale approval fell 4-of-10 → 0-of-16** — `pre-merge-gate.sh` working. Reported
+    with its limit: merge provenance is *unmeasurable* here (all 17 merges share one identity), so
+    the defensible claim is "no merge that reached the gate carried an uncovered commit".
+  - **The dominant defect is the merged result nothing validates — classes B ∪ C, 8 of 16 reviewed
+    PRs, half of everything reviewed**, and **4 of the 7 `[Unreleased]`-collision PRs are also
+    stale-base PRs**: the collision is
+    the stale base landing in `CHANGELOG.md`. #365 is the worst variant — the merge **deleted the
+    released `## [1.14.0]` heading**. The tool and the `/prep-pr` step already existed; the gap is
+    enforcement level, so the retro's main action moves the check from a command to a lint measured
+    against the merged result (filed as #391, with #392 and #393 for the other two).
+  - **Corrects the KPI baseline published on #386** across all three cells: "2 of 13 (15%)",
+    "33 rounds / 13 PRs" and "~191k tokens/PR" were counted mid-assembly over a partial corpus.
+    Canonical is **5 of 17 (29%)**, **41/17 = 2.41** and **~153k** (2,600,168 ÷ 17).
+  - **The per-run effort telemetry is now committed** as an appendix to the retro. It was held in a
+    machine-local scratch file, so none of the cost figures was re-derivable by a reader — rule 7
+    applies to the retrospective's own numbers too.
+  - **Scores its own prediction honestly, including the cell that flipped.** Class F ("claim not
+    measured") was drafted as **2 ✅** and re-derived at blocker-or-major level as **5 ❌**. Class B's
+    published list is also corrected: `CLAUDE.md` records a *different* five, measured under a looser
+    predicate, and #373 was in neither class — its base was `0 behind main, CLEAN`.
+- **Lessons §60 + `pr-reviewer` charter — a "read-only" agent that runs `git checkout` mutates the
+  shared working tree.** During #389's round-3 review the reviewer ran `git checkout <sha>` in the
+  main tree to trace how a table changed across commits, and left HEAD detached. The next fix
+  commit landed on **no branch**; `git push` failed with `git push origin HEAD:<name-of-remote-branch>`,
+  which reads like a usage hint and actually means the commit is orphaned. Recovered losslessly
+  (`git checkout <branch> && git merge --ff-only <sha>`) only because the orphan's parent happened
+  to be the branch tip. The charter's "no Edit/Write tools by design" bounded the wrong surface:
+  `git checkout` is neither Edit nor Write and is the most state-mutating command in the repo.
+  Review-only now means **read-only to repository state**, with `git show <sha>:<path>` /
+  `git diff a..b` / `git log -p` named as the replacements, and a `git status -sb` check before any
+  commit in a long session.
+- **Lessons §58b correction (#390 review follow-up)** — the entry said "the `rstrip` and CRLF
+  mutants survived"; there was no CRLF *mutant* at that head. The two that survived at 26/0 were
+  `rstrip` (a fixture hole) and drop-the-final-newline (the one real assertion hole), and the CR
+  defect was a **live defect found by byte probing**, not by mutation. Folded in here rather than
+  spent as its own review round, on the reviewer's explicit advice. The corrected text carries a
+  stronger warning: mutation only tests the failures you already thought of.
+- **Two wiki articles (`docs/wiki/`)** — *Team and process*, how a one-human/eight-agent team ships
+  and why nearly every rule here is executable rather than written down; and *Delivery statistics*,
+  the v1.13.0 → v1.14.0 → v1.14.1 series with the v1.14.2 KPI plan and its falsifiers.
+  Discussion #387 opens both for comment.
+
 ### Changed
 - **The pre-push gate now runs only the legs the DIFF can break (#377)** — it ran the entire round
   on every push regardless of what changed, so a two-file documentation commit paid
@@ -108,7 +155,9 @@ All notable changes to this project will be documented in this file.
     as lessons **§58b**: a verifier's failure mode is to pass, so every layer added to one needs its
     own proof — and, measured during review, **the hole is as often in the FIXTURE as in the
     assertion** (`$(...)` strips only trailing newlines, so trailing spaces and CR bytes *were*
-    visible; those two mutants survived because the fixture gave them nothing to change).
+    visible). Of the two mutants that survived at 26/0, `rstrip` was a fixture hole and
+    drop-the-final-newline the one real assertion hole; the CR defect was never a mutant at all but
+    a live defect found by byte probing — mutation only tests the failures you already thought of.
   - Proven, not asserted: self-test **28 passed / 0 failed**, and **four** mutants each make it go
     red — whole-file collapse (27/1), `rstrip` over the tail (26/2), dropping the final newline
     (25/3), and reverting `newline=""` (26/2). Against the repo's real `CHANGELOG.md`, `diff` of

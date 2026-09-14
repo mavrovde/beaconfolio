@@ -1533,10 +1533,15 @@ tempting to blame the string compare for everything in (1). Run it:
 | CR bytes | **yes** | the fixture had none |
 
 `$(...)` strips only *trailing newlines*; it preserves trailing spaces inside lines and preserves
-`\r`. So **one assertion hole and two fixture holes** — the `rstrip` and CRLF mutants survived not
-because the compare was blind but because the fixture gave them **nothing to change**. That is the
-sharper lesson: a mutant that cannot alter your fixture is untested no matter how good your
-assertion is.
+`\r`. So **one assertion hole and two fixture holes**. Be precise about which mutant hit which:
+the two that survived at 26/0 were **`rstrip`** — a fixture hole, it had no trailing whitespace to
+strip — and **drop-the-final-newline**, the one genuine assertion hole. The CR defect was never a
+surviving mutant at all: at that head there was nothing to revert and no CRLF case existed, so it
+was a **live undetected defect found by byte probing**, which is its own warning — mutation only
+tests the failures you already thought of.
+
+That is the sharper lesson: a mutant that cannot alter your fixture is untested no matter how good
+your assertion is — and a defect no mutant describes is invisible to the contract entirely.
 
 **The rule.** A verifier's failure mode is to pass, so every layer you add to one needs its own
 proof:
@@ -1557,6 +1562,51 @@ again. Decomposition beats intuition here, and intuition was wrong twice above.
 checked its return; round 3 found exactly that. **When you find a verifier that fails open, follow
 the data flow from the failure all the way to the assertion in the SAME pass** — otherwise each
 level costs its own round. Two of this PR's four rounds were one finding split in half.
+
+## 60. A "read-only" agent that runs `git checkout` MUTATES THE SHARED WORKING TREE — and the next commit lands orphaned (#389)
+
+**What happened.** The `pr-reviewer` agent on PR #389 was asked to verify a claim about how a
+table changed across the PR's own commits. It did the right analysis the wrong way: it ran
+`git checkout <sha>` in the **main working tree**, traced the row, and never returned. HEAD was
+left detached.
+
+The main loop then made the next fix commit. It succeeded — `git commit` does not care that HEAD
+is detached — and produced `7ee7f66` whose parent was the branch tip. Then `git push` failed with:
+
+    git push origin HEAD:<name-of-remote-branch>
+
+which is git's message for "HEAD is not a branch", and is easy to read as a transient hiccup
+rather than "your commit is not on any branch". Nothing was lost here because the commit's parent
+happened to be the branch tip, so `git checkout <branch> && git merge --ff-only <sha>` recovered
+it. **That was luck, not design** — had the reviewer checked out an older commit, the fix would
+have been an orphan needing `git reflog` to find, and a `git commit --amend` or a second checkout
+would have made it unreachable.
+
+**Why a reviewer is the worst place for this.** The reviewer is invoked *concurrently with the
+author*, in the *same working tree*, precisely when the author is about to commit. The charter
+says "review-only: you have no Edit/Write tools by design" — and that is the trap: `git checkout`
+is neither Edit nor Write, but it is the single most state-mutating command in the repository.
+"Read-only" must mean **read-only to repository state**, not merely "does not call the Edit tool".
+
+**The rules.**
+
+- To inspect a file at another commit, use `git show <sha>:<path>`, `git diff <a>..<b>` or
+  `git log -p -- <path>`. **Never `git checkout <sha>`, `git switch --detach`, `git stash`,
+  `git restore`, `git reset` or `git clean` in a shared tree.** All of them are read-only in
+  intent and destructive in effect.
+- If an agent genuinely needs a checked-out tree, it gets its OWN — `git worktree add` to a
+  scratch path, or the harness's worktree isolation — never the main one.
+- **Before any commit in a long session, check `git status -sb`.** A first line of
+  `## HEAD (no branch)` means stop and reattach before committing, not after.
+- Read `git push origin HEAD:<name-of-remote-branch>` as a **detached-HEAD diagnosis**, not as a
+  usage hint to copy. The fix is `git checkout <branch> && git merge --ff-only <sha>`, which is
+  lossless when the orphan's parent is the branch tip. Verify with
+  `git rev-parse HEAD^` before merging — if it is not the tip, do not fast-forward; cherry-pick.
+
+**The general shape**, which is why this sits beside §58/§58b/§59: *a guarantee stated as a tool
+restriction is not a guarantee about behaviour.* "No Edit tool" bounded the wrong surface. The
+same error produced §59's narrowing bug (a gate scoped by the wrong predicate) and §58b's
+verifier hole (an assertion blind to the difference it existed to catch).
 
 ## 59. NARROWING a gate is the one change that can silently switch it off — so the narrowing rule must fail by doing MORE (#377)
 

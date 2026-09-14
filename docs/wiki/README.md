@@ -37,6 +37,8 @@ directory.
 | File | Wiki page | Canonical for |
 |---|---|---|
 | `production-deployment.md` | *Production deployment* | Host lifecycle and multi-project layout: provisioning, OS hardening, the shared edge, the port registry, TLS issuance/renewal, backup/restore, incident response (#310). |
+| `team-and-process.md` | *Team and process* | Team composition (one human owner + eight subagents), the issue→PR→review→merge→retro loop, the four-gate model and why enforcement is executable, the review gate and separation-of-duties problem, effort telemetry, the retrospective cycle. |
+| `delivery-statistics.md` | *Delivery statistics* | Three-release series (v1.13.0 → v1.14.0 → v1.14.1) measured under the retrospective counting conventions: what moved, why it moved, the KPI targets for v1.14.2 and the mechanisms meant to hit them. Complements `docs/retrospectives/` (per-release record) with the cross-release read. |
 
 `docs/DEPLOYMENT.md` remains canonical for the compose project runbook
 (environment variables, image coordinates, rollout secrets, per-release operator

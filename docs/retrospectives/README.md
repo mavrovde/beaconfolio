@@ -27,11 +27,12 @@ the next retrospective checks.
 
 Update this when you add a retro. These are the numbers worth watching; everything else is context.
 
-| Release | PRs merged | Verdicts (loose / canonical-heading) | Mean rounds | Approved r1 | Rework share of verdicts | "Claim not measured" findings | Median files/PR | Tokens | Agent-time |
-|---|---|---|---|---|---|---|---|---|---|
-| [v1.12.0](v1.12.0.md) | 10 | 24 / n-a¹ | **2.4** | 20% (2/10) | 58%⁴ | **9**⁵ | 17 | 9.07M² | 28.1h² |
-| [v1.13.0](v1.13.0.md) | 16 | 52 / **50** | **3.13** | **0% (0/16)** | 68%⁴ | **12**⁵ | 14 | not recorded³ | 23.5h tag→tag |
-| [v1.14.0](v1.14.0.md) | 11 | 23 / **20** | **1.82** | 27% (3/11)⁶ | 45%⁷ | **4**⁵ | 20 | **8.38M**³ | **35.5h**³ · 53.0h tag→tag |
+| Release | PRs merged | Verdicts (loose / canonical-heading) | Mean rounds | Approved r1 | Rework share of verdicts | "Claim not measured" findings | Median files/PR | Tokens | Tokens / merged PR | Agent-time |
+|---|---|---|---|---|---|---|---|---|---|---|
+| [v1.12.0](v1.12.0.md) | 10 | 24 / n-a¹ | **2.4** | 20% (2/10) | 58%⁴ | **9**⁵ | 17 | 9.07M² | 907k² | 28.1h² |
+| [v1.13.0](v1.13.0.md) | 16 | 52 / **50** | **3.13** | **0% (0/16)** | 68%⁴ | **12**⁵ | 14 | not recorded³ | n-a³ | 23.5h tag→tag |
+| [v1.14.0](v1.14.0.md) | 11 | 23 / **20** | **1.82** | 27% (3/11)⁶ | 45%⁷ | **4**⁵ | 20 | **8.38M**³ | 762k³ | **35.5h**³ · 53.0h tag→tag |
+| [v1.14.1](v1.14.1.md) | 17¹¹ | 44 / **41**¹⁰ | **2.41**¹⁰ | **29% (5/17)** | 59%⁸ | **5**⁵ | 8 | **2.60M**⁹ | **153k**⁹ | **6.0h**⁹ · 107h tag→tag |
 
 ¹ v1.12.0's verdict headings predate the mandated form, so a canonical-heading re-count undercounts
 that window (15). From v1.13.0 the heading is charter-mandated **and** gate-enforced, so this column
@@ -75,6 +76,47 @@ the `v1.14.0` tag sits on an uncovered commit; #321 was merged with **no verdict
 clauses 2 and 3 together: **all three** round-1 approvals are also stale merges, so the rate partly
 "recovered" by approving early and merging the fixes unreviewed. Its falsification clause did **not** trigger (class A went to zero and
 rounds FELL). See [v1.14.0.md §6](v1.14.0.md).
+
+⁸ Full 17-PR corpus: `(41 − 17)/41`. Over the **16** PRs actually reviewed (#355 merged with zero
+verdicts) it is `(41 − 16)/41` = **61%**. State which denominator you used.
+⁹ Exactly **2,600,168 tokens over 361.8 agent-minutes across 26 runs**, **SUBAGENT ONLY** —
+main-loop tokens excluded, so the true cycle cost is higher. The per-run table is committed as the
+appendix to [`v1.14.1.md`](v1.14.1.md#appendix--per-run-effort-telemetry), so the figure is
+re-derivable; a figure held only in a machine-local file is not a measurement anyone else can
+check. **Not comparable with v1.14.0's 8.38M**, which came from Project 3 fields and included an
+unshipped in-progress item. The first two adjacent releases whose token figures can be honestly
+compared will be v1.14.1 ↔ v1.14.2. Captured live during the cycle — the release-manager correctly
+refused to reconstruct it afterwards, because it is not recoverable.
+
+¹⁰ **A measured hole in the canonical filter.** The filter admits any posted body whose first
+non-empty line carries `APPROVE` or `REQUEST CHANGES` — which on #373 admits the *author's*
+`## Round-2 APPROVE noted — and the head moved, so this needs a round 3`, a comment flagging that
+an approval no longer covered the head. The convention's own wording is "posted **review** bodies";
+under it the release is **40 / 2.35 / 58%** and #373 took 7 verdicts, not 8. The cells keep 41/2.41
+because that is what the documented filter returns as run. This is the same class of hole already
+footnoted for the loose matcher, one level in: **position is not authorship.** Next retro fixes the
+filter — and note the author-body case is the mirror of the v1.13.0 finding that a fix report must
+not *open* with a marker.
+
+¹¹ **Normalise timestamps to UTC before comparing.** The corpus query does a **string** compare on
+`mergedAt`, and `git log --format=%cI` emits tag stamps in local time (`+02:00` here). Mixing a
+`+02:00` bound with a `Z` value silently mis-selects the corpus. Also expect the window query to
+return **one more PR than the corpus**: the release PR whose merge commit *is* the previous tag
+belongs to the previous release (#327 ↔ `v1.14.0`'s `a3de0f5`).
+
+**v1.14.0's standing prediction — early read at v1.14.1 (formal check still due at v1.15).** Stale
+approvals **0 of 16** ✅ (from 4 of 10 — `pre-merge-gate.sh` working); class-F blocker+major **5** ❌
+(target ≤2 — the draft scored this **2 ✅** and review re-derived it at 5); PRs merged with **no
+verdict at all: 1** ❌ (#355, second release running after #321); **merged-result findings: 8** ❌ —
+classes B ∪ C, stale base and `[Unreleased]` collision, hit **8 of 16 reviewed PRs — half of
+everything reviewed**, and **4 of the 7 class-C PRs are also class B**, because the collision *is* the stale base landing in
+`CHANGELOG.md`. #365 is the worst variant: the merge **deleted the released `## [1.14.0]` heading**
+rather than duplicating one. Project 3 `Review rounds` ⚠️ filled for 6 of 14 rail issues,
+retroactively.
+**Read the ✅ on stale approvals with its limit:** the prescribed falsifier is merge provenance, and
+it is **unmeasurable here** — all 17 merges report `mergedBy: mavrovde`, since owner and agents share
+one identity and the API exposes no CLI-vs-web-UI distinction. The defensible claim is "no merge that
+*reached* the gate carried an uncovered commit"; #355 proves at least one did not reach it.
 
 **Standing prediction (set by v1.14.0, checked at v1.15):** zero merges whose newest canonical
 APPROVE predates a commit on the PR; zero PRs merged with no posted verdict at all; zero
