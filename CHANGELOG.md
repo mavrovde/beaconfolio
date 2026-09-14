@@ -56,6 +56,13 @@ All notable changes to this project will be documented in this file.
   that shipped, and it is the class the retro spends §3 counting.
 
 ### Fixed
+- **The importer's processed-URN ledger is per-target (#334)** — one global `state.json`
+  remembered *that* a post was imported, not *where to*, so a brand-new server silently got a
+  partial first import (measured 2026-09-10: 21 of 25 posts "skip (unchanged)" against an empty
+  database). The default ledger path is now `importer/state.<target-host>.json` derived from
+  `BEACONFOLIO_API_URL`; `IMPORT_STATE` still overrides; a legacy global file is ignored with a log
+  note, and every run logs `ledger <path> for target <url>` at startup. Five new tests incl. the
+  two-target sequence; README documents the semantics.
 - **Reverted the premature v1.14.3 version bump (#411)** — the release PR was cut with only
   #381 and the v1.14.2 retrospective delivered while 12 issues planned under `release:v1.14.3`
   were still open; the deploy run was cancelled before rollout, so prod stayed at 1.14.2 and no

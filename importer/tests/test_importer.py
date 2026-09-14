@@ -158,6 +158,111 @@ def test_publish_flag_sends_true(tmp_path):
     assert seen.get("published") is True
 
 
+# --- per-target ledger (#334) ----------------------------------------------
+# One global state.json meant the ledger remembered THAT a post was imported
+# but not WHERE TO: a fresh server got 21 of 25 posts silently skipped
+# (measured 2026-09-10). The default path is now derived from the target host.
+
+
+def test_default_state_path_is_per_target():
+    a = core.default_state_path("https://a.example.com")
+    b = core.default_state_path("https://b.example.com")
+    assert a != b
+    assert a == Path("importer/state.a.example.com.json")
+    # host:port targets stay legal filenames
+    assert core.default_state_path("http://localhost:8000") == Path(
+        "importer/state.localhost-8000.json"
+    )
+    # unparseable target still yields a usable path, not a crash
+    assert core.default_state_path("") == Path("importer/state.local.json")
+
+
+def test_from_env_derives_ledger_from_target(monkeypatch):
+    monkeypatch.setenv("BEACONFOLIO_API_URL", "https://new.example.com")
+    monkeypatch.delenv("IMPORT_STATE", raising=False)
+    cfg = Config.from_env()
+    assert cfg.state_path == Path("importer/state.new.example.com.json")
+
+
+def test_from_env_import_state_overrides(monkeypatch):
+    monkeypatch.setenv("BEACONFOLIO_API_URL", "https://new.example.com")
+    monkeypatch.setenv("IMPORT_STATE", "custom/ledger.json")
+    cfg = Config.from_env()
+    assert cfg.state_path == Path("custom/ledger.json")
+
+
+def test_two_target_sequence_imports_fully_to_second_target(tmp_path, monkeypatch):
+    """Import to A, then point at B: B must get a FULL import, not skips."""
+    monkeypatch.chdir(tmp_path)
+    counts = {"posts": 0}
+
+    def handler(request):
+        if request.url.path.endswith("/import-post"):
+            counts["posts"] += 1
+            return httpx.Response(200, json={"created": True})
+        return httpx.Response(200, content=b"x", headers={"content-type": "image/jpeg"})
+
+    def cfg_for(target):
+        pj = tmp_path / "posts_data.json"
+        pj.write_text(json.dumps(POSTS))
+        return Config(
+            api_url=target,
+            token="tok",
+            posts_json=pj,
+            state_path=core.default_state_path(target),
+            backoff=0.0,
+            retries=2,
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        s1 = run(cfg_for("https://a.example.com"), client=client)
+        assert (s1.created, s1.skipped) == (2, 0)
+        # same target again: ledger still saves the round-trips
+        s2 = run(cfg_for("https://a.example.com"), client=client)
+        assert (s2.created, s2.skipped) == (0, 2)
+        # NEW target: nothing may be skipped by A's memory
+        s3 = run(cfg_for("https://b.example.com"), client=client)
+        assert (s3.created, s3.skipped) == (2, 0)
+    assert counts["posts"] == 4
+
+
+def test_legacy_global_ledger_is_ignored_with_a_note(tmp_path, monkeypatch, caplog):
+    """A pre-#334 importer/state.json must not feed skip decisions."""
+    monkeypatch.chdir(tmp_path)
+    legacy = tmp_path / "importer" / "state.json"
+    legacy.parent.mkdir(parents=True)
+    # legacy ledger claims BOTH posts are already imported
+    legacy.write_text(
+        json.dumps({p["urn"]: post_fingerprint(p) for p in POSTS})
+    )
+
+    def handler(request):
+        if request.url.path.endswith("/import-post"):
+            return httpx.Response(200, json={"created": True})
+        return httpx.Response(200, content=b"x", headers={"content-type": "image/jpeg"})
+
+    pj = tmp_path / "posts_data.json"
+    pj.write_text(json.dumps(POSTS))
+    cfg = Config(
+        api_url="https://new.example.com",
+        token="tok",
+        posts_json=pj,
+        state_path=core.default_state_path("https://new.example.com"),
+        backoff=0.0,
+        retries=2,
+    )
+    with caplog.at_level("INFO", logger="importer"), httpx.Client(
+        transport=httpx.MockTransport(handler)
+    ) as client:
+        s = run(cfg, client=client)
+    assert (s.created, s.skipped) == (2, 0)
+    assert any("legacy ledger" in r.getMessage() for r in caplog.records)
+    assert any(
+        "ledger importer/state.new.example.com.json for target" in r.getMessage()
+        for r in caplog.records
+    )
+
+
 # --- independence guard ----------------------------------------------------
 
 
