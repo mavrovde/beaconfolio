@@ -57,7 +57,7 @@ jobs:
           fetch-depth: 0 # full history so new-code detection and blame are accurate
 
       - name: Analyze with SonarQube
-        uses: SonarSource/sonarqube-scan-action@v5
+        uses: SonarSource/sonarqube-scan-action@v6
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # PR decoration
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
