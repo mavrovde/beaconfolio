@@ -206,11 +206,22 @@ if [ -f "$MCPJSON" ]; then
         if (c == "\"") { instr = 1; buf = ""; continue }
         if (c == "{" || c == "[") {
           depth++
-          # Only a BRACE opens mcpServers or a server. An array value
-          # ("github": []) used to be counted as a server object; now it is not,
-          # so the key/object counts disagree and the walk fails closed (#400 r3).
-          if (!inservers && lastkey == "mcpServers" && c == "{") { inservers = 1; sdepth = depth; expectkey = 1 }
+          # Only a BRACE opens mcpServers or a server. An array VALUE
+          # ("github": []) is not a server object, so the key/object counts
+          # disagree and the walk fails closed (#400 r3).
+          if (!inservers && lastkey == "mcpServers") {
+            if (c == "{") { inservers = 1; sdepth = depth; expectkey = 1 }
+            # …and mcpServers itself being an ARRAY is its own malformation.
+            # Round 3 made the brace-only test skip the bracket and then latch
+            # onto the first inner object, turning a fail-closed into a SILENT
+            # PASS — a regression introduced by the fix for the nit above
+            # (#400 r4). Flagging it here is what keeps it loud.
+            else badservers = 1
+          }
           else if (inservers && depth == sdepth + 1 && c == "{") { print lastkey; nsrv++ }
+          # A key is consumed by the brace it opens; leaving it set let a stale
+          # key latch onto an unrelated later brace.
+          lastkey = ""
           continue
         }
         if (c == "}" || c == "]") {
@@ -220,7 +231,7 @@ if [ -f "$MCPJSON" ]; then
         if (c == "," && inservers && depth == sdepth) { expectkey = 1; continue }
       }
     }
-    END { if (nkeys != nsrv) exit 3 }
+    END { if (nkeys != nsrv || badservers) exit 3 }
   ' "$MCPJSON")"; awk_rc=$?
   mcp_real="$(printf '%s' "$mcp_real" | sort)"
   # Signalled by EXIT STATUS, not by a sentinel line: an in-band marker can be

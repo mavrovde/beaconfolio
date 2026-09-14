@@ -105,11 +105,12 @@ All notable changes to this project will be documented in this file.
   Measured on one input: BSD prints `` `postgres` ``, GNU prints nothing. The pattern is now bare,
   the checker now holds its backtick in a `$BT` variable so no escape exists to get wrong, a
   self-test asserts the sequence appears **nowhere** in it, and **the whole suite is run in a
-  Debian container** as well as on macOS: **37 passed / 0 failed on both**. Replaying the round-1
-  bug as a mutation is killed on **both** platforms, but not by the same case: **33/1 on macOS**
-  (the meta-test alone) and **32/2 under GNU grep** (the meta-test plus the behavioural case). That
+  Debian container** as well as on macOS, **0 failed on both**. Replaying the round-1 bug as a
+  mutation is killed on **both** platforms, but not by the same cases: **one case on macOS** (the
+  meta-test alone) and **two under GNU grep** (the meta-test plus the behavioural case). That
   asymmetry is the whole argument for the meta-test — the behavioural case cannot see this bug on
-  the platform the author is typing on. Same round: the `jq`
+  the platform the author is typing on. Counts are stated as cases-killed rather than totals
+  because the totals in this very entry were wrong three times as cases were added. Same round: the `jq`
   dependency is gone (four committed places promise bash+coreutils, and jq-less it failed closed
   with three bogus drift errors) — `.mcp.json` is now walked by a depth-tracking `awk` that is
   indentation-independent and does not mistake a nested `env` object for a server; `tooling` rows,
@@ -119,7 +120,12 @@ All notable changes to this project will be documented in this file.
   `.mcp.json` outright** left the MCP row uninspected (the checker reported "✓ matches reality"
   while the map advertised three servers that did not exist), and a server whose value is not an
   object was dropped in silence — the `awk` walk now counts key positions against objects opened
-  and **fails closed** when they disagree.
+  and **fails closed** when they disagree. Round 3's narrower "only a brace opens a server" then
+  *regressed* `"mcpServers": [...]` from fail-closed to a **silent pass** (the walk skipped the
+  bracket and latched onto the first inner object), and the case meant to guard it passed for the
+  wrong reason — it was the file's only bare-`rc` assertion, kept non-zero by an unrelated
+  mismatch. Both are fixed and the case now asserts the message; the malformed signal travels by
+  `awk` exit status, which no server name can forge.
 - **Three #373 residuals recorded where the reader stands (#382)** — `cv.component.ts` now names
   Snyk alert **3136**, its dismissal as a false positive, and *why it can never auto-clear* (Snyk
   does not model `URL.pathname` as a sanitizer), instead of leaving the argument in a PR comment;

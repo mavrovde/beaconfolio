@@ -425,8 +425,28 @@ rm -rf "$D"
 D="$(mktemp -d)"; skeleton "$D"
 printf '{"mcpServers":[{"postgres":{}}]}\n' > "$D/.mcp.json"
 out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
-if [ $rc -ne 0 ]; then ok "#400: mcpServers as an ARRAY fails (not read as zero servers)"
-else bad "#400: mcpServers as an array must fail" "rc=$rc $out"; fi
+# Assert the MESSAGE, not just rc. As a bare rc check this case passed for the
+# WRONG REASON — the skeleton's row lists two servers while the array parse
+# yielded one, so an unrelated mismatch kept rc non-zero while the malformation
+# itself went undetected (#400 r4). It was the only bare-rc case in this file.
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "whose value is not an object"; then
+  ok "#400: mcpServers as an ARRAY fails AS MALFORMED (not via an unrelated mismatch)"
+else bad "#400: mcpServers as an array must fail as malformed" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# The r4 regression shape: a row that AGREES with what the array parse yields,
+# so no unrelated mismatch can mask the malformation.
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":[{"postgres":{}}]}\n' > "$D/.mcp.json"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("`postgres`, `github`", "`postgres`"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "whose value is not an object"; then
+  ok "#400: an ARRAY mcpServers whose row AGREES still fails (the r4 silent pass)"
+else bad "#400: agreeing-row array must still fail" "rc=$rc $out"; fi
 rm -rf "$D"
 
 printf '\ncheck_aiconfig_map self-test: %d passed, %d failed\n' "$pass" "$fail"
