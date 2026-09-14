@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **`scripts/check_changelog_merge.sh` — the `[Unreleased]` collision becomes a lint (#391,
+  v1.14.1 retro change A)** — validates the **merged result** of HEAD with `origin/main`, formed
+  with `git merge-tree` (the machinery `gh pr merge` actually runs — measured: replaying #357's
+  original pre-rebase head, `merge-file` reports a conflict while `merge-tree` auto-merges cleanly
+  and produces the duplicate `### Added` x2 the reviewer found). Four checks: exactly one
+  `## [Unreleased]`; no duplicate `### ` heading inside it (fence-aware); **no released heading
+  present on `origin/main` but absent from the merge** — the #365 case, where a merge deleted
+  `## [1.14.0]` and a heading-count check passed; no `[Unreleased]` line lost (set semantics, so
+  the dedup fixer's reorders pass). A conflicting merge fails with rebase-first. Both historical
+  replays reproduce through the script itself: #365's pre-fix head red on checks 2+3, #357's
+  recovered original head red on check 2, both post-fix heads green. Wired as the pre-push
+  `changelog` leg (selected by any `CHANGELOG.md` diff — the one doc whose defect lives in the
+  merged result) and into CI beside the migration lint; self-test 15 cases with a
+  **message-anchored mutation contract, 5 killed / 0 survived / 0 invalid** — rc-only assertions
+  let overlapping checks mask a neutered one, which the first harness draft measured first-hand.
 - **v1.14.1 release retrospective + the cross-release read (#386)** — `docs/retrospectives/v1.14.1.md`
   records the release under the counting conventions, and the trend table gains its row.
   Measured: **17 PRs, 41 canonical verdicts, 2.41 mean rounds, 29% round-1 approvals (best in the

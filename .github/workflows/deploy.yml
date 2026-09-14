@@ -369,7 +369,15 @@ jobs:
     # self-test's rotation cases need `npm`, which ubuntu-latest ships
     # preinstalled (the self-test fails loudly if it is ever missing).
     steps:
+      # fetch-depth: 0 is LOAD-BEARING for the merged-CHANGELOG contract below
+      # (#398 review, blocker 1): the default depth=1 leaves HEAD at the shallow
+      # boundary, `git merge-base` fails, and check_changelog_merge.sh politely
+      # skips — so the step was green on the PR that ADDED it precisely because
+      # it never ran. check_migration_heads.sh tolerates a shallow clone only
+      # because it reads trees (`ls-tree`/`show`) and never walks history.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - name: Check version carriers agree
         run: ./bump_version.sh --check
       - name: Self-test the checker itself
@@ -440,6 +448,32 @@ jobs:
           fi
       - name: Self-test the migration-heads checker itself
         run: bash scripts/check_migration_heads.test.sh
+      # Merged-CHANGELOG contract (#391, v1.14.1 retro change A): the
+      # [Unreleased] collision exists only in the MERGED result — 5 of 16
+      # reviewed v1.14.1 PRs hit it at blocker level, and #365's variant
+      # DELETED a released heading. Same residual as the migration lint:
+      # GitHub does not re-run PR checks when the base moves, so the
+      # pre-push run against origin/main is the layer that catches a
+      # collision opened by someone else's merge.
+      - name: Merged-CHANGELOG contract (branch merged with its base)
+        run: |
+          BASE=""
+          if [ -n "${{ github.base_ref }}" ]; then
+            git fetch --no-tags origin "${{ github.base_ref }}" 2>/dev/null \
+              && BASE="FETCH_HEAD"
+          fi
+          # A skip here is fail-OPEN, so it must be impossible on the path CI
+          # actually takes: with fetch-depth 0 the merge-base always exists on a
+          # PR. If it ever does not (fork corner cases), fall back to measuring
+          # HEAD against itself — checks 1-2 still validate the file's own
+          # structure — rather than skipping silently.
+          if [ -n "$BASE" ] && git merge-base "$BASE" HEAD >/dev/null 2>&1; then
+            bash scripts/check_changelog_merge.sh --against "$BASE"
+          else
+            bash scripts/check_changelog_merge.sh --against HEAD
+          fi
+      - name: Self-test the merged-changelog checker itself
+        run: bash scripts/check_changelog_merge.test.sh --mutations
 
   # ============================================
   # PROXY QA

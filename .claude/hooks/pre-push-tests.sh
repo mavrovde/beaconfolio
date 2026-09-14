@@ -452,6 +452,21 @@ run_checks() {
         return 1
       }
     fi
+    # Merged-CHANGELOG contract (v1.14.1 retrospective change A, #391). The
+    # [Unreleased] collision NEVER exists in the branch and NEVER in main —
+    # only in the merged result, which is what this measures (git merge-tree,
+    # the same machinery gh pr merge runs). 5 of 16 reviewed v1.14.1 PRs hit
+    # it at blocker level; #365's variant DELETED a released heading.
+    if leg changelog && [ -f "$ROOT/scripts/check_changelog_merge.sh" ]; then
+      ( cd "$ROOT" && bash scripts/check_changelog_merge.sh >/dev/null ) || {
+        echo "  ✗ check_changelog_merge.sh failed — run 'bash scripts/check_changelog_merge.sh' to see what the MERGE with origin/main breaks (then rebase + /prep-pr step 2)"
+        return 1
+      }
+      ( cd "$ROOT" && bash scripts/check_changelog_merge.test.sh >/dev/null ) || {
+        echo "  ✗ check_changelog_merge.test.sh failed — the merged-changelog checker itself is broken"
+        return 1
+      }
+    fi
     # Alembic single-head contract (v1.14.0 retrospective, #323/#325). Measured
     # AGAINST origin/main, not just the working tree: both of those branches were
     # single-head alone and every gate they ran was green — the fork existed only

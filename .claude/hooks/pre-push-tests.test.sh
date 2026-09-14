@@ -250,7 +250,9 @@ sel_lacks() { # sel_lacks <desc> <leg that must NOT appear> <path...>
 
 # --- (a) the mapping table ---------------------------------------------------
 sel "docs-only diff selects docs + pii and NOTHING else" \
-    "docs pii" docs/wiki/x.md CHANGELOG.md
+    "docs pii" docs/wiki/x.md docs/notes.md
+sel "CHANGELOG.md selects the merged-changelog lint ON TOP of docs (#391)" \
+    "changelog docs pii" CHANGELOG.md
 sel "backend code selects backend + lint (+ pii)" \
     "backend lint pii" backend/app/api/blog.py
 sel_lacks "backend diff selects NO frontend project" "fe:public" backend/app/api/blog.py
@@ -286,6 +288,8 @@ sel "the PII checker itself selects the pii leg, plus the map check" \
     "aiconfig pii" scripts/check_no_pii.test.sh
 sel "the CHANGELOG history-rewriter selects its own self-test, plus the map check" \
     "aiconfig dedup pii" scripts/dedup_changelog_unreleased.py
+sel "the merged-changelog lint selects its own leg, plus the map check (#391)" \
+    "aiconfig changelog pii" scripts/check_changelog_merge.sh
 sel "one hook selects ONLY that hook's self-test" \
     "aiconfig hook:pre-merge-gate pii" .claude/hooks/pre-merge-gate.sh
 sel "a hook's self-test selects the same hook" \
@@ -300,7 +304,7 @@ sel "VERSION selects the version-consistency (docs) leg" "docs pii" VERSION
 sel "setup.sh selects its own self-test (and the knob contract it promises)" \
     "compose pii setup" setup.sh
 sel "a mixed diff unions the legs of its parts" \
-    "backend docs fe:cdsafety fe:public lint pii" \
+    "backend changelog docs fe:cdsafety fe:public lint pii" \
     backend/app/main.py frontend/projects/public/src/main.ts CHANGELOG.md
 
 # --- cross-cutting contracts: a file can feed a lint from OUTSIDE its dir ----
@@ -391,6 +395,9 @@ e2e() { # e2e <desc> <expect legs> <repo> <push command>
 }
 
 R="$(mkfixture fix/docs main docs/guide.md CHANGELOG.md)"
+e2e "docs push touching CHANGELOG.md adds the merged-changelog leg (#391)" \
+    "changelog docs pii" "$R" "$P origin HEAD"
+R="$(mkfixture fix/docsonly main docs/guide2.md docs/notes.md)"
 e2e "docs-only push (branch tracks origin/main) runs docs + pii only" \
     "docs pii" "$R" "$P origin HEAD"
 
@@ -755,6 +762,10 @@ mutate die "$LIBF" "version carriers stop selecting the version-consistency leg"
     backend/app/config.py'
 mutate die "$LIBF" "documented-knob sources stop selecting the compose contract" \
   'replace::    backend/app/config.py|.env.example|README.md=>    backend/app/config.pyXX|.env.exampleXX|README.mdXX'
+mutate die "$LIBF" "the merged-changelog lint stops selecting its own leg (#391)" \
+  'replace::scripts/check_changelog_merge.sh|scripts/check_changelog_merge.test.sh) printf '"'"'changelog\naiconfig\n'"'"' ;;=>scripts/check_changelog_merge.shXX) printf '"'"'changelog\naiconfig\n'"'"' ;;'
+mutate die "$LIBF" "CHANGELOG.md stops selecting the merged-changelog leg (#391)" \
+  'replace::  CHANGELOG.md) printf '"'"'changelog\ndocs\n'"'"' ;;=>  CHANGELOG.md) printf '"'"'docs\n'"'"' ;;'
 mutate die "$LIBF" "the CHANGELOG rewriter stops selecting its own self-test" \
   'replace::scripts/dedup_changelog_unreleased.py|scripts/dedup_changelog_unreleased.test.sh) printf '"'"'dedup\naiconfig\n'"'"' ;;=>scripts/dedup_changelog_unreleased.pyXX) printf '"'"'dedup\naiconfig\n'"'"' ;;'
 mutate die "$LIBF" "a backend diff stops selecting the backend legs" \
