@@ -16,13 +16,16 @@
 # as Live Freshness (a scheduled workflow that goes red whenever the invariant
 # is broken), because a red workflow gets looked at and a log line does not.
 #
-# THE VERDICT DEFINITION IS THE REPOSITORY'S CANONICAL ONE (docs/retrospectives/
-# README.md): a posted body whose FIRST NON-EMPTY LINE contains `APPROVE` or
-# `REQUEST CHANGES`. Reviews AND issue comments count (same-identity repos post
-# comment verdicts). Known hole, footnoted there: position is not authorship —
-# an author body opening with a marker is counted. This detector inherits the
-# convention rather than forking it; fixing the convention is the next retro's
-# item, and this script's filter is one grep to change.
+# THE VERDICT DEFINITION MIRRORS pre-merge-gate.sh EXACTLY (#399 review,
+# major 5 — the first draft claimed to inherit it and silently dropped two
+# clauses): a posted body whose FIRST NON-EMPTY LINE matches
+# APPROVE|APPROVED|REQUEST CHANGES case-insensitively, AND whose author
+# carries a trusted association (OWNER/MEMBER/COLLABORATOR — the #316 rule;
+# without it a drive-by NONE commenter's "## APPROVE" silences the alarm).
+# Reviews AND issue comments count (same-identity repos post comment
+# verdicts). Known hole, footnoted in docs/retrospectives/README.md: position
+# is not authorship. One jq expression; change it beside the gate's or not at
+# all.
 #
 # Exit: 0 = every merged PR in the window carries a verdict; 1 = at least one
 # does not (each is printed); 2 = cannot measure (API/jq failure) — fail LOUD,
@@ -34,8 +37,10 @@ LIMIT=40
 FIXTURE=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --since)   SINCE="$2"; shift 2 ;;
-    --limit)   LIMIT="$2"; shift 2 ;;
+    --since)   [ $# -ge 2 ] || { echo "audit: --since needs a value — cannot measure" >&2; exit 2; }
+               SINCE="$2"; shift 2 ;;
+    --limit)   [ $# -ge 2 ] || { echo "audit: --limit needs a value — cannot measure" >&2; exit 2; }
+               LIMIT="$2"; shift 2 ;;
     --fixture) FIXTURE="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
@@ -48,13 +53,15 @@ REPO="mavrovde/beaconfolio"
 # definition lives in ONE expression.
 has_verdict() {
   jq -e '
-    ([.reviews[]?.body] + [.comments[]?.body])
+    ([(.reviews // [])[]  | {body: (.body // ""), assoc: (.authorAssociation // "NONE")}]
+     + [(.comments // [])[] | {body: (.body // ""), assoc: (.authorAssociation // "NONE")}])
+    | map(select(.assoc == "OWNER" or .assoc == "MEMBER" or .assoc == "COLLABORATOR"))
     | map(
-        split("\n")
+        .body | split("\n")
         | map(select((. | gsub("^\\s+|\\s+$";"")) != ""))
         | first // ""
       )
-    | any(test("APPROVE|REQUEST CHANGES"))
+    | any(test("APPROVE|APPROVED|REQUEST CHANGES"; "i"))
   ' "$1" >/dev/null 2>&1
 }
 
@@ -77,9 +84,27 @@ fi
 command -v gh >/dev/null 2>&1 || { echo "audit: gh unavailable — cannot measure" >&2; exit 2; }
 command -v jq >/dev/null 2>&1 || { echo "audit: jq unavailable — cannot measure" >&2; exit 2; }
 
-LIST="$(gh pr list --repo "$REPO" --state merged --limit "$LIMIT" \
-          --json number,title,mergedAt 2>/dev/null)" \
-  || { echo "audit: gh pr list failed — cannot measure" >&2; exit 2; }
+# --search "merged:>=SINCE" queries by MERGE date. The first draft listed by
+# creation order and filtered on mergedAt client-side — measured non-monotonic
+# (#390 merged 05:01 listed before #389 merged 06:29), so a fixed --limit
+# could silently truncate exactly the PR that mattered (#399 review, major 6).
+GH_LIST=(gh pr list --repo "$REPO" --state merged --limit "$LIMIT" --json number,title,mergedAt)
+[ -n "$SINCE" ] && GH_LIST+=(--search "merged:>=${SINCE%%T*}")
+LIST="$("${GH_LIST[@]}" 2>/dev/null)"
+[ -n "$LIST" ] || { echo "audit: gh pr list returned nothing — cannot measure" >&2; exit 2; }
+
+# STRICT parse (#399 review, blocker 2): a Bad-Credentials JSON object, HTML,
+# or truncated output must be "cannot measure", never a quiet green. The
+# fixture branch already had this polarity; the live branch — the only one the
+# workflow runs — did not.
+printf '%s' "$LIST" | jq -e 'type == "array" and all(.[]; has("number") and has("mergedAt"))' >/dev/null 2>&1 \
+  || { echo "audit: gh pr list output is not the expected array — cannot measure" >&2; exit 2; }
+
+NLIST="$(printf '%s' "$LIST" | jq 'length')"
+if [ "$NLIST" -ge "$LIMIT" ]; then
+  echo "audit: window holds >= $LIMIT PRs — possibly truncated; raise --limit. Cannot measure" >&2
+  exit 2
+fi
 
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/verdictaudit.XXXXXX")" || exit 2
 trap 'rm -rf "$TMP"' EXIT
@@ -88,7 +113,8 @@ DIRTY=0
 CHECKED=0
 for n in $(printf '%s' "$LIST" | jq -r --arg since "$SINCE" \
              '.[] | select($since == "" or .mergedAt >= $since) | .number'); do
-  if ! gh pr view "$n" --repo "$REPO" --json number,title,reviews,comments > "$TMP/$n.json" 2>/dev/null; then
+  if ! gh pr view "$n" --repo "$REPO" --json number,title,reviews,comments > "$TMP/$n.json" 2>/dev/null \
+     || ! jq -e 'has("reviews") and has("comments")' "$TMP/$n.json" >/dev/null 2>&1; then
     echo "audit: could not fetch PR #$n — cannot measure" >&2; exit 2
   fi
   CHECKED=$((CHECKED+1))

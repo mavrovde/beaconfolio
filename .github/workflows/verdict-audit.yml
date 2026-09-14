@@ -17,7 +17,12 @@
 # SINCE is pinned to the control's landing date so the two historical
 # no-verdict merges (#321, #355 — already documented in the v1.14.1
 # retrospective) do not keep the alarm permanently red. Moving it BACKWARD is a
-# decision for a retro, not a quick fix for a red run.
+# decision for a retro, not a quick fix for a red run — and so is moving it
+# FORWARD, which would amnesty a red run instead of fixing it (#399 review).
+#
+# "Mechanism established" means established FROM THE FLOW SHAPE (a Dependabot
+# PR and a security-tab PR, neither of which passes through this CLI), not
+# from provenance, which stays unmeasurable — the two statements coexist.
 name: Verdict Audit
 
 on:

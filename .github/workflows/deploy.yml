@@ -474,6 +474,10 @@ jobs:
           fi
       - name: Self-test the merged-changelog checker itself
         run: bash scripts/check_changelog_merge.test.sh --mutations
+      # The Verdict Audit workflow runs weekly; a broken detector must be
+      # caught at PR time, not on Monday (#392).
+      - name: Self-test the no-verdict-merge detector
+        run: bash scripts/audit_no_verdict_merges.test.sh --mutations
 
   # ============================================
   # PROXY QA

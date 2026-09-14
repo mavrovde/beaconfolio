@@ -11,13 +11,20 @@ All notable changes to this project will be documented in this file.
   workflow" flow), where a `PreToolUse` hook does not exist. The CLI half: `pre-merge-gate.sh`'s
   `PR_MERGE_GATE=0` bypass is still allowed but **never invisible** — it appends a line to a local
   audit log (`PR_MERGE_GATE_LOG`) and best-effort posts a `## ⚠️ MERGE-GATE BYPASS` comment on the
-  PR, fire-and-forget so an offline `gh` cannot block an authorized merge; both traces are pinned
-  by new self-test cases and a 23rd gate mutation. The web-UI half:
+  PR, fire-and-forget so an offline `gh` cannot block an authorized merge. The trace is emitted
+  **only from `allow()`** — a denied command must not publish "was used for this merge" on a PR
+  that never merged — and the PR number comes from the hook's **own** operand parser (flags
+  before the operand, URLs), not a second sed; both properties plus the hermetic-log default are
+  pinned by six self-test cases and a 23rd gate mutation. The web-UI half:
   `scripts/audit_no_verdict_merges.sh` + the scheduled **Verdict Audit** workflow, red-when-dirty
   (the Live-Freshness alarm shape) for merges after the 2026-09-14 cutover, self-testing its own
-  detector first (7 cases, mutations 4/0/0 — including "the first-line filter widens to the whole
-  body", the exact hole that would count a fix report as a verdict). First live run named exactly
-  #321 and #355 and nothing else. Measurement convention recorded in
+  detector first. The verdict filter **mirrors the gate's exactly** — trusted
+  `authorAssociation`, case-insensitive `APPROVE|APPROVED|REQUEST CHANGES`, first non-empty line
+  — and the live path is strict: a Bad-Credentials object, empty output, a truncated window or a
+  malformed fetch are each `cannot measure` (exit 2), never a quiet green (15 cases, mutations
+  **6/0/0**, including "the first-line filter widens to the whole body" and "the trust filter is
+  dropped"). Listing queries by **merge date** (`--search "merged:>="`) — creation order was
+  measured non-monotonic. First live run named exactly #321 and #355 and nothing else. Measurement convention recorded in
   `docs/retrospectives/README.md`.
 - **`scripts/check_changelog_merge.sh` — the `[Unreleased]` collision becomes a lint (#391,
   v1.14.1 retro change A)** — validates the **merged result** of HEAD with `origin/main`, formed
