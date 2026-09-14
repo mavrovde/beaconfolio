@@ -30,6 +30,16 @@ jobs:
           if [ -z "${{ secrets.SNYK_TOKEN }}" ]; then
             echo "::error::SNYK_TOKEN is not set — the scan cannot run. Add the repo secret."; exit 1
           fi
+      - name: .snyk policy is valid
+        # The ignore/exclude policy only works if Snyk can parse it. A `.snyk`
+        # without a `version:` key is SILENTLY ignored — the scans then run
+        # unfiltered and re-report everything the policy was meant to exclude,
+        # with no error anywhere (#381; the missing key shipped in #354 and was
+        # only caught by reading scan output). Fail loudly instead.
+        run: |
+          if ! grep -Eq '^version: v[0-9]' .snyk; then
+            echo "::error::.snyk has no valid 'version:' key — Snyk silently ignores the whole policy file, so every exclude/ignore in it is dead (#381)"; exit 1
+          fi
       - uses: snyk/actions/setup@12140f4059e244892ae643824a95459a102120dd
       # Snyk needs resolvable dependency trees for SCA: install both stacks' manifests.
       - uses: actions/setup-node@v7
@@ -94,7 +104,25 @@ jobs:
           snyk monitor --all-projects || true
       - name: Snyk IaC (compose + Dockerfiles + workflows)
         env: { SNYK_TOKEN: "${{ secrets.SNYK_TOKEN }}" }
-        run: snyk iac test --report || true
+        # Scoped to the AUTHORED IaC surface instead of a bare `snyk iac test`,
+        # which walks the whole checkout and reports on third-party/generated
+        # files (node_modules templates, vendored YAML) nobody here can act on —
+        # the same burying effect the venv-outside-the-tree note above measured
+        # for Snyk Code (#381). Adding a new compose file or Dockerfile means
+        # adding it HERE too. `|| true` stays: findings land in Snyk's report
+        # UI via --report; the job's job is to scan, not to gate.
+        run: |
+          snyk iac test --report \
+            docker-compose.yml \
+            docker-compose.prod.yml \
+            docker-compose.e2e.yml \
+            docker-compose.inttest.yml \
+            backend/Dockerfile \
+            frontend/Dockerfile \
+            frontend/Dockerfile.admin \
+            proxy/Dockerfile \
+            .github/workflows \
+            || true
       - name: Check SARIF is present and non-empty
         id: sarif
         run: |

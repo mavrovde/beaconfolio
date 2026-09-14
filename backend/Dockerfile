@@ -48,13 +48,12 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 
 # Install production dependencies
 # linkedin-api PyPI wheel has broken entry point (lint = black:None) that pip rejects.
-# Fix: download wheel, patch out the broken entry point using Python, install patched wheel.
+# scripts/patch_linkedin.sh downloads the wheel, patches the entry point out, and
+# installs it — the version comes from requirements.txt, the ONE pin (#381; this
+# RUN previously inlined a second hardcoded copy of the whole patch).
+COPY scripts/patch_linkedin.sh scripts/
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip download linkedin-api==2.2.1 --no-deps -d /tmp/wheels && \
-    mkdir -p /tmp/patched && \
-    python -c "import zipfile; zin=zipfile.ZipFile('/tmp/wheels/linkedin_api-2.2.1-py3-none-any.whl','r'); zout=zipfile.ZipFile('/tmp/patched/linkedin_api-2.2.1-py3-none-any.whl','w'); [zout.writestr(i, b'') if i.filename.endswith('entry_points.txt') else zout.writestr(i, zin.read(i.filename)) for i in zin.infolist()]; zin.close(); zout.close()" && \
-    pip install /tmp/patched/linkedin_api-2.2.1-py3-none-any.whl && \
-    rm -rf /tmp/wheels /tmp/patched && \
+    bash scripts/patch_linkedin.sh && \
     pip install -r requirements.txt
 
 # Final runtime stage inherits from base
