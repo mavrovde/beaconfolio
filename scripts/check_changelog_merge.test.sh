@@ -114,6 +114,51 @@ rc=$(run "$SCRIPT")
 if [ "$rc" = 1 ] && grep -q 'check 4: .*base entry A' "$T/out"; then ok
 else bad "check 4: lost [Unreleased] line must fail" "$(cat "$T/out")"; fi
 
+# --- check 4, rotation-aware (#406 review round 1) -------------------------
+# A release rotation moves every [Unreleased] line under a NEW released
+# heading; that must PASS — the first release PR after this lint shipped
+# (#406) fired 346 false LOSTs here.
+mkbase
+python3 - "$T/base" "$T/merged" <<'PY'
+import sys
+t = open(sys.argv[1]).read()
+head, rest = t.split("## [1.2.0]", 1)
+rot = ("# Changelog\n\n## [Unreleased]\n\n### Added\n- Placeholder for next release.\n\n"
+       "## [1.3.0] - 2026-02-01\n\n### Added\n- base entry A\n\n### Fixed\n- base fix B\n\n")
+open(sys.argv[2], "w").write(rot + "## [1.2.0]" + rest)
+PY
+rc=$(run "$SCRIPT")
+[ "$rc" = 0 ] && ok || bad "check 4: a release ROTATION must pass (lines live under the new heading)" "$(cat "$T/out")"
+
+# ...but the exemption is NOT blanket: a line lost during a rotation still fails
+mkbase
+python3 - "$T/base" "$T/merged" <<'PY'
+import sys
+t = open(sys.argv[1]).read()
+head, rest = t.split("## [1.2.0]", 1)
+rot = ("# Changelog\n\n## [Unreleased]\n\n### Added\n- Placeholder for next release.\n\n"
+       "## [1.3.0] - 2026-02-01\n\n### Fixed\n- base fix B\n\n")  # base entry A is GONE
+open(sys.argv[2], "w").write(rot + "## [1.2.0]" + rest)
+PY
+rc=$(run "$SCRIPT")
+if [ "$rc" = 1 ] && grep -q 'check 4: .*base entry A' "$T/out"; then ok
+else bad "check 4: a line LOST during a rotation must still fail" "$(cat "$T/out")"; fi
+
+# ...and content under a PRE-EXISTING released heading absolves nothing: a base
+# [Unreleased] line that duplicates an old released line, then vanishes from
+# the merge, is LOST even though the old copy still exists
+mkbase
+python3 - "$T/base" "$T/merged" <<'PY'
+import sys
+t = open(sys.argv[1]).read()
+t2 = t.replace("- base entry A", "- shipped thing")   # base [Unreleased] duplicates 1.2.0 content
+open(sys.argv[1], "w").write(t2)
+open(sys.argv[2], "w").write(t2.replace("### Added\n- shipped thing\n\n### Fixed", "### Fixed", 1))
+PY
+rc=$(run "$SCRIPT")
+if [ "$rc" = 1 ] && grep -q 'check 4' "$T/out"; then ok
+else bad "check 4: an OLD released copy must not absolve a lost [Unreleased] line" "$(cat "$T/out")"; fi
+
 # reordering sections passes (set semantics — the dedup fixer reorders)
 mkbase
 python3 - "$T/base" "$T/merged" <<'PY'
@@ -241,7 +286,22 @@ PY
   mutate "check 3 removed (deleted released heading passes — the #365 case)" \
     'if RELEASED.match(l) and l.rstrip() not in merged_released:' 'if False:' assert_check3
   mutate "check 4 removed (lost [Unreleased] line passes)" \
-    'if l.strip() and l.rstrip() not in merged_set:' 'if False:' assert_check4
+    'if l.strip() and l.rstrip() not in merged_set and l.rstrip() not in rotated:' 'if False:' assert_check4
+  # The rotation exemption (#406) must not be a blanket pass: if EVERY released
+  # heading counts as "new", a base line that duplicates OLD released content
+  # gets absolved of its loss. The third rotation case above pins this.
+  assert_rotation_blanket() { mkbase
+    python3 - "$T/base" "$T/merged" <<'PY'
+import sys
+t = open(sys.argv[1]).read()
+t2 = t.replace("- base entry A", "- shipped thing")
+open(sys.argv[1], "w").write(t2)
+open(sys.argv[2], "w").write(t2.replace("### Added\n- shipped thing\n\n### Fixed", "### Fixed", 1))
+PY
+    [ "$(run "$1")" = 1 ] && grep -q 'check 4' "$T/out"; }
+  mutate "rotation exemption becomes BLANKET (old released content absolves a loss)" \
+    'under_new_heading = line.rstrip() not in base_released' \
+    'under_new_heading = True' assert_rotation_blanket
   assert_fence() { mkbase
     python3 - "$T/base" "$T/merged" <<'PY'
 import sys

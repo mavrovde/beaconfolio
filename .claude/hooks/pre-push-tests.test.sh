@@ -82,6 +82,21 @@ check_fast() { # desc cmd max_seconds
   fi
 }
 
+# Like check(), but NEVER stubbed under SELECTION_ONLY: the push-rides-alone
+# mutations (#406) edit the HOOK, so their kill cases must run on every mutant.
+# Kept to a handful of cases — each costs one hook invocation per mutant.
+chain_check() { # desc cmd expect(DENY|GATE|ALLOW)
+  local desc="$1" cmd="$2" expect="$3" out
+  out="$(printf '{"tool_input":{"command":%s}}' "$(jq -Rn --arg c "$cmd" '$c')" \
+        | PREPUSH_DRY_RUN=1 bash "$HOOK")"
+  if [ "$out" = "$expect" ]; then
+    printf 'PASS  [%s]  %s\n' "$out" "$desc"
+  else
+    printf 'FAIL  got=%s want=%s  %s\n' "$out" "$expect" "$desc"
+    fails=$((fails + 1))
+  fi
+}
+
 if [ "$SELECTION_ONLY" = "1" ]; then
   check()      { :; }
   check_fast() { :; }
@@ -95,8 +110,8 @@ check "push with flags"              "$P --force-with-lease origin HEAD"       G
 check "git -C dir push"              "git -C /some/worktree $PU origin main"   GATE
 check "git -c val push"              "git -c push.default=current $PU"         GATE
 check "push after cd &&"             "cd frontend && $P origin HEAD"           GATE
-check "push at end of && chain"      "git add -A && git commit -m \"x\" && $P" GATE
-check "push after semicolon"         "git commit -m \"done\"; $P origin HEAD"  GATE
+check "push at end of && chain"      "git add -A && $P"                        GATE
+check "push after semicolon"         "git fetch origin; $P origin HEAD"        GATE
 check "push in for-loop body"        "for b in a b; do $P origin \$b; done"    GATE
 check "push in while-loop body"      "while true; do $P; done"                 GATE
 check "backgrounded compound loop"   "(for b in x; do $P origin \$b; done) &"  GATE
@@ -148,7 +163,22 @@ check "plain command, no push text"  "ls -la"                                  A
 check "body-file, no push text"      "gh pr review 211 --body-file /tmp/review.md" ALLOW
 
 # --- both directions at once ------------------------------------------------
-check "prose AND a real push"        "git commit -m \"then $P\" && $P origin HEAD" GATE
+check "prose AND a real push"        "echo \"then $P\" && $P origin HEAD"      GATE
+
+# --- direction 3: a push CHAINED after a HEAD-mover must DENY (#406) --------
+# The hook fires BEFORE the command body executes, so `git commit … && git
+# push` is vetted against the PRE-COMMIT HEAD — the gate certifies a commit it
+# never saw (measured 2026-09-14: an empty diff read as trivially green and a
+# broken CHANGELOG went red in CI instead). These cases pin the structural
+# deny; chain_check (never stubbed) so the mutation contract can kill it.
+chain_check "chained commit + push"        "git add -A && git commit -m \"x\" && $P"      DENY
+chain_check "commit; push via semicolon"   "git commit -m \"done\"; $P origin HEAD"       DENY
+chain_check "checkout -b then push"        "git checkout -b topic && $P origin topic"     DENY
+chain_check "merge then push"              "git merge --ff-only origin/main && $P"        DENY
+chain_check "commit prose AND real chain"  "git commit -m \"then $P\" && $P origin HEAD"  DENY
+chain_check "fetch then push (HEAD fixed)" "git fetch origin && $P origin b"              GATE
+chain_check "plain push, no chain"         "$P origin main"                               GATE
+chain_check "quoted prose chain is data"   "gh pr comment 1 --body \"run git commit -m x && $P\"" ALLOW
 
 # --- degraded path: unparseable payload (no .tool_input.command) ------------
 # Without a command field the real text is invisible; push-looking payloads
@@ -1004,6 +1034,14 @@ mutate die "$HOOKF" "the backend fast half (ruff) silently defaults OFF" \
   'replace::PREPUSH_RUN_RUFF:=1}=>PREPUSH_RUN_RUFF:=0}'
 mutate die "$HOOKF" "the frontend fast compile (tsc) silently defaults OFF" \
   'replace::PREPUSH_RUN_TSC:=1}=>PREPUSH_RUN_TSC:=0}'
+# --- #406: the push-rides-alone deny must be able to fail BOTH ways ----------
+# Killed by the chain_check cases (never stubbed under SELECTION_ONLY).
+mutate die "$HOOKF" "the push-rides-alone chain deny is removed (#406 blocker 2 regressed)" \
+  'replace::if command_chains_head_mover; then=>if false && command_chains_head_mover; then'
+mutate die "$HOOKF" "the chain deny fires on EVERY push (deny-everything polarity)" \
+  'replace::if command_chains_head_mover; then=>if command_is_git_push; then'
+mutate die "$HOOKF" "commit drops out of the head-mover list" \
+  'replace::    commit|merge|rebase|cherry-pick=>    xcommitx|merge|rebase|cherry-pick'
 mutate die "$HOOKF" "the hook ignores the selector and prints a fixed narrow set" \
   'replace::| prepush_select_legs)=>| true; echo " docs ")'
 mutate die "$HOOKF" "the hook no longer fails closed when the range is unobtainable" \

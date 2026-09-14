@@ -271,6 +271,24 @@ All notable changes to this project will be documented in this file.
   whichever fired first — it failed inside the loaded pre-push gate and passed 100/0 when run alone.
 
 ### Fixed
+- **`check_changelog_merge.sh` check 4 is rotation-aware (#406 review, blocker 1)** — a release PR
+  moves the whole `[Unreleased]` block under a brand-new released heading by design, and the lint's
+  block-scoped set semantics read that as loss: the first release PR after it shipped drew **346
+  false `LOST` failures**. A base `[Unreleased]` line now also counts as present when it lives under
+  a released heading that is NEW in the merge — and ONLY under a new one, so content under
+  pre-existing released headings still cannot absolve a real loss (the blanket-exemption direction
+  is pinned by its own mutation). Self-test: 3 new plain cases, mutations 7/0/0.
+- **The push rides ALONE — the gate now DENIES a push chained after a HEAD-moving git command
+  (#406 review, blocker 2)** — a `PreToolUse` hook fires BEFORE the command body executes, so
+  `git commit -m … && git push` is vetted against the PRE-COMMIT HEAD. Measured the same day: the
+  gate saw an empty diff (HEAD == origin/main), certified trivially, and the chain then pushed a
+  commit the gate never examined — the broken CHANGELOG rotation it would have caught went red in
+  CI instead. `pre-push-tests.sh` now structurally denies any real push chained with
+  `commit`/`merge`/`rebase`/`checkout`/`switch`/`reset`/`pull`/… (same quote-aware segment parsing,
+  so quoted prose stays data), with the message naming the remedy: run the state change first, then
+  push as its OWN command. Pinned by 8 `chain_check` cases that stay live under the mutation
+  harness, plus 3 mutations (deny removed / deny-everything polarity / `commit` dropped from the
+  head-mover list).
 - **Per-target importer state ledgers can no longer reach the public repo** — `.gitignore` covered
   only `importer/state.json`, but the importer writes one ledger per target
   (`state.<env>.json`), each holding personal LinkedIn URN activity data; the untracked

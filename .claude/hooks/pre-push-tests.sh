@@ -119,6 +119,9 @@ allow() {
 }
 deny() {
   # $1 = reason (plain text, no double quotes)
+  # Under the self-test seam a deny prints DENY — distinct from GATE (run the
+  # checks) and ALLOW, so the push-rides-alone cases can pin it (#406).
+  if [ "$PREPUSH_DRY_RUN" = "1" ]; then printf 'DENY\n'; exit 0; fi
   printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"$1\"}}"
   exit 0
 }
@@ -315,6 +318,55 @@ command_is_git_push() {
 }
 
 command_is_git_push || allow
+
+# --- THE PUSH RIDES ALONE (#406 review round 1, blocker 2) -------------------
+# This hook fires BEFORE the command body executes. A push chained after a git
+# command that MOVES HEAD (`git commit -m … && git push …`) is therefore vetted
+# against the PRE-COMMIT state: measured same-day incident — the gate saw
+# HEAD == origin/main (empty diff), certified trivially, and the chain then
+# pushed a commit the gate never examined; the broken CHANGELOG rotation it
+# would have caught went red in CI instead. Structural remedy: DENY the chain
+# outright. Same subcommand-extraction shape as segment_invokes_git_push, so
+# quoted prose ("run `git commit && git push`") stays data via quote_split.
+segment_invokes_head_mover() {
+  local seg="$1" first rest tok
+  seg="${seg//$NL_SENTINEL/ }"
+  seg="$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+/ /g')"
+  first="${seg%% *}"
+  [ "$first" = "git" ] || return 1
+  [ "$first" = "$seg" ] && return 1
+  rest="${seg#* }"
+  while :; do
+    tok="${rest%% *}"
+    case "$tok" in
+      -C|-c|--git-dir|--work-tree|--namespace|--config-env)
+        [ "$tok" = "$rest" ] && return 1
+        rest="${rest#* }"; tok="${rest%% *}"
+        [ "$tok" = "$rest" ] && return 1
+        rest="${rest#* }" ;;
+      -*) [ "$tok" = "$rest" ] && return 1; rest="${rest#* }" ;;
+      *) break ;;
+    esac
+  done
+  tok="${rest%% *}"
+  tok="${tok#\"}"; tok="${tok#\'}"; tok="${tok%\"}"; tok="${tok%\'}"
+  case "$tok" in
+    commit|merge|rebase|cherry-pick|am|revert|reset|pull|checkout|switch) return 0 ;;
+  esac
+  return 1
+}
+command_chains_head_mover() {
+  local seg OLD="$IFS"
+  IFS=$'\n'
+  for seg in $(quote_split "$(strip_text_heredocs "$CMD")"); do
+    if segment_invokes_head_mover "$seg"; then IFS="$OLD"; return 0; fi
+  done
+  IFS="$OLD"
+  return 1
+}
+if command_chains_head_mover; then
+  deny "PUSH RIDES ALONE: this command chains a HEAD-moving git command (commit/merge/rebase/checkout/…) with git push, so the gate would vet the WRONG commit — the hook runs before the chain executes. Run the state change first, then push as its OWN command."
+fi
 
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 LOG="$PREPUSH_LOG"

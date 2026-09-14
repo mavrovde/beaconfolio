@@ -137,10 +137,27 @@ for l in base:
     if RELEASED.match(l) and l.rstrip() not in merged_released:
         failures.append(f"check 3: released heading on base is ABSENT from the merge: `{l.strip()}`")
 
-# 4. no [Unreleased] content line lost (set semantics: reorder and dedup pass)
+# 4. no [Unreleased] content line lost (set semantics: reorder and dedup pass).
+# ROTATION-AWARE (#406 review round 1, blocker 1): a release PR moves the whole
+# [Unreleased] block under a brand-new released heading by design — block-scoped
+# set semantics cannot tell "rotated" from "clobbered" (this fired 346 false
+# LOSTs on the first release PR after the lint shipped). A base line therefore
+# also counts as present when it lives under a released heading that is NEW in
+# the merge (present in merged, absent on base) — and ONLY there: content under
+# pre-existing released headings must not absolve a loss, or any old release
+# would blanket-exempt everything.
+base_released = {l.rstrip() for l in base if RELEASED.match(l)}
+rotated = set()
+under_new_heading = False
+for line in merged:
+    if RELEASED.match(line):
+        under_new_heading = line.rstrip() not in base_released
+        continue
+    if under_new_heading and line.strip():
+        rotated.add(line.rstrip())
 merged_set = {l.rstrip() for l in unreleased_block(merged) if l.strip()}
 for l in unreleased_block(base):
-    if l.strip() and l.rstrip() not in merged_set:
+    if l.strip() and l.rstrip() not in merged_set and l.rstrip() not in rotated:
         failures.append(f"check 4: [Unreleased] line on base is LOST in the merge: `{l.strip()[:80]}`")
 
 if failures:
