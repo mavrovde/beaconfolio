@@ -1741,18 +1741,40 @@ spent on relevant ones. This is the erosion the v1.13.0 retro named; a false pos
 not a lesser bug than a false negative, it is a slower one.
 
 **The rule, and its polarity.** Skipping is the exceptional path, so it must be **positively
-established** — exactly the #59/#377 argument, applied to a different question. Only a repository
+established** — exactly the §59/#377 argument, applied to a different question. Only a repository
 you can *prove* is a different one passes through; an unobtainable toplevel, an unobtainable
 remote, a matching remote, or any ambiguity runs the full gate.
 
-Two details that decide correctness:
+Three details that decide correctness — and the first two were each shipped WRONG in round 1 of
+PR #402, in the same direction: a fail-open that the change itself introduced.
 
-- **Identity is the normalised origin URL, not the path.** A git worktree of this project has a
-  different toplevel and must still be gated. Comparing directories would silently switch the gate
-  off for every worktree — the same "narrowing turns a gate off" shape as §59.
-- **Normalise carefully.** Strip `.git`, fold `git@host:` and `https://host/` to one form, lowercase
-  — but note `.wiki` must SURVIVE the `.git` strip, or `beaconfolio.wiki.git` reads as
-  `beaconfolio` and the wiki keeps being gated by the very check meant to release it.
+- **Ask "which repo does the COMMAND name?", not "which repo am I standing in?"** The hook has an
+  ambient cwd, but the command it is vetting may name a different one: `cd <dir> && git push` and
+  `git -C <dir> push` both push a repository the hook is not in. Resolving identity from `$PWD`
+  reversed the verdict for exactly the cases that matter — run from the wiki, a push of THIS
+  project read as "foreign" and skipped THIS project's gate. Walk `cd` and `-C` to get the
+  effective directory per push, and refuse what you cannot model: a grouping construct scopes a
+  `cd` (`( cd /x && git push ) ; git push` — the second push is NOT in `/x`), a non-literal operand
+  cannot be resolved, and a push reached through `bash -c`/`ssh`/`xargs` may not even be on this
+  host. Note the ambient-cwd version also failed to fix the ORIGINAL bug: the session reaches the
+  wiki by `cd <wiki> && git push` from the project directory, which is the shape it never saw.
+- **Identity is `owner/repo`, not the path and not the URL string.** A git worktree of this project
+  has a different toplevel and must still be gated, so the path cannot be the identity. But
+  string-editing the URL is the same trap one level down: `ssh://git@ssh.github.com:443/…` (GitHub's
+  alternate SSH host), an explicit `:22`, a non-`git` user, `git+ssh://…` and a bare local path are
+  all spellings of OUR OWN origin, and each one that reads as "different" is a silent skip. Discard
+  the host and compare `owner/repo`: two hosts serving the same path then collapse to one identity,
+  which GATES — the safe direction — and the reverse error is no longer reachable. An origin that
+  is not a recognisable remote (a bare filesystem path, `file://`, an unknown scheme) yields NO
+  identity, and no identity gates.
+- **Normalise carefully.** Strip `.git`, strip a trailing slash, lowercase — but note `.wiki` must
+  SURVIVE the `.git` strip, or `beaconfolio.wiki.git` reads as `beaconfolio` and the wiki keeps
+  being gated by the very check meant to release it.
+
+**Every normalisation rule is load-bearing for polarity, so every one needs its own mutation.**
+Round 1 pinned the two rules the fix was written for and left case-folding and the trailing-slash
+strip unpinned; both survived neutering against the entire suite. A normalisation rule you can
+delete without a red test is a rule that will be deleted.
 
 **And the harness half.** A mutation harness points the hook at a **copy** in a temp dir, where the
 hook's own `dirname "$0"/../..` no longer lands on the project — so a hook that derives "my project"

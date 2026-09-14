@@ -297,28 +297,148 @@ LOG="$PREPUSH_LOG"
 # The question is "whose CODE is being pushed", which is the repository the
 # command runs IN — not the destination URL. `git push <some-other-url>` still
 # pushes this project's commits and must still be gated.
-prepush_repo_identity() { # prepush_repo_identity <dir> -> normalised origin URL
-  git -C "$1" remote get-url origin 2>/dev/null \
-    | sed -E 's#^ssh://git@##; s#^git@([^:]+):#\1/#; s#^https?://##; s#/+$##; s#\.git$##' \
-    | tr 'A-Z' 'a-z'
+# IDENTITY is `owner/repo`, and HOST is deliberately discarded (#402 review,
+# major 2). Normalising by string-editing the URL made five spellings of OUR
+# OWN origin read as five different repositories — `ssh://git@ssh.github.com:
+# 443/…` (GitHub's alternate SSH host), an explicit `:22`, a non-`git` user,
+# `git+ssh://…`, and a bare local path — and each of those is a SKIP of this
+# project's own gate. Two hosts serving the same `owner/repo` now collapse to
+# one identity, which GATES: that is the safe direction, and the reverse error
+# is not available.
+#
+# An origin that is not a recognisable REMOTE (a bare filesystem path, a
+# `file://` URL, an unknown scheme) yields NO identity, and no identity gates.
+prepush_repo_identity() { # prepush_repo_identity <dir> -> owner/repo, or empty
+  local url path hostpart
+  url="$(git -C "$1" remote get-url origin 2>/dev/null)" || return 0
+  [ -n "$url" ] || return 0
+  case "$url" in
+    *://*)
+      case "${url%%://*}" in
+        ssh|git+ssh|git|http|https) ;;
+        *) return 0 ;;                     # file://, or something we don't know
+      esac
+      path="${url#*://}"
+      path="${path#*@}"                    # [user@]
+      case "$path" in */*) path="${path#*/}" ;; *) return 0 ;; esac  # host[:port]
+      ;;
+    *:*)
+      # scp-like `[user@]host:path`. The part before the colon must look like a
+      # HOSTNAME; otherwise this is a filesystem path that happens to contain a
+      # colon, and a filesystem path is not an identity.
+      hostpart="${url%%:*}"
+      case "$hostpart" in */*|'') return 0 ;; esac
+      case "${hostpart#*@}" in *.*) ;; *) return 0 ;; esac
+      path="${url#*:}"
+      ;;
+    *) return 0 ;;                         # bare filesystem path
+  esac
+  path="${path#/}"
+  path="$(printf '%s' "$path" | sed -E 's#/+$##; s#\.git$##' | tr 'A-Z' 'a-z')"
+  # `.wiki` survives the `.git` strip, so beaconfolio.wiki and beaconfolio stay
+  # DIFFERENT identities — that is the whole point of #353.
+  [ -n "$path" ] || return 0
+  printf '%s' "$path"
 }
-PUSH_TOP="$(git rev-parse --show-toplevel 2>/dev/null || printf '')"
-ROOT_TOP="$(cd "$ROOT" 2>/dev/null && pwd -P || printf '')"
-if [ -n "$PUSH_TOP" ] && [ -n "$ROOT_TOP" ]; then
-  PUSH_TOP_P="$(cd "$PUSH_TOP" 2>/dev/null && pwd -P || printf '')"
-  if [ -n "$PUSH_TOP_P" ] && [ "$PUSH_TOP_P" != "$ROOT_TOP" ]; then
-    # Different directory is NOT enough — a git worktree of this project has a
-    # different toplevel and must still be gated. Identity is the origin URL.
-    THEIRS="$(prepush_repo_identity "$PUSH_TOP_P")"
-    OURS="$(prepush_repo_identity "$ROOT_TOP")"
-    # Note `.wiki` survives the `.git` strip, so beaconfolio.wiki and
-    # beaconfolio are correctly DIFFERENT identities.
-    if [ -n "$THEIRS" ] && [ -n "$OURS" ] && [ "$THEIRS" != "$OURS" ]; then
-      printf 'pre-push gate: foreign repo (%s), gates not applicable — this project is %s\n' \
-        "$THEIRS" "$OURS" >&2
-      allow
+
+# WHICH directory's repository does this push touch? Not necessarily $PWD:
+# `cd <dir> && git push` and `git -C <dir> push` both push a repository the
+# hook is not standing in. Resolving identity from $PWD alone was a FAIL-OPEN
+# (#402 review, blocker 1) — run from the wiki, `git -C <project> push` read as
+# "foreign" and skipped this project's own gate.
+#
+# Prints one absolute directory per push, or a single `?` when any part of the
+# shape cannot be resolved. `?` gates.
+prepush_push_dirs() { # prepush_push_dirs <command>
+  local cmd="$1" seg masked cur d arg n i OLD
+  cur="$PWD"
+  masked="$(mask_quotes "$cmd")"
+  # A grouping construct SCOPES a `cd`, and this walker models `cd` as global.
+  # Rather than mis-model the scope, refuse the shape: in
+  # `( cd /elsewhere && git push ) ; git push` the second push is in $PWD, and
+  # leaking the subshell's `cd` past the `)` would call it foreign.
+  case "$masked" in *'('*|*')'*|*'{'*|*'}'*) printf '?\n'; return 0 ;; esac
+  OLD="$IFS"; IFS=$'\n'
+  for seg in $(quote_split "$(strip_text_heredocs "$cmd")"); do
+    IFS="$OLD"
+    seg="${seg//$NL_SENTINEL/ }"
+    seg="$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s/[[:space:]]+/ /g')"
+    if [ -n "$seg" ]; then
+      argv_split "$seg"
+      [ "$ARGV_SPLIT_UNTERMINATED" = "1" ] && { printf '?\n'; return 0; }
+      local -a A=("${ARGV_SPLIT_RESULT[@]}")
+      n=${#A[@]}
+      case "${A[0]:-}" in
+        cd)
+          # Only a single LITERAL operand is resolvable. `cd`, `cd -`, `cd ~`,
+          # `cd "$D"` and globs all leave the directory unknown.
+          [ "$n" -eq 2 ] || { printf '?\n'; return 0; }
+          arg="${A[1]}"
+          case "$arg" in -|'~'*|*'$'*|*'*'*|*'?'*|*'['*) printf '?\n'; return 0 ;; esac
+          cur="$(cd "$cur" 2>/dev/null && cd "$arg" 2>/dev/null && pwd -P)" || cur=""
+          [ -n "$cur" ] || { printf '?\n'; return 0; }
+          ;;
+        pushd|popd) printf '?\n'; return 0 ;;
+      esac
+      if segment_invokes_git_push "$seg"; then
+        i=0
+        while [ "$i" -lt "$n" ]; do            # leading env-assignments
+          case "${A[$i]}" in *=*) i=$((i + 1)) ;; *) break ;; esac
+        done
+        # Only a DIRECT `git … push` has a knowable directory. A push reached
+        # through bash -c / ssh / xargs may run anywhere — on another HOST,
+        # even — so its repository is unknowable and the shape gates.
+        case "${A[$i]:-}" in git|'\git') ;; *) printf '?\n'; return 0 ;; esac
+        d="$cur"; i=$((i + 1))
+        while [ "$i" -lt "$n" ]; do
+          case "${A[$i]}" in
+            # --git-dir/--work-tree repoint the repository itself; not modelled.
+            --git-dir*|--work-tree*) printf '?\n'; return 0 ;;
+            -C|-C?*)
+              if [ "${A[$i]}" = "-C" ]; then arg="${A[$((i + 1))]:-}"; i=$((i + 2))
+              else arg="${A[$i]#-C}"; i=$((i + 1)); fi
+              [ -n "$arg" ] || { printf '?\n'; return 0; }
+              case "$arg" in *'$'*|*'*'*|'~'*) printf '?\n'; return 0 ;; esac
+              # Successive -C are relative to each other, exactly as git does.
+              d="$(cd "$d" 2>/dev/null && cd "$arg" 2>/dev/null && pwd -P)" || d=""
+              [ -n "$d" ] || { printf '?\n'; return 0; }
+              ;;
+            -c|--namespace|--config-env) i=$((i + 2)) ;;
+            -*) i=$((i + 1)) ;;
+            *) break ;;
+          esac
+        done
+        printf '%s\n' "$d"
+      fi
     fi
-  fi
+    IFS=$'\n'
+  done
+  IFS="$OLD"
+}
+
+ROOT_TOP="$(cd "$ROOT" 2>/dev/null && pwd -P || printf '')"
+OURS="$(prepush_repo_identity "$ROOT_TOP")"
+PUSH_DIRS="$(prepush_push_dirs "$CMD")"
+FOREIGN=1
+[ -n "$ROOT_TOP" ] && [ -n "$OURS" ] && [ -n "$PUSH_DIRS" ] || FOREIGN=0
+if [ "$FOREIGN" = "1" ]; then
+  # EVERY push in the command must be provably foreign. One unresolvable or
+  # one of ours anywhere in the command runs the whole gate.
+  while IFS= read -r PD; do
+    [ -n "$PD" ] || continue
+    if [ "$PD" = "?" ]; then FOREIGN=0; break; fi
+    PTOP="$(git -C "$PD" rev-parse --show-toplevel 2>/dev/null || printf '')"
+    [ -n "$PTOP" ] || { FOREIGN=0; break; }
+    THEIRS="$(prepush_repo_identity "$PTOP")"
+    if [ -z "$THEIRS" ] || [ "$THEIRS" = "$OURS" ]; then FOREIGN=0; break; fi
+  done <<EOF
+$PUSH_DIRS
+EOF
+fi
+if [ "$FOREIGN" = "1" ]; then
+  printf 'pre-push gate: foreign repo (%s), gates not applicable — this project is %s\n' \
+    "$THEIRS" "$OURS" >&2
+  allow
 fi
 
 # --- From here on, this IS a real push: run the gate. -----------------------

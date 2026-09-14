@@ -5,29 +5,6 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- **The pre-push gate no longer fires on a DIFFERENT repository (#353)** — the hook is registered
-  for the session, not for a directory, so `git push` in any checkout ran THIS project's suites.
-  Measured 2026-09-10: a docs-only push of the project **wiki** (a separate repository) was blocked
-  twice by main-repo test results — the exact "a gate that fires when it cannot be relevant teaches
-  people to disable it when it can" erosion the v1.13.0 retro warned about. A push whose repository
-  is **provably different** now passes through with a one-line note. The polarity matches the #377
-  leg selector and is the whole safety argument: skipping must be **positively established**, so an
-  unobtainable toplevel, an unobtainable or matching remote, and any ambiguity all still run the
-  full gate. Identity is the normalised **origin URL**, not the directory — a git worktree of this
-  project has a different path and must still be gated — and `.wiki` deliberately survives the
-  `.git` strip so the wiki and the main repo are different identities. Seven cases pin both
-  directions (wiki and unrelated repo → pass through; no origin, same origin elsewhere, and an
-  https-vs-ssh spelling of our own remote → still gate) and **three** mutations kill both failure
-  modes, because a pass-through that is too wide silently disables the gate for this project too:
-  contract **30 killed / 0 survived / 0 invalid**, up from 27.
-- **…and the harness that could not be trusted from elsewhere (#353)** — writing those cases
-  reproduced the issue's second defect from a new direction. The mutation harness points `$HOOK` at
-  a **copy** in a temp dir, where the hook's own `dirname "$0"/../..` no longer lands on this
-  project, so it cannot tell which repository it guards; the contract reported `HARNESS INVALID`.
-  The cases now pass `CLAUDE_PROJECT_DIR` exactly as `.claude/settings.json` does in a real run,
-  matching what the `e2e` helper already did. Worth recording that the hook **failed closed**
-  throughout: an unidentifiable repo produced a spurious GATE, never a spurious skip, so the cost
-  was a wasted round and never an open gate.
 - **The no-verdict merge path is closed at both ends (#392, v1.14.1 retro change B)** — #321 and
   #355 merged with zero verdicts in consecutive releases; mechanism established for the record:
   both merged in the GitHub **web UI** (a Dependabot PR and the security-tab "set up this
@@ -236,6 +213,49 @@ All notable changes to this project will be documented in this file.
   whichever fired first — it failed inside the loaded pre-push gate and passed 100/0 when run alone.
 
 ### Fixed
+- **The pre-push gate no longer fires on a DIFFERENT repository (#353)** — the hook is registered
+  for the session, not for a directory, so `git push` in any checkout ran THIS project's suites.
+  Measured 2026-09-10: a docs-only push of the project **wiki** (a separate repository) was blocked
+  twice by main-repo test results — the exact "a gate that fires when it cannot be relevant teaches
+  people to disable it when it can" erosion the v1.13.0 retro warned about. A push whose repository
+  is **provably different** now passes through with a one-line note. The polarity matches the #377
+  leg selector and is the whole safety argument: skipping must be **positively established**, so an
+  unresolvable directory, an unobtainable or matching remote, and any ambiguity all still run the
+  full gate.
+  Two things the first implementation got wrong, both caught in review (#402) and fixed here rather
+  than deferred. **The pushed repository is the one the COMMAND names, not the hook's cwd**: identity
+  was read from `$PWD`, so running from the wiki, `git -C <project> push` and `cd <project> && git
+  push` read as "foreign" and skipped this project's own gate — a fail-open the change itself
+  introduced. The hook now resolves the effective directory per push by walking `cd` and `git -C`,
+  and refuses shapes it cannot model (a grouping construct that scopes a `cd`, a non-literal
+  operand, and any push reached through `bash -c`/`ssh`/`xargs`, which may not even be on this
+  host). As a side effect the original #353 shape — `cd <wiki> && git push` issued from the project
+  directory, which is how the session actually reaches the wiki — now passes through; before, only
+  an ambient cwd did. **Identity is `owner/repo`, and the host is deliberately discarded**: editing
+  the URL string made five spellings of our OWN origin read as five repositories
+  (`ssh://git@ssh.github.com:443/…`, an explicit `:22`, a non-`git` user, `git+ssh://…`, and a bare
+  local path), each one a silent skip. Two hosts serving the same `owner/repo` now collapse to one
+  identity, which gates — the safe direction — and an origin that is not a recognisable remote
+  yields no identity at all, which also gates. `.wiki` still survives the `.git` strip, so the wiki
+  and the main repo stay different identities.
+  Twenty-two cases pin both directions, and **nine** mutations kill both failure modes — including
+  one that restores the cwd-based fail-open and one per normalisation rule, since a pass-through
+  that is too wide disables the gate for this project too: contract **36 killed / 0 survived / 0 invalid**, up from 27.
+- **…and the harness that could not be trusted from elsewhere (#353)** — writing those cases
+  reproduced the issue's second defect from a new direction. The mutation harness points `$HOOK` at
+  a **copy** in a temp dir, where the hook's own `dirname "$0"/../..` no longer lands on this
+  project, so it cannot tell which repository it guards; the contract reported `HARNESS INVALID`.
+  The cases now pass `CLAUDE_PROJECT_DIR` exactly as `.claude/settings.json` does in a real run,
+  matching what the `e2e` helper already did. Worth recording that the hook **failed closed**
+  throughout: an unidentifiable repo produced a spurious GATE, never a spurious skip, so the cost
+  was a wasted round and never an open gate.
+  The issue's *other* reported symptom — `pre-merge-gate.test.sh --mutations` dying with
+  `HARNESS BROKEN` from a foreign cwd — does **not** reproduce (23 killed / 0 survived / 0 invalid
+  from both the repo root and a foreign checkout), and why it stopped is **not known**. A first
+  guess, that #392/#399's hermetic `PR_MERGE_GATE_LOG` default fixed it incidentally, was committed
+  and then disproved in review: the reconstructed pre-fix harness does not break either. Three
+  cases now pin cwd-independence so a refactor cannot reintroduce it, recorded as an unexplained
+  non-reproduction rather than a solved one.
 - **`dedup_changelog_unreleased.py` no longer rewrites released history (#383)** — the blank-line
   collapse ran over the whole reconstructed file, including the tail below the first
   `## [x.y.z]` heading that the script's own docstring promised never to touch. It silently removed

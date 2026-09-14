@@ -494,10 +494,20 @@ GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
 # Reported 2026-09-10: `--mutations` from a foreign cwd (the wiki checkout) died
 # with "HARNESS BROKEN: identity should survive but died". It does NOT reproduce
 # today — measured 23 killed / 0 survived / 0 invalid from BOTH the repo root and
-# a foreign cwd — because `PR_MERGE_GATE_LOG` gained a hermetic default at the top
-# of this file in #392/#399, AFTER that report. The harness used to write the real
-# log path, which is what a foreign cwd disturbed. Fixed incidentally, so pin it:
-# an incidental fix with no case is a regression waiting for the next refactor.
+# a foreign cwd.
+#
+# WHY it stopped reproducing is NOT known, and the guess that was committed here
+# first — that #392/#399's hermetic `PR_MERGE_GATE_LOG` default fixed it
+# incidentally — was DISPROVED in review (#402, major 3): the pre-fix harness,
+# reconstructed with `git show 6d4307e:.claude/hooks/pre-merge-gate.test.sh` and
+# run from a foreign wiki-origin repo, reports `control survived` and
+# 20 killed / 0 survived / 0 invalid. It does not break either. A `HOME` without
+# `.claude/` was also tried and also fails to reproduce.
+#
+# So this is an unexplained non-reproduction, recorded as one. The cases below
+# are still worth their cost — they pin cwd-independence so the next refactor
+# cannot reintroduce it — but they are NOT evidence for any account of the
+# original cause, and nothing downstream should cite them as one.
 run_elsewhere() { # run_elsewhere <name> <expected> <command>
   local name="$1" expect="$2" cmd="$3" got d
   d="$(mktemp -d)"
