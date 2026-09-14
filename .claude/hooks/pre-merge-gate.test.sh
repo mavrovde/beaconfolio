@@ -7,7 +7,7 @@
 # Only 4 of 10 mutations bit. That is the exact fake-green class the retrospective
 # this hook came from is about, so every case here now asserts the DECISION
 # (parsed out of the JSON) and the mutation list below is part of the contract:
-# `bash pre-merge-gate.test.sh --mutations` re-runs them and must report 22 killed.
+# `bash pre-merge-gate.test.sh --mutations` re-runs them and must report 23 killed.
 set -u
 
 HOOK="${HOOK:-$(cd "$(dirname "$0")" && pwd)/pre-merge-gate.sh}"
@@ -23,6 +23,9 @@ case "$args" in
   "pr view --json number"*) printf '%s' "${GH_STUB_CURRENT_PR-}" ;;
   # `gh pr view <branch> --json number` -- how the hook resolves a branch operand.
   "pr view "*"--json number"*) printf '%s' "${GH_STUB_BRANCH_PR-}" ;;
+  "pr comment "*)
+    [ -n "${GH_STUB_COMMENT_CALLS-}" ] && printf '%s\n' "$args" >> "$GH_STUB_COMMENT_CALLS"
+    exit 0 ;;
   "issue view "*)
     [ "${GH_STUB_ISSUE_FAIL-0}" = "1" ] && exit 1
     printf '%s' "${GH_STUB_ISSUE_BODY-}" ;;
@@ -272,6 +275,18 @@ GH_STUB_PR_JSON_999="$(rev 2026-09-06T10:00:00Z '## ✅ APPROVED')" GH_STUB_PR_J
 # PR's own fake-green class (round-4 review, lessons §34).
 GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
   run "bypass as a command prefix (the documented form)" allow "PR_MERGE_GATE=0 gh pr merge 284 --squash"
+  # The bypass must leave a TRACE (#392): a log line naming the PR, and a
+  # best-effort `gh pr comment`. PR_MERGE_GATE_LOG points the log at a temp
+  # file; the stub's `pr comment` arm records the attempt.
+  _blog="$STUB/bypass.log"; : > "$_blog"; : > "$STUB/comment.calls"
+  PR_MERGE_GATE_LOG="$_blog" GH_STUB_COMMENT_CALLS="$STUB/comment.calls" \
+    run "bypass still allows with the trace armed" allow "PR_MERGE_GATE=0 gh pr merge 284 --squash"
+  if grep -q "bypass PR=284" "$_blog"; then PASS=$((PASS+1));
+  else FAIL=$((FAIL+1)); printf '  ✗ bypass left NO audit-log line (#392): %s\n' "$(cat "$_blog" 2>/dev/null)"; fi
+  # the comment is fire-and-forget from a subshell — give it a beat
+  _i=0; while [ ! -s "$STUB/comment.calls" ] && [ $_i -lt 20 ]; do sleep 0.1; _i=$((_i+1)); done
+  if grep -q "pr comment 284" "$STUB/comment.calls" 2>/dev/null; then PASS=$((PASS+1));
+  else FAIL=$((FAIL+1)); printf '  ✗ bypass never attempted the PR-comment trace (#392): %s\n' "$(cat "$STUB/comment.calls" 2>/dev/null)"; fi
 GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
   run "bypass after other assignments" allow "FOO=1 PR_MERGE_GATE=0 gh pr merge 284"
 GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
@@ -647,6 +662,8 @@ PY
     "replace::set -- \"\${ARGV_SPLIT_RESULT[@]}\"=>local IFS=' '; set -- \$seg"
   mutate die "only the LAST merge in a command is verified" \
     'replace::MERGE_OPERANDS+=("$MERGE_OPERAND")=>MERGE_OPERANDS=("$MERGE_OPERAND")'
+  mutate die "the bypass trace is removed (a PR_MERGE_GATE=0 merge leaves no record, #392)" \
+    'replace::      gate_bypass_trace "$seg"=>      :'
   mutate die "indirection (bash -c / eval / ssh) no longer inspected" \
     'replace::inner_script_invokes_pr_merge "$seg" && return 0=>false && return 0'
 

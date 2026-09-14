@@ -98,6 +98,15 @@ footnoted for the loose matcher, one level in: **position is not authorship.** N
 filter — and note the author-body case is the mirror of the v1.13.0 finding that a fix report must
 not *open* with a marker.
 
+**How "PRs merged with no verdict" is measured (#392):** `scripts/audit_no_verdict_merges.sh`
+applies the canonical first-non-empty-line filter over each merged PR's reviews AND comments —
+run it rather than re-deriving the jq. The scheduled `Verdict Audit` workflow runs it
+red-when-dirty for merges after 2026-09-14 (the control's landing date; #321/#355 predate it and
+stay documented here, not alarmed on). The CLI bypass (`PR_MERGE_GATE=0`) now leaves a log line
+and a PR comment, so a bypass count is measurable; a web-UI merge remains detectable only
+after the fact — that limit is structural (no PreToolUse hook exists there) and stated rather
+than papered over.
+
 ¹¹ **Normalise timestamps to UTC before comparing.** The corpus query does a **string** compare on
 `mergedAt`, and `git log --format=%cI` emits tag stamps in local time (`+02:00` here). Mixing a
 `+02:00` bound with a `Z` value silently mis-selects the corpus. Also expect the window query to

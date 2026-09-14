@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **The no-verdict merge path is closed at both ends (#392, v1.14.1 retro change B)** — #321 and
+  #355 merged with zero verdicts in consecutive releases; mechanism established for the record:
+  both merged in the GitHub **web UI** (a Dependabot PR and the security-tab "set up this
+  workflow" flow), where a `PreToolUse` hook does not exist. The CLI half: `pre-merge-gate.sh`'s
+  `PR_MERGE_GATE=0` bypass is still allowed but **never invisible** — it appends a line to a local
+  audit log (`PR_MERGE_GATE_LOG`) and best-effort posts a `## ⚠️ MERGE-GATE BYPASS` comment on the
+  PR, fire-and-forget so an offline `gh` cannot block an authorized merge; both traces are pinned
+  by new self-test cases and a 23rd gate mutation. The web-UI half:
+  `scripts/audit_no_verdict_merges.sh` + the scheduled **Verdict Audit** workflow, red-when-dirty
+  (the Live-Freshness alarm shape) for merges after the 2026-09-14 cutover, self-testing its own
+  detector first (7 cases, mutations 4/0/0 — including "the first-line filter widens to the whole
+  body", the exact hole that would count a fix report as a verdict). First live run named exactly
+  #321 and #355 and nothing else. Measurement convention recorded in
+  `docs/retrospectives/README.md`.
 - **`scripts/check_changelog_merge.sh` — the `[Unreleased]` collision becomes a lint (#391,
   v1.14.1 retro change A)** — validates the **merged result** of HEAD with `origin/main`, formed
   with `git merge-tree` (the machinery `gh pr merge` actually runs — measured: replaying #357's

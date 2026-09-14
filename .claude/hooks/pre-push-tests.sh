@@ -452,6 +452,16 @@ run_checks() {
         return 1
       }
     fi
+    # The no-verdict-merge detector's own self-test (#392) — the LIVE audit
+    # runs only in the scheduled Verdict Audit workflow (network, and a
+    # historical window this gate has no business re-measuring); the gate
+    # proves the DETECTOR still detects.
+    if leg vaudit && [ -f "$ROOT/scripts/audit_no_verdict_merges.test.sh" ]; then
+      ( cd "$ROOT" && bash scripts/audit_no_verdict_merges.test.sh >/dev/null ) || {
+        echo "  ✗ audit_no_verdict_merges.test.sh failed — the no-verdict detector itself is broken"
+        return 1
+      }
+    fi
     # Merged-CHANGELOG contract (v1.14.1 retrospective change A, #391). The
     # [Unreleased] collision NEVER exists in the branch and NEVER in main —
     # only in the merged result, which is what this measures (git merge-tree,

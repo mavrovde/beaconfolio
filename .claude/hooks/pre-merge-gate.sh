@@ -45,6 +45,27 @@ PARSE_DEADLINE_SECONDS="${PR_MERGE_GATE_PARSE_DEADLINE:-$DEADLINE_SECONDS}"
 START=$SECONDS
 
 allow() { exit 0; }
+
+# A bypass is AUTHORIZED but must never be INVISIBLE (#392): #321 and #355 each
+# merged with zero verdicts across two consecutive releases, and afterwards
+# nobody could establish whether the gate was bypassed or never reached. This
+# makes the CLI half countable: every PR_MERGE_GATE=0 use appends to a local
+# audit log (countable even offline; override the path with PR_MERGE_GATE_LOG)
+# and best-effort posts a PR comment — the public trace — fire-and-forget, so
+# an offline `gh` can never block a merge the human already authorized. The
+# web-UI half (how #321/#355 actually merged: Dependabot + the security-tab
+# flow, where no PreToolUse hook exists) is covered by the scheduled
+# verdict-audit workflow, not by this hook.
+gate_bypass_trace() {
+  local seg="$1" n ts logf
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown-time)"
+  n="$(printf '%s' "$seg" | sed -n 's/.*[[:space:]]merge[[:space:]]\{1,\}\([0-9]\{1,\}\).*/\1/p' | head -1)"
+  logf="${PR_MERGE_GATE_LOG:-$HOME/.claude/merge-gate-bypass.log}"
+  { printf '%s bypass PR=%s cmd=%s\n' "$ts" "${n:-unknown}" "$seg" >> "$logf"; } 2>/dev/null || :
+  if [ -n "$n" ] && [ "${PR_MERGE_GATE_TRACE_COMMENT:-1}" = "1" ]; then
+    ( gh pr comment "$n" --body "## ⚠️ MERGE-GATE BYPASS — \\`PR_MERGE_GATE=0\\` was used for this merge at $ts (recorded by pre-merge-gate.sh; rule 13 audit, #392)" >/dev/null 2>&1 & ) || :
+  fi
+}
 deny() {
   # Same JSON contract as the sibling hooks: a structured deny, exit 0.
   printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"MERGE GATE: $1 | Bypass one authorized command with PR_MERGE_GATE=0\"}}"
@@ -142,6 +163,7 @@ segment_invokes_pr_merge() {
     # the command text and the strip below would eat it unread. Same regex and
     # same position as guard-destructive.sh:242 — one model, two hooks (#237).
     if printf '%s' "$seg" | grep -Eq '^([A-Za-z_][A-Za-z0-9_]*=[^ ]* )*PR_MERGE_GATE=0( |$)'; then
+      gate_bypass_trace "$seg"
       return 1   # authorized: this segment is not gated
     fi
     while [[ "$seg" =~ ^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+ ]]; do
