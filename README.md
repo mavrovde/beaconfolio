@@ -392,8 +392,18 @@ fast, diff-scoped contract checks plus a **formatting/compilation confirmation**
 code — `ruff check` + `ruff format --check` for backend Python (~0.1s), a per-selected-project
 `tsc --noEmit` for frontend TS (~1s each). The **deep** suites — pytest, mypy, bandit, the Vitest
 projects — run in CI on every push/PR and at merge time; `PREPUSH_DEEP=1` opts a push into
-running them locally. Measured on one machine: a docs-only push **11m44s → ~3s**, a backend-only
-push **11m44s → seconds** (ruff + PII + selection), a `projects/public/**` push **11m44s → ~15s**.
+running them locally.
+Measured on one machine, and **the two published sets describe different gates — read the head,
+not just the number** (v1.14.2 retro §3, where this ambiguity was itself a class-F finding):
+
+| push shape | after #377 (`e203eb6a`, deep legs still local) | after #404 (`9303b40b`, deep legs moved to CI) |
+|---|---|---|
+| docs-only | 11m44s → **13s** | → **~3s** |
+| backend-only | 11m44s → **1m21s** | → **seconds** (ruff + PII + selection) |
+| `projects/public/**` | 11m44s → **15s** | → **~15s** |
+
+The second column is lower for backend because pytest/mypy/bandit left the push entirely; the
+`CHANGELOG.md` entry for #377 records the first column, which is why the two files differ.
 
 | changed paths | legs at push time (deep legs in CI, or locally with `PREPUSH_DEEP=1`) |
 |---|---|

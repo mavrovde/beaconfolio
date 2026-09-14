@@ -159,6 +159,38 @@ rc=$(run "$SCRIPT")
 if [ "$rc" = 1 ] && grep -q 'check 4' "$T/out"; then ok
 else bad "check 4: an OLD released copy must not absolve a lost [Unreleased] line" "$(cat "$T/out")"; fi
 
+# --- check 4, stub-aware (v1.14.2 retro) -----------------------------------
+# The FIRST PR after a release deletes the `- Placeholder for next release.`
+# stub the release-manager seeded (release-manager.md step 4) as it adds real
+# entries — the established convention (#388 did exactly this). Before this
+# exemption the lint read the stub as lost content and blocked every such PR,
+# which is the THIRD first-contact failure of this lint.
+mkbase
+python3 - "$T/base" "$T/merged" <<'PY'
+import sys
+base = ("# Changelog\n\n## [Unreleased]\n\n### Added\n- Placeholder for next release.\n\n"
+        "## [1.2.0] - 2026-01-02\n\n### Added\n- shipped thing\n")
+open(sys.argv[1], "w").write(base)
+open(sys.argv[2], "w").write(base.replace("- Placeholder for next release.", "- a real first entry"))
+PY
+rc=$(run "$SCRIPT")
+[ "$rc" = 0 ] && ok || bad "check 4: the first post-release PR may DROP the placeholder stub" "$(cat "$T/out")"
+
+# ...and the exemption is exactly one string: a real entry lost beside the stub
+# still fails, so the stub cannot be used to smuggle a deletion through.
+mkbase
+python3 - "$T/base" "$T/merged" <<'PY'
+import sys
+base = ("# Changelog\n\n## [Unreleased]\n\n### Added\n- Placeholder for next release.\n"
+        "- base entry A\n\n## [1.2.0] - 2026-01-02\n\n### Added\n- shipped thing\n")
+open(sys.argv[1], "w").write(base)
+open(sys.argv[2], "w").write(base.replace("- Placeholder for next release.\n", "")
+                                .replace("- base entry A", "- something else"))
+PY
+rc=$(run "$SCRIPT")
+if [ "$rc" = 1 ] && grep -q 'check 4: .*base entry A' "$T/out"; then ok
+else bad "check 4: the stub exemption must NOT absolve a real lost entry" "$(cat "$T/out")"; fi
+
 # reordering sections passes (set semantics — the dedup fixer reorders)
 mkbase
 python3 - "$T/base" "$T/merged" <<'PY'
@@ -302,6 +334,11 @@ PY
   mutate "rotation exemption becomes BLANKET (old released content absolves a loss)" \
     'under_new_heading = line.rstrip() not in base_released' \
     'under_new_heading = True' assert_rotation_blanket
+  # The stub exemption (v1.14.2 retro) must be exactly ONE string: if it
+  # absolves every line, a genuinely lost entry passes. assert_check4's
+  # fixture loses `- base entry A`, which the real exemption never touches.
+  mutate "stub exemption becomes BLANKET (any lost [Unreleased] line passes)" \
+    'if l.rstrip() == PLACEHOLDER:' 'if True:' assert_check4
   assert_fence() { mkbase
     python3 - "$T/base" "$T/merged" <<'PY'
 import sys

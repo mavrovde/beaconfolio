@@ -111,6 +111,29 @@ Never accept "coverage is 100%" at face value — a line being executed is not t
    the test fails and report the number ("14 passed, 4 failed against the pre-fix script"). Remove
    the worktree when done; never mutate the reviewed checkout. If every case still passes, the tests are decoration and
    that is at least a **major** finding.
+4b. **A NEW gate must be run against the first REAL input it will meet — not only its fixtures.**
+   (v1.14.2 retro, class N: four controls passed their own suites and broke on first contact,
+   costing the release PR **two of its four rounds**.) When a PR adds or modifies a check, ask
+   *what is the first production-shaped input this will see, and has anyone run it against one?*
+   The measured cases:
+   - **A lint over a file an automated process rewrites must be run against EVERY state that
+     process produces.** `check_changelog_merge.sh` has now failed first contact **three times**
+     for this one reason. It shipped at 07:40Z and false-failed the first *release rotation* it
+     ever saw at 17:11Z — *"346 × `FAIL check 4: [Unreleased] line on base is LOST` … 347
+     non-empty base lines, 346 'lost' block-scoped, **0 lost file-wide**. Nothing was dropped; the
+     lint is wrong."* — and then blocked the first *post-release* PR, which by convention deletes
+     the `- Placeholder for next release.` stub the release-manager seeds. For `CHANGELOG.md` the
+     states are exactly three: **mid-cycle accumulation, the rotation, and the first entry after a
+     rotation.** Ask which of the three the PR's fixtures cover.
+   - **A CI gate must be shown GREEN ON A REAL PR, not merely "wired".** SonarCloud was activated
+     and was structurally red from that moment — the scanner ran with no test step, so
+     `new_coverage` read `0.0` against a threshold of 80 on every PR touching one line of code.
+     "The workflow runs" is not evidence; the gate's own API verdict is (`ERROR/0.0` → `OK/100.0`).
+   - **A shell check must run on the platform CI uses.** #400's reverse MCP sweep was *"inert on
+     GNU grep, so the category still cannot fail where CI runs"* — green on macOS, vacuous on
+     Linux. Ask which `grep`/`sed` the assertion depends on.
+   A gate that is red-by-construction on arrival is worse than no gate: it trains everyone to read
+   past red. If the PR defers that fix, rule 11 applies — say so explicitly and name the owner.
 5. **Ask whether the change's gate actually gates.** CI ran pytest with no `--cov-fail-under` for
    this project's entire history, so "100% coverage" printed a number and passed regardless; a
    version check lived only in a local hook that any push could bypass. When a PR adds or relies on

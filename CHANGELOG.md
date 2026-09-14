@@ -5,7 +5,55 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- Placeholder for next release.
+- **v1.14.2 release retrospective (#386)** — `docs/retrospectives/v1.14.2.md`, the fifth in the
+  series, with the trend table in `docs/retrospectives/README.md` extended by two columns the
+  release's own evidence demanded: **Merged w/o valid APPROVE** and **Class G** (fake-greens).
+  Back-filled only where a release's own record measured the value; `n-a` means not measured.
+  Headline findings, each measured on the window: **6 of 14 PRs (43%) merged without a valid
+  APPROVE** — five with no verdict at all and one (#402) against a *standing* REQUEST CHANGES,
+  all inside an 18-minute window during release assembly, with `pre-merge-gate.sh`'s bypass log
+  **empty**, which is positive evidence they never reached the CLI gate rather than the
+  "provenance is unmeasurable" hedge earlier retros had to carry; **round-1 approvals 0 of 14**
+  once verdicts are replayed at `mergedAt` (the naive filter reports 36%, because six were
+  back-filled after merge); and **class F 5 → 22**, of which **18 are on #389 alone**, the
+  v1.14.1 retrospective PR, because that retro published the same figures into four files.
+  v1.14.1's prediction scores **2 pass / 3 fail / 1 unmeasured**, and its own scoring rule held:
+  of the three issues it filed, #391 and #392 shipped and their classes went to **zero**, while
+  #393 did not ship and its class quadrupled **2 → 8**.
+
+### Changed
+- **A release figure is now written ONCE (`release-retro` skill)** — the retro file and the trend
+  table are canonical; every other document links instead of restating. Motivated by #389's 13
+  round-1 blockers (*"the cost figures disagree with themselves across three files … four
+  readings"*) and by the 14 restatements of the v1.14.1 figures still live in the two wiki
+  articles. Demonstrated rather than asserted: this PR adds **no** v1.14.2 figure to
+  `docs/wiki/`.
+- **Verdicts are counted replayed at `mergedAt`** (`release-retro` skill + the directory's
+  counting conventions) — a countable verdict must both *open* with the marker (position is not
+  authorship) **and** predate the merge. Also fixes the corpus bound to the release PR's
+  `mergedAt`: bounding on the tag commit's committer date dropped #406 from its own release by
+  **one second** (`19:46:02Z` vs `19:46:03Z`).
+- **`pr-reviewer` now checks a new gate against the first REAL input it will meet** (rubric item
+  4b) — a `CHANGELOG.md` lint must be run against a *release rotation*, a CI gate must be shown
+  green on a real PR rather than merely "wired", and a shell check must run on the platform CI
+  uses. Four controls broke on first contact this cycle and cost the release PR two of its four
+  rounds: #391's lint read a rotation as **346 lost lines** on the first release PR it ever saw,
+  and SonarCloud was structurally red (`new_coverage 0.0` vs threshold 80) from activation until
+  #407 fixed it to `OK / 100.0`.
+- **`release-manager` clears the dependency tranche BEFORE assembly** (workflow step 1b) — rule 13
+  has no dependency carve-out, and the tranche is where it has now broken twice (#321, then five
+  PRs here). One verdict per PR, before `VERSION` is touched; a retrospective verdict is a
+  fix-forward *record*, never a merge authorization, and never posted as one batched run (six
+  arrived inside 19 seconds).
+- **`CLAUDE.md`'s AI-config map states the Verdict Audit's real limits** — it tests **presence,
+  not ordering** (so it reports this window clean) and runs **weekly**, giving up to 7 days of
+  detection latency; v1.14.2's violations landed 8 hours after the week's only run. Both are
+  filed as **#409**.
+- **`README.md`'s pre-push timing table attributes each measurement to the head that produced
+  it** — `README.md` and `CHANGELOG.md` published different numbers for the same three push
+  shapes with no qualifier (`~3s` vs `13s`, `seconds` vs `1m21s`). Both were honest measurements
+  of *different gates* (pre- and post-#404); neither said so. This was itself a class-F defect
+  that shipped, and it is the class the retro spends §3 counting.
 
 ### Fixed
 - **The three Snyk residuals from #373's review land (#381)** — (1) the patched `linkedin-api`
@@ -23,6 +71,19 @@ All notable changes to this project will be documented in this file.
   image/Dockerfile risk is genuinely covered by `snyk-container.yml`. Plus a network-free
   `patch_linkedin.test.sh` (run by CI's backend-lint job) pinning the script's derivation and both
   exit-1 guards.
+- **`scripts/check_changelog_merge.sh` no longer blocks the first PR after a release** — check 4
+  read the `- Placeholder for next release.` stub (which `release-manager.md` step 4 seeds and the
+  first post-release PR deletes by convention, as #388 did) as lost `[Unreleased]` content. The
+  lint shipped in #398 *after* the last two post-release PRs, so this retrospective's own PR was
+  the first it had ever seen, and it refused it. Left alone it would have blocked the first PR of
+  every future release. The exemption is **one exact string** the release process itself writes,
+  so it cannot absolve a real entry. Measured in both directions: the new case against the pre-fix
+  script gives **19 passed / 1 failed**; the fixed script gives **20 passed / 0 failed** with
+  **8 killed / 0 survived / 0 invalid** (was 18 cases / 7 mutations at the tag). This is the
+  **third** first-contact failure of this one lint — the other two being the release rotation that
+  cost #406 its round 1 and #400's GNU-grep inertness — and it is why the `pr-reviewer` rubric
+  change below names a `CHANGELOG.md` lint explicitly: a lint over a file an automated process
+  rewrites must be run against **every** state that process produces.
 
 ## [1.14.2] - 2026-09-14
 
