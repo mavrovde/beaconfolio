@@ -478,6 +478,75 @@ R="$(mkrenamefixture fix/mv-backend-to-docs backend/app/main.py docs/moved.md)"
 e2e "a rename out of backend/ still runs the BACKEND legs" \
     "backend docs lint pii" "$R" "$P origin HEAD"
 
+# --- FOREIGN REPO PASS-THROUGH (#353) ---------------------------------------
+# The hook is registered for the SESSION, so it fires on `git push` in ANY
+# checkout. Measured 2026-09-10: a docs-only push of the project WIKI (a
+# separate repository) was blocked twice by MAIN-REPO test results.
+#
+# POLARITY: skipping must be POSITIVELY established. Only a provably different
+# repository passes through; everything ambiguous still runs the gate. The
+# cases below pin BOTH directions, because a pass-through that fires too widely
+# silently disables the gate for this project too.
+# CLAUDE_PROJECT_DIR is supplied exactly as the real hook receives it from
+# .claude/settings.json — and it is REQUIRED here, not decoration: the mutation
+# harness points $HOOK at a COPY in a temp dir, where the hook's own
+# `dirname "$0"/../..` no longer lands on this project, so it cannot know which
+# repo it guards. Without this the identity control dies and the whole contract
+# reports HARNESS INVALID (measured while writing these cases). The hook still
+# fails CLOSED in that situation — unknown identity gates — which is why the
+# symptom was a spurious GATE and not a spurious skip.
+PROJECT="$(cd "$HERE/../.." && pwd)"
+check_in() { # check_in <desc> <dir> <cmd> <expect>
+  local desc="$1" dir="$2" cmd="$3" expect="$4" out
+  out="$(cd "$dir" && printf '{"tool_input":{"command":%s}}' "$(jq -Rn --arg c "$cmd" '$c')" \
+        | CLAUDE_PROJECT_DIR="$PROJECT" PREPUSH_DRY_RUN=1 bash "$HOOK" 2>/dev/null)"
+  if [ "$out" = "$expect" ]; then printf 'PASS  [%s]  %s\n' "$out" "$desc"
+  else printf 'FAIL  got=%s want=%s  %s\n' "$out" "$expect" "$desc"; fails=$((fails + 1)); fi
+}
+mkrepo() { # mkrepo <origin-url|-> -> prints dir
+  local d; d="$(mktemp -d)"; git -C "$d" init -q
+  [ "$1" != "-" ] && git -C "$d" remote add origin "$1"
+  printf '%s' "$d"
+}
+
+FR="$(mkrepo https://github.com/mavrovde/beaconfolio.wiki.git)"
+check_in "#353: a push from the project WIKI passes through (it is a different repo)" \
+         "$FR" "$P" ALLOW
+rm -rf "$FR"
+
+FR="$(mkrepo git@github.com:someone/unrelated.git)"
+check_in "#353: a push from an unrelated repo passes through" "$FR" "$P" ALLOW
+rm -rf "$FR"
+
+# …and every ambiguous shape must still GATE.
+FR="$(mkrepo -)"
+check_in "#353: a repo with NO origin still GATES (identity unprovable)" "$FR" "$P" GATE
+rm -rf "$FR"
+
+FR="$(mkrepo git@github.com:mavrovde/beaconfolio.git)"
+check_in "#353: the SAME origin in another directory still GATES (worktree shape)" \
+         "$FR" "$P" GATE
+rm -rf "$FR"
+
+# ssh and https spellings of the same remote are the SAME repository — if
+# normalisation missed this, every worktree would silently skip the gate.
+FR="$(mkrepo https://github.com/mavrovde/beaconfolio.git)"
+check_in "#353: https vs ssh spelling of our origin is NOT a foreign repo" \
+         "$FR" "$P" GATE
+rm -rf "$FR"
+
+# The wiki remote ends in .wiki.git; stripping .git must leave .wiki intact, or
+# the wiki would read as the main repo and keep being gated.
+FR="$(mkrepo https://github.com/mavrovde/beaconfolio.wiki)"
+check_in "#353: a .wiki remote without the .git suffix is still foreign" "$FR" "$P" ALLOW
+rm -rf "$FR"
+
+# A non-push command in a foreign repo was already allowed; prove the new block
+# did not change that path's reason for allowing.
+FR="$(mkrepo https://github.com/mavrovde/beaconfolio.wiki.git)"
+check_in "#353: a non-push command in a foreign repo is still ALLOW" "$FR" "git status" ALLOW
+rm -rf "$FR"
+
 # --- the mutation contract must NOT run in a full round (#388 review, major 2) -
 # `pre-merge-gate.test.sh --mutations` measured 543s alone under load; the hook
 # legs subtotal 646s before pytest/Vitest. Spending that in a fail-closed ALL
@@ -814,6 +883,20 @@ mutate die "$HOOKF" "the hook ignores the selector and prints a fixed narrow set
   'replace::| prepush_select_legs)=>| true; echo " docs ")'
 mutate die "$HOOKF" "the hook no longer fails closed when the range is unobtainable" \
   'replace::    SELECT_REASON="FULL — the changed-file list could not be computed; fail closed"=>    LEGS=" docs "'
+
+# --- #353: the foreign-repo pass-through must be able to fail BOTH ways ------
+# A pass-through is a hole by construction: too narrow and the wiki keeps being
+# gated (the bug), too wide and this project's OWN pushes skip the gate
+# silently. So both directions get a mutation, not just the one the fix was
+# written for.
+mutate die "$HOOKF" "the foreign-repo check passes through for ANY other directory (identity ignored)" \
+  'replace::if [ -n "$THEIRS" ] && [ -n "$OURS" ] && [ "$THEIRS" != "$OURS" ]; then=>if true; then'
+mutate die "$HOOKF" "the foreign-repo pass-through never fires (the #353 bug restored)" \
+  'replace::if [ -n "$THEIRS" ] && [ -n "$OURS" ] && [ "$THEIRS" != "$OURS" ]; then=>if false; then'
+# Identity must come from the REMOTE, not the path: comparing directories alone
+# would make every git worktree of this project skip the gate.
+mutate die "$HOOKF" "repo identity falls back to the directory path instead of the remote" \
+  'replace::    THEIRS="$(prepush_repo_identity "$PUSH_TOP_P")"=>    THEIRS="$PUSH_TOP_P"'
 
 echo "mutation contract: $MPASS killed, $MFAIL survived, $MBAD invalid"
 [ "$MFAIL" -eq 0 ] && [ "$MBAD" -eq 0 ] || exit 1

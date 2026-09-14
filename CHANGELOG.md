@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **The pre-push gate no longer fires on a DIFFERENT repository (#353)** — the hook is registered
+  for the session, not for a directory, so `git push` in any checkout ran THIS project's suites.
+  Measured 2026-09-10: a docs-only push of the project **wiki** (a separate repository) was blocked
+  twice by main-repo test results — the exact "a gate that fires when it cannot be relevant teaches
+  people to disable it when it can" erosion the v1.13.0 retro warned about. A push whose repository
+  is **provably different** now passes through with a one-line note. The polarity matches the #377
+  leg selector and is the whole safety argument: skipping must be **positively established**, so an
+  unobtainable toplevel, an unobtainable or matching remote, and any ambiguity all still run the
+  full gate. Identity is the normalised **origin URL**, not the directory — a git worktree of this
+  project has a different path and must still be gated — and `.wiki` deliberately survives the
+  `.git` strip so the wiki and the main repo are different identities. Seven cases pin both
+  directions (wiki and unrelated repo → pass through; no origin, same origin elsewhere, and an
+  https-vs-ssh spelling of our own remote → still gate) and **three** mutations kill both failure
+  modes, because a pass-through that is too wide silently disables the gate for this project too:
+  contract **30 killed / 0 survived / 0 invalid**, up from 27.
+- **…and the harness that could not be trusted from elsewhere (#353)** — writing those cases
+  reproduced the issue's second defect from a new direction. The mutation harness points `$HOOK` at
+  a **copy** in a temp dir, where the hook's own `dirname "$0"/../..` no longer lands on this
+  project, so it cannot tell which repository it guards; the contract reported `HARNESS INVALID`.
+  The cases now pass `CLAUDE_PROJECT_DIR` exactly as `.claude/settings.json` does in a real run,
+  matching what the `e2e` helper already did. Worth recording that the hook **failed closed**
+  throughout: an unidentifiable repo produced a spurious GATE, never a spurious skip, so the cost
+  was a wasted round and never an open gate.
 - **The no-verdict merge path is closed at both ends (#392, v1.14.1 retro change B)** — #321 and
   #355 merged with zero verdicts in consecutive releases; mechanism established for the record:
   both merged in the GitHub **web UI** (a Dependabot PR and the security-tab "set up this

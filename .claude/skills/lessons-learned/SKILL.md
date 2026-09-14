@@ -1695,12 +1695,16 @@ for two rounds.
 
 **The rule.** The existing guard — assert the needle still exists, fail the run INVALID if it
 rotted — is necessary and **not sufficient**. (That guard lives in the `--mutations` harnesses
-themselves, e.g. `scripts/check_changelog_merge.test.sh:203` and the four hook self-tests, *not* in
-§58b: the citation here originally pointed at §58b/#388 and was wrong on both halves, which is a
+themselves — `scripts/check_changelog_merge.test.sh:203` and **three of the four** hook self-tests;
+`guard-destructive.test.sh` has no `mutate()` machinery at all — *not* in §58b: the citation here originally pointed at §58b/#388 and was wrong on both halves, which is a
 fitting bug for this particular lesson to have shipped with.) It proves you changed *something*; it does not
 prove you changed it into the thing you meant. Assert the shape of the MUTANT too:
 
 ```python
+# a = the needle (the ORIGINAL text being replaced)
+# b = the MUTANT (the replacement text) — naming the referent matters: two
+#     people counting backslashes on the same edit got 2 and 3 because one was
+#     counting `b` and the other the whole source line.
 assert a in s, "needle rotted — INVALID"
 assert b.count("\\") == 2 and "\\\\" not in b, "not the intended single-backslash mutant — INVALID"
 ```
@@ -1722,6 +1726,47 @@ FIXTURE, not the assertion.
 Related: [[verify-that-gates-actually-gate]]. See also §58b (a verifier fails open, and the fixture
 is as suspect as the assertion) and the `env-gotchas` entry on BSD-vs-GNU `\`` in single-quoted
 EREs, which is the bug this mutation was replaying.
+
+## 62. A session-scoped hook fires in EVERY checkout — "which repo is this?" is a question it must ask (#353)
+
+**What happened.** `pre-push-tests.sh` is registered in `.claude/settings.json`, which scopes it to
+the **session**, not to a directory. So it fired on `git push` inside a *different repository* — the
+project wiki, `github.com/mavrovde/beaconfolio.wiki` — and ran this project's backend and frontend
+suites against a docs-only push that could not possibly break them. Measured 2026-09-10: blocked
+twice.
+
+**Why that is a real cost and not an annoyance.** A gate that fires when it *cannot* be relevant is
+how operators learn to reach for bypass flags, and a bypass habit learned on irrelevant runs is
+spent on relevant ones. This is the erosion the v1.13.0 retro named; a false positive in a gate is
+not a lesser bug than a false negative, it is a slower one.
+
+**The rule, and its polarity.** Skipping is the exceptional path, so it must be **positively
+established** — exactly the #59/#377 argument, applied to a different question. Only a repository
+you can *prove* is a different one passes through; an unobtainable toplevel, an unobtainable
+remote, a matching remote, or any ambiguity runs the full gate.
+
+Two details that decide correctness:
+
+- **Identity is the normalised origin URL, not the path.** A git worktree of this project has a
+  different toplevel and must still be gated. Comparing directories would silently switch the gate
+  off for every worktree — the same "narrowing turns a gate off" shape as §59.
+- **Normalise carefully.** Strip `.git`, fold `git@host:` and `https://host/` to one form, lowercase
+  — but note `.wiki` must SURVIVE the `.git` strip, or `beaconfolio.wiki.git` reads as
+  `beaconfolio` and the wiki keeps being gated by the very check meant to release it.
+
+**And the harness half.** A mutation harness points the hook at a **copy** in a temp dir, where the
+hook's own `dirname "$0"/../..` no longer lands on the project — so a hook that derives "my project"
+from its own location cannot do so under test. Pass `CLAUDE_PROJECT_DIR` in the cases exactly as
+`.claude/settings.json` passes it in a real run. Discovered by the contract reporting
+`HARNESS INVALID` while these very cases were being written.
+
+**The reassuring half, worth stating:** throughout that failure the hook **failed closed** — an
+unidentifiable repository produced a spurious GATE, never a spurious skip. Fail-closed design is
+what turned a location-resolution bug into a wasted test round instead of an open gate. Build the
+polarity first and the bugs you have left are the affordable kind.
+
+Related: §59 (narrowing a gate is the change that can silently switch it off), §61 (assert the
+mutant is the intended one), and [[verify-that-gates-actually-gate]].
 
 ## Where the rules live (AI-config map)
 

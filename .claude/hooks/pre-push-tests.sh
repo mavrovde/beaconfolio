@@ -275,11 +275,54 @@ command_is_git_push() {
 
 command_is_git_push || allow
 
-# --- From here on, this IS a real push: run the gate. -----------------------
-if [ "$PREPUSH_DRY_RUN" = "1" ]; then printf 'GATE\n'; exit 0; fi
-
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 LOG="$PREPUSH_LOG"
+
+# --- FOREIGN REPO PASS-THROUGH (#353) ---------------------------------------
+# This hook is registered for the SESSION, not for a directory, so it fires on
+# `git push` in ANY checkout — including a different repository entirely. The
+# gate then runs THIS project's suites against a push that cannot possibly
+# break them. Measured 2026-09-10: a docs-only push of the project WIKI
+# (github.com/mavrovde/beaconfolio.wiki, a separate repository) was blocked
+# twice by main-repo test results. That is how operators learn to reach for
+# PREPUSH_FULL=0-style bypasses, which is the erosion the v1.13.0 retro warned
+# about — a gate that fires when it cannot be relevant teaches people to
+# disable it when it can.
+#
+# POLARITY, same as the leg selector (#377): skipping is the exceptional path,
+# so it must be POSITIVELY established. Only a repository we can prove is a
+# DIFFERENT one passes through. An unobtainable toplevel, an unobtainable
+# remote, a matching remote, or any ambiguity runs the full gate.
+#
+# The question is "whose CODE is being pushed", which is the repository the
+# command runs IN — not the destination URL. `git push <some-other-url>` still
+# pushes this project's commits and must still be gated.
+prepush_repo_identity() { # prepush_repo_identity <dir> -> normalised origin URL
+  git -C "$1" remote get-url origin 2>/dev/null \
+    | sed -E 's#^ssh://git@##; s#^git@([^:]+):#\1/#; s#^https?://##; s#/+$##; s#\.git$##' \
+    | tr 'A-Z' 'a-z'
+}
+PUSH_TOP="$(git rev-parse --show-toplevel 2>/dev/null || printf '')"
+ROOT_TOP="$(cd "$ROOT" 2>/dev/null && pwd -P || printf '')"
+if [ -n "$PUSH_TOP" ] && [ -n "$ROOT_TOP" ]; then
+  PUSH_TOP_P="$(cd "$PUSH_TOP" 2>/dev/null && pwd -P || printf '')"
+  if [ -n "$PUSH_TOP_P" ] && [ "$PUSH_TOP_P" != "$ROOT_TOP" ]; then
+    # Different directory is NOT enough — a git worktree of this project has a
+    # different toplevel and must still be gated. Identity is the origin URL.
+    THEIRS="$(prepush_repo_identity "$PUSH_TOP_P")"
+    OURS="$(prepush_repo_identity "$ROOT_TOP")"
+    # Note `.wiki` survives the `.git` strip, so beaconfolio.wiki and
+    # beaconfolio are correctly DIFFERENT identities.
+    if [ -n "$THEIRS" ] && [ -n "$OURS" ] && [ "$THEIRS" != "$OURS" ]; then
+      printf 'pre-push gate: foreign repo (%s), gates not applicable — this project is %s\n' \
+        "$THEIRS" "$OURS" >&2
+      allow
+    fi
+  fi
+fi
+
+# --- From here on, this IS a real push: run the gate. -----------------------
+if [ "$PREPUSH_DRY_RUN" = "1" ]; then printf 'GATE\n'; exit 0; fi
 
 # --- LEG SELECTION (#377) ---------------------------------------------------
 # Run the legs this diff can break, not all of them. The mapping, the

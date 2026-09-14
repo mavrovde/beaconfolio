@@ -490,6 +490,31 @@ GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
   run "phrase quoted in a comment body" allow "gh pr comment 284 --body 'do not gh pr merge 284 yet'"
 GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
   run "echo of the phrase" allow "echo 'next: gh pr merge 284'"
+# --- #353: the decision must not depend on the CWD ---------------------------
+# Reported 2026-09-10: `--mutations` from a foreign cwd (the wiki checkout) died
+# with "HARNESS BROKEN: identity should survive but died". It does NOT reproduce
+# today — measured 23 killed / 0 survived / 0 invalid from BOTH the repo root and
+# a foreign cwd — because `PR_MERGE_GATE_LOG` gained a hermetic default at the top
+# of this file in #392/#399, AFTER that report. The harness used to write the real
+# log path, which is what a foreign cwd disturbed. Fixed incidentally, so pin it:
+# an incidental fix with no case is a regression waiting for the next refactor.
+run_elsewhere() { # run_elsewhere <name> <expected> <command>
+  local name="$1" expect="$2" cmd="$3" got d
+  d="$(mktemp -d)"
+  got="$(cd "$d" && decide "$(payload "$cmd")")"
+  rm -rf "$d"
+  if [ "$got" = "$expect" ]; then PASS=$((PASS+1));
+  else FAIL=$((FAIL+1)); printf '  ✗ %s — expected %s, got %s (cwd-dependent decision)\n' "$name" "$expect" "$got"; fi
+}
+run_elsewhere "#353: a verdict-less merge denies from a FOREIGN cwd too" deny "gh pr merge 284"
+run_elsewhere "#353: an unrelated command allows from a FOREIGN cwd too" allow "git status"
+# The log path must be hermetic no matter where the suite runs — that is the
+# property whose absence caused the original report.
+case "${PR_MERGE_GATE_LOG:-}" in
+  "$STUB"/*) PASS=$((PASS+1)) ;;
+  *) FAIL=$((FAIL+1)); printf '  ✗ #353: PR_MERGE_GATE_LOG is not hermetic (%s) — the harness would write a real log\n' "${PR_MERGE_GATE_LOG:-unset}" ;;
+esac
+
 run "unrelated command" allow "git status"
 run "gh pr view is not a merge" allow "gh pr view 284 --json state"
 run "git merge is not a PR merge" allow "git merge origin/main"
