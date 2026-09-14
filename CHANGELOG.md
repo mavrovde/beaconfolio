@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- **v1.14.1 release retrospective + the cross-release read (#386)** — `docs/retrospectives/v1.14.1.md`
+  records the release under the counting conventions, and the trend table gains its row.
+  Measured: **17 PRs, 41 canonical verdicts, 2.41 mean rounds, 29% round-1 approvals (best in the
+  series), median 8 files/PR**.
+  - **Merges on a stale approval fell 4-of-10 → 0-of-16** — `pre-merge-gate.sh` working. Reported
+    with its limit: merge provenance is *unmeasurable* here (all 17 merges share one identity), so
+    the defensible claim is "no merge that reached the gate carried an uncovered commit".
+  - **The release's dominant defect class is C, the `[Unreleased]` collision — 7 of 16 reviewed
+    PRs**, including #365 where the merge **deleted the released `## [1.14.0]` heading**. The tool
+    and the `/prep-pr` step already existed; the gap is enforcement level, so the retro's main
+    action moves the check from a command to a lint measured against the merged result.
+  - **Corrects the KPI baseline published on #386**: "2 of 13 (15%)" was counted mid-assembly over a
+    partial corpus; canonical is **5 of 17 (29%)** and **41/17 = 2.41**.
+- **Two wiki articles (`docs/wiki/`)** — *Team and process*, how a one-human/eight-agent team ships
+  and why nearly every rule here is executable rather than written down; and *Delivery statistics*,
+  the v1.13.0 → v1.14.0 → v1.14.1 series with the v1.14.2 KPI plan and its falsifiers.
+  Discussion #387 opens both for comment.
+
 ### Changed
 - **The pre-push gate now runs only the legs the DIFF can break (#377)** — it ran the entire round
   on every push regardless of what changed, so a two-file documentation commit paid

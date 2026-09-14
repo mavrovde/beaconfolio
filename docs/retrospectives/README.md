@@ -32,6 +32,7 @@ Update this when you add a retro. These are the numbers worth watching; everythi
 | [v1.12.0](v1.12.0.md) | 10 | 24 / n-a¹ | **2.4** | 20% (2/10) | 58%⁴ | **9**⁵ | 17 | 9.07M² | 28.1h² |
 | [v1.13.0](v1.13.0.md) | 16 | 52 / **50** | **3.13** | **0% (0/16)** | 68%⁴ | **12**⁵ | 14 | not recorded³ | 23.5h tag→tag |
 | [v1.14.0](v1.14.0.md) | 11 | 23 / **20** | **1.82** | 27% (3/11)⁶ | 45%⁷ | **4**⁵ | 20 | **8.38M**³ | **35.5h**³ · 53.0h tag→tag |
+| [v1.14.1](v1.14.1.md) | 17 | 44 / **41** | **2.41** | **29% (5/17)** | 59%⁸ | **2**⁵ | 8 | ~2.60M⁹ | ~6.2h⁹ · 107h tag→tag |
 
 ¹ v1.12.0's verdict headings predate the mandated form, so a canonical-heading re-count undercounts
 that window (15). From v1.13.0 the heading is charter-mandated **and** gate-enforced, so this column
@@ -75,6 +76,25 @@ the `v1.14.0` tag sits on an uncovered commit; #321 was merged with **no verdict
 clauses 2 and 3 together: **all three** round-1 approvals are also stale merges, so the rate partly
 "recovered" by approving early and merging the fixes unreviewed. Its falsification clause did **not** trigger (class A went to zero and
 rounds FELL). See [v1.14.0.md §6](v1.14.0.md).
+
+⁸ Full 17-PR corpus: `(41 − 17)/41`. Over the **16** PRs actually reviewed (#355 merged with zero
+verdicts) it is `(41 − 16)/41` = **61%**. State which denominator you used.
+⁹ **26 recorded runs, SUBAGENT ONLY** — main-loop tokens excluded, so the true cycle cost is higher.
+**Not comparable with v1.14.0's 8.38M**, which came from Project 3 fields and included an unshipped
+in-progress item. The first two adjacent releases whose token figures can be honestly compared will
+be v1.14.1 ↔ v1.14.2. Captured live during the cycle — the release-manager correctly refused to
+reconstruct it afterwards, because it is not recoverable.
+
+**v1.14.0's standing prediction — early read at v1.14.1 (formal check still due at v1.15).** Stale
+approvals **0 of 16** ✅ (from 4 of 10 — `pre-merge-gate.sh` working); class-F blocker+major **2** ✅
+(target ≤2); PRs merged with **no verdict at all: 1** ❌ (#355, second release running after #321);
+**merged-result findings: 7** ❌ — class C, the `[Unreleased]` collision, hit **7 of 16 reviewed
+PRs**, including #365 where the merge **deleted the released `## [1.14.0]` heading** rather than
+duplicating one. Project 3 `Review rounds` ⚠️ filled for 6 of 14 rail issues, retroactively.
+**Read the ✅ on stale approvals with its limit:** the prescribed falsifier is merge provenance, and
+it is **unmeasurable here** — all 17 merges report `mergedBy: mavrovde`, since owner and agents share
+one identity and the API exposes no CLI-vs-web-UI distinction. The defensible claim is "no merge that
+*reached* the gate carried an uncovered commit"; #355 proves at least one did not reach it.
 
 **Standing prediction (set by v1.14.0, checked at v1.15):** zero merges whose newest canonical
 APPROVE predates a commit on the PR; zero PRs merged with no posted verdict at all; zero
