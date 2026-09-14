@@ -66,7 +66,12 @@ gate_bypass_trace() { # gate_bypass_trace <pr-or-unknown> <segment>
   # vanished entirely (#399 review, minor 7 — measured).
   { mkdir -p "$(dirname "$logf")" && printf '%s bypass PR=%s cmd=%s\n' "$ts" "$n" "$seg" >> "$logf"; } 2>/dev/null || :
   if [ "$n" != "unknown" ] && [ "${PR_MERGE_GATE_TRACE_COMMENT:-1}" = "1" ]; then
-    ( gh pr comment "$n" --body "## ⚠️ MERGE-GATE BYPASS — \\`PR_MERGE_GATE=0\\` was used for this merge at $ts (recorded by pre-merge-gate.sh; rule 13 audit, #392)" >/dev/null 2>&1 & ) || :
+    # NO BACKTICKS in this string (#399 round 2, major 1): the first version
+    # wrote \` inside double quotes, bash opened a command substitution, and
+    # the PR_MERGE_GATE=0 token VANISHED from the posted audit artifact — and
+    # survived because the test asserted only the CALL, never the body. The
+    # body assertion now exists; keep this plain text.
+    ( gh pr comment "$n" --body "## ⚠️ MERGE-GATE BYPASS — PR_MERGE_GATE=0 was used for this merge at $ts (recorded by pre-merge-gate.sh; rule 13 audit, #392)" >/dev/null 2>&1 & ) || :
   fi
 }
 flush_bypass_traces() {

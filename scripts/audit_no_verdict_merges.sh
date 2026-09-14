@@ -25,7 +25,9 @@
 # Reviews AND issue comments count (same-identity repos post comment
 # verdicts). Known hole, footnoted in docs/retrospectives/README.md: position
 # is not authorship. One jq expression; change it beside the gate's or not at
-# all.
+# all. One deliberate omission from the gate's expression: `.at != null` — the
+# gate orders candidates by time to find the NEWEST verdict; this detector
+# asks only whether ANY verdict exists, so recency plays no part.
 #
 # Exit: 0 = every merged PR in the window carries a verdict; 1 = at least one
 # does not (each is printed); 2 = cannot measure (API/jq failure) — fail LOUD,
@@ -38,7 +40,14 @@ FIXTURE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --since)   [ $# -ge 2 ] || { echo "audit: --since needs a value — cannot measure" >&2; exit 2; }
-               SINCE="$2"; shift 2 ;;
+               # A non-date here would flow into --search "merged:>=banana",
+               # which GitHub answers with an EMPTY window — a quiet green
+               # (#399 round 2, minor 2). Fail loud instead.
+               case "$2" in
+                 [0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]*) SINCE="$2" ;;
+                 *) echo "audit: --since '$2' is not an ISO date — cannot measure" >&2; exit 2 ;;
+               esac
+               shift 2 ;;
     --limit)   [ $# -ge 2 ] || { echo "audit: --limit needs a value — cannot measure" >&2; exit 2; }
                LIMIT="$2"; shift 2 ;;
     --fixture) FIXTURE="$2"; shift 2 ;;

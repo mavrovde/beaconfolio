@@ -294,6 +294,11 @@ GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
   _i=0; while [ ! -s "$STUB/comment.calls" ] && [ $_i -lt 20 ]; do sleep 0.1; _i=$((_i+1)); done
   if grep -q "pr comment 284" "$STUB/comment.calls" 2>/dev/null; then PASS=$((PASS+1));
   else FAIL=$((FAIL+1)); printf '  ✗ bypass never attempted the PR-comment trace (#392): %s\n' "$(cat "$STUB/comment.calls" 2>/dev/null)"; fi
+  # The BODY must carry the literal token (#399 round 2, major 1): a backtick
+  # in the first version made bash EAT `PR_MERGE_GATE=0` as a command
+  # substitution, and only the call was asserted — a textbook §58b hole.
+  if grep -q "PR_MERGE_GATE=0 was used" "$STUB/comment.calls" 2>/dev/null; then PASS=$((PASS+1));
+  else FAIL=$((FAIL+1)); printf '  ✗ the posted bypass comment lost the PR_MERGE_GATE=0 token (#399 r2 major 1): %s\n' "$(cat "$STUB/comment.calls" 2>/dev/null)"; fi
   # A DENIED command must leave NO trace: publishing "was used for this merge"
   # on a PR that never merged is a false public record (#399 review, major 3).
   : > "$_blog"; : > "$STUB/comment.calls"

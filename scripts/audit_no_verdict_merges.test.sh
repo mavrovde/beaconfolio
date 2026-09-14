@@ -137,6 +137,11 @@ rc=$(live '[{"number":7,"title":"ok pr","mergedAt":"2026-09-14T01:00:00Z"}]' '{"
 if [ "$rc" = 0 ] && grep -q "all 1 merged PR" "$T/out"; then ok
 else bad "live: a clean window must report the all-clear line" "rc=$rc $(cat "$T/out")"; fi
 
+# a non-date --since is cannot-measure, never a quiet green (#399 r2 minor 2)
+rc=$(live '[{"number":9,"title":"x","mergedAt":"2026-09-14T01:00:00Z"}]' '' '--since banana')
+if [ "$rc" = 2 ] && grep -q "not an ISO date" "$T/out"; then ok
+else bad "live: --since banana must be cannot-measure (2)" "rc=$rc $(cat "$T/out")"; fi
+
 # a dirty live window goes red through the stub
 rc=$(live '[{"number":8,"title":"quiet merge","mergedAt":"2026-09-14T01:00:00Z"}]' '{"number":8,"title":"quiet merge","reviews":[],"comments":[]}')
 if [ "$rc" = 1 ] && grep -q "NO-VERDICT merged PR #8" "$T/out"; then ok
@@ -194,6 +199,10 @@ fi' assert_red_on_none
   mutate "the strict live parse is dropped (Bad credentials reports green)" \
     "jq -e 'type == \"array\" and all(.[]; has(\"number\") and has(\"mergedAt\"))'" \
     "jq -e 'true'" assert_badcreds_2
+  assert_banana_2() { PATH="$GSTUB:$PATH" GH_FAKE_LIST='[{"number":9,"title":"x","mergedAt":"2026-09-14T01:00:00Z"}]' bash "$1" --since banana >"$T/out" 2>&1; [ $? = 2 ]; }
+  mutate "the --since date guard is dropped (banana flows into --search as a quiet green)" \
+    "[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]*) SINCE=\"\$2\" ;;" \
+    "*) SINCE=\"\$2\" ;;" assert_banana_2
   echo "audit_no_verdict mutations: $KILLED killed, $SURVIVED survived, $INVALID invalid"
   [ "$SURVIVED" -eq 0 ] && [ "$INVALID" -eq 0 ] || FAIL=$((FAIL+1))
 fi
