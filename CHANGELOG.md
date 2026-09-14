@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Placeholder for next release.
+
+## [1.14.2] - 2026-09-14
+
+### Added
 - **SonarCloud analysis is actually wired up, and Sonar findings are reachable from Claude (#359)**
   — the workflow had been secrets-gated since #359, but the repository secret store held **neither**
   `SONAR_TOKEN` nor `SONAR_HOST_URL`, so `check-secrets` reported `enabled=false` and the `Analysis`

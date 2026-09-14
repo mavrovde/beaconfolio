@@ -1839,7 +1839,7 @@ misreports the repo. The cleanup cost 237 one-by-one `PATCH .../code-scanning/al
 dismissals under secondary-rate-limit pacing. **Before renaming any SARIF category, plan the
 migration: dismiss (reversible, auditable) or delete the retired category's analyses (fast, but
 destroys history — owner authorization under rule 9's spirit).** The same trap is charted in
-`.claude/agents/security-triage.md`. Related: §the "normalised red" argument in #372 — a signal
+`.claude/agents/security-triage.md`. Related: the "normalised red" argument in #372 — a signal
 that always means nothing stops being a signal.
 
 ## Where the rules live (AI-config map)
