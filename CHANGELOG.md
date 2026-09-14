@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Certificate-expiry alarm in the Live Freshness workflow (#310)** — a daily "Certificate
+  expiry" step measures `notAfter` for every hostname in the `TLS_HOSTNAMES` repository variable
+  (default: the maintainer's three) and goes red under 21 days remaining — Caddy renews at ~30
+  days left, so red means renewal has been failing for about nine days. Runs independently of
+  the staleness probe (`if: always()`); Let's Encrypt stopped expiry emails on 2025-06-04, so
+  this is the only pre-lapse alarm. The wiki's renewal section now points at it, and its
+  backup section records the nightly `pg_dump` cron installed on the host
+  (`/etc/cron.d/beaconfolio-backup`, verify-then-commit, 14-day retention).
 - **v1.14.2 release retrospective (#386)** — `docs/retrospectives/v1.14.2.md`, the fifth in the
   series, with the trend table in `docs/retrospectives/README.md` extended by two columns the
   release's own evidence demanded: **Merged w/o valid APPROVE** and **Class G** (fake-greens).
