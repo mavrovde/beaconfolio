@@ -23,7 +23,9 @@
 #      line inside a ``` fence is content, not a heading);
 #   3. no released `## [X.Y.Z]` heading present on REF but absent from the merge
 #      — the #365 case, where a merge DELETED the `## [1.14.0]` section and a
-#      heading-count check passed;
+#      heading-count check passed. De-rotation-aware (v1.14.3 revert): the
+#      newest heading may disappear when the base is freshly rotated and every
+#      section line survives in [Unreleased] — reverting an UNSHIPPED release;
 #   4. no `[Unreleased]` content line present on REF but absent from the merge —
 #      a lost line means the rebase dropped someone else's entry. Set semantics,
 #      so reordering sections (which the dedup fixer legitimately does) passes.
@@ -134,9 +136,46 @@ for name, count in seen.items():
 # Compared RSTRIPPED on both sides, like check 4 — the first draft compared raw
 # lines, so a CRLF base against an LF merge false-FAILED here while check 4
 # shrugged (#398 review): a lint that cries wolf on line endings gets bypassed.
+# DE-ROTATION-AWARE (v1.14.3 revert): reverting a release that never shipped
+# (deploy cancelled pre-rollout, no tag) deletes the released heading and moves
+# its section back under [Unreleased] — the exact mirror of check 4's rotation.
+# The exemption is deliberately narrow, three conditions ANDed, so the #365
+# accident shape stays red: the missing heading must be the base's NEWEST
+# release, the base [Unreleased] must still be the freshly-rotated stub (no
+# real entries — a revert lands as the very next PR after the rotation), and
+# every non-empty line of the deleted section must survive in the merged
+# [Unreleased]. Any content loss, any older heading, any real base entry →
+# fail exactly as before.
+PLACEHOLDER = "- Placeholder for next release."
+
+def released_section(lines, heading):
+    """Non-empty content lines of the released section under `heading` (rstripped)."""
+    start = next((i for i, l in enumerate(lines) if l.rstrip() == heading), None)
+    if start is None:
+        return []
+    end = next((i for i in range(start + 1, len(lines)) if RELEASED.match(lines[i])),
+               len(lines))
+    return [l.rstrip() for l in lines[start + 1:end] if l.strip()]
+
 merged_released = {l.rstrip() for l in merged if RELEASED.match(l)}
+first_base_released = next((l.rstrip() for l in base if RELEASED.match(l)), None)
+# `### ` headings are structure, not entries — a freshly rotated [Unreleased]
+# is `### Added` + the stub, and losing a heading line is check 4's business.
+base_unrel_real = [l for l in unreleased_block(base)
+                   if l.strip() and l.rstrip() != PLACEHOLDER
+                   and not l.startswith("### ")]
+merged_unrel = {l.rstrip() for l in unreleased_block(merged) if l.strip()}
 for l in base:
     if RELEASED.match(l) and l.rstrip() not in merged_released:
+        sec = released_section(base, l.rstrip())
+        if l.rstrip() == first_base_released and not base_unrel_real and sec and all(s in merged_unrel for s in sec):
+            # the note must NOT contain the words "check 3" — the mutation
+            # contract's assertions grep for a check's name to attribute a
+            # kill, and a note that echoes it satisfies the grep while the
+            # check itself is neutered (measured: the blanket mutant SURVIVED
+            # on exactly that until this wording changed).
+            print(f"note: `{l.strip()}` de-rotated back into [Unreleased] (unshipped-release revert) — every content line survives")
+            continue
         failures.append(f"check 3: released heading on base is ABSENT from the merge: `{l.strip()}`")
 
 # 4. no [Unreleased] content line lost (set semantics: reorder and dedup pass).
@@ -166,8 +205,8 @@ for line in merged:
 # first-contact failure of this lint (the other two: the release rotation that
 # cost #406 its round 1, and #400's GNU-grep inertness) — see
 # docs/retrospectives/v1.14.2.md §3, class N. The exemption is ONE exact string
-# the release process itself writes, so it cannot absolve a real entry.
-PLACEHOLDER = "- Placeholder for next release."
+# the release process itself writes (PLACEHOLDER, defined at check 3), so it
+# cannot absolve a real entry.
 merged_set = {l.rstrip() for l in unreleased_block(merged) if l.strip()}
 for l in unreleased_block(base):
     if l.rstrip() == PLACEHOLDER:

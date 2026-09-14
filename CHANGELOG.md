@@ -5,11 +5,6 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- Placeholder for next release.
-
-## [1.14.3] - 2026-09-14
-
-### Added
 - **v1.14.2 release retrospective (#386)** — `docs/retrospectives/v1.14.2.md`, the fifth in the
   series, with the trend table in `docs/retrospectives/README.md` extended by two columns the
   release's own evidence demanded: **Merged w/o valid APPROVE** and **Class G** (fake-greens).
@@ -61,6 +56,18 @@ All notable changes to this project will be documented in this file.
   that shipped, and it is the class the retro spends §3 counting.
 
 ### Fixed
+- **Reverted the premature v1.14.3 version bump (#411)** — the release PR was cut with only
+  #381 and the v1.14.2 retrospective delivered while 12 issues planned under `release:v1.14.3`
+  were still open; the deploy run was cancelled before rollout, so prod stayed at 1.14.2 and no
+  tag or GitHub release exists. This restores every version carrier and the CHANGELOG to the
+  1.14.2 baseline; v1.14.3 will be released when its planned scope has actually shipped.
+- **`check_changelog_merge.sh` check 3 is de-rotation-aware** — reverting an *unshipped*
+  release is the mirror of a rotation (newest released heading deleted, its section restored
+  under `[Unreleased]`), and check 3 read it as the #365 deleted-heading accident. The exemption
+  is three ANDed conditions (newest heading only, base `[Unreleased]` still the rotation stub,
+  every section line survives in the merged `[Unreleased]`), so any content loss or any older
+  heading still fails; self-test +2 cases, mutation contract now 9 killed / 0 survived / 0
+  invalid including a blanket-exemption mutant.
 - **The three Snyk residuals from #373's review land (#381)** — (1) the patched `linkedin-api`
   wheel version now has exactly ONE source: `backend/scripts/patch_linkedin.sh` derives it from
   `requirements.txt` (`linkedin-api==<ver>`), and `backend/Dockerfile` runs that script instead of
