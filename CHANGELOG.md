@@ -85,9 +85,18 @@ All notable changes to this project will be documented in this file.
     heading"). #371 had weakened the promise to match the bug; that is the documentation equivalent
     of the silent-deletion mistake lessons §58 was written about — a tool that rewrites a file of
     record must fail by doing LESS, never by dropping silently.
-  - Proven, not asserted: self-test **26 passed / 0 failed**, and a mutant reintroducing the
-    whole-file collapse makes exactly the new case fail (**25 passed / 1 failed**). Against the
-    repo's real `CHANGELOG.md`, `diff` of everything from `## [1.` down is **empty**.
+  - **A second bug had to be fixed before "byte-for-byte" was true** (#390 review): `open()` did
+    universal-newline translation, so CRLF and lone-CR line endings were rewritten to LF and the
+    write-back made it permanent — and a lone `\r` inside a released entry is a **content** change,
+    not whitespace. Both opens now pass `newline=""`.
+  - **The first assertion could not see any of this.** `tail="$(sed -n ...)"` strips trailing
+    newlines and is line-oriented, so trailing whitespace, a missing final newline and CR bytes were
+    structurally invisible; two mutants survived it at a green 26/0. The case now extracts the tail
+    as raw bytes and uses `cmp`.
+  - Proven, not asserted: self-test **28 passed / 0 failed**, and **four** mutants each make it go
+    red — whole-file collapse (27/1), `rstrip` over the tail (26/2), dropping the final newline
+    (25/3), and reverting `newline=""` (26/2). Against the repo's real `CHANGELOG.md`, `diff` of
+    everything from `## [1.` down is **empty**; 28 release headings and 235 entries unchanged.
 
 ## [1.14.1] - 2026-09-14
 
