@@ -47,6 +47,23 @@ describe('HeroComponent', () => {
     vi.restoreAllMocks();
   });
 
+
+  it('renders the runtime photo URL until the API errors (#333)', () => {
+    const img = fixture.debugElement.query(By.css('[data-testid="profile-photo"]'))
+      .nativeElement as HTMLImageElement;
+    expect(img.getAttribute('src')).toBe(component.photoUrl);
+    expect(component.photoUrl).toContain('/profile/photo');
+  });
+
+  it('falls back to the baked placeholder on img error (#333)', () => {
+    const imgDe = fixture.debugElement.query(By.css('[data-testid="profile-photo"]'));
+    imgDe.triggerEventHandler('error', new Event('error'));
+    fixture.detectChanges();
+    const img = imgDe.nativeElement as HTMLImageElement;
+    expect(component.photoFailed).toBe(true);
+    expect(img.getAttribute('src')).toBe('assets/images/profile.png');
+  });
+
   it('create', () => {
     expect(component).toBeTruthy();
   });

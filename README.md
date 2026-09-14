@@ -172,6 +172,10 @@ Then open <http://localhost:4200> (public site) and <http://admin.localhost:4200
    `BEACONFOLIO_ANALYTICS_ID` (identity, #65) · `PUBLIC_SERVER_NAME`/`ADMIN_SERVER_NAME` (your
    domain) · `IMAGE_REPO` (your registry, for prod).
 2. Admin panel: upload your **Profile Data** JSON and your **CV** (Content → replaces the demo).
+   Your **portrait** is a runtime upload too (#333): `POST /api/app/admin/profile/photo`
+   (JPEG/PNG ≤ 5 MB, checked by content) — the hero swaps to it immediately, it lives in the DB
+   (survives every rollout), and with no upload the bundled placeholder renders. `/linkedin-sync`
+   can source it from your LinkedIn avatar; remove with `DELETE` on the same route.
 3. Optional: LinkedIn import (`importer/README.md`), Gemini key (`BEACONFOLIO_GEMINI_API_KEY` —
    empty keeps the free local Ollama).
 

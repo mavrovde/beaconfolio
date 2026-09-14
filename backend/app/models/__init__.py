@@ -5,6 +5,7 @@ from app.models.interaction import Interaction
 from app.models.interview import Interview
 from app.models.opportunity import Opportunity, OpportunityNote
 from app.models.post import Post
+from app.models.profile_photo import ProfilePhoto
 from app.models.profile_snapshot import ProfileSnapshot
 from app.models.site_setting import SiteSetting
 from app.models.tailored_link import TailoredLink
@@ -19,6 +20,7 @@ __all__ = [
     "Opportunity",
     "OpportunityNote",
     "Post",
+    "ProfilePhoto",
     "ProfileSnapshot",
     "SiteSetting",
     "TailoredLink",

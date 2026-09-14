@@ -15,7 +15,14 @@ Chromium is unavailable.
    - `BEACONFOLIO_API_URL=<target> LINKEDIN_IMPORT_TOKEN=<token> python -m importer --dry-run`
    - then without `--dry-run`. Imports are drafts by default (add `--publish` only if asked).
    - Upsert is by LinkedIn URN (idempotent). For image downloads set `LINKEDIN_COOKIE_LI_AT`.
-3. **Verify**: confirm rows landed (`source_urn` populated, images stored) and the image endpoint
+3. **Portrait** (#333): the profile scrape also saves `scraper/profile_photo.jpg` (gitignored —
+   a real face must never be committed to this PUBLIC repo, #66). Upload it through the admin
+   endpoint so it lands in the DB and survives rollouts:
+   - `TOKEN=$(curl -s -X POST <target>/api/app/auth/login -d 'username=<admin>&password=<pass>' | jq -r .access_token)`
+   - `curl -s -X POST <target>/api/app/admin/profile/photo -H "Authorization: Bearer $TOKEN" -F file=@scraper/profile_photo.jpg`
+   - Verify: `curl -sI <target>/api/app/profile/photo` returns 200 with an image content-type.
+   Skip if the file wasn't produced (no avatar on the profile) — the hero keeps its placeholder.
+4. **Verify**: confirm rows landed (`source_urn` populated, images stored) and the image endpoint
    `GET /api/app/posts/{id}/image` serves.
 
 Default target is `http://localhost:8000`. Only target production when explicitly asked, and only

@@ -65,3 +65,4 @@ backend/perf/results/
 
 # SonarQube local scanner workdir (scripts/sonar_local.sh, #359)
 .scannerwork/
+scraper/profile_photo.*

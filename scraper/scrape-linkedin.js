@@ -8,6 +8,9 @@ config();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_FILE = join(__dirname, 'profile_data.json');
+// #333: the avatar lands in a GITIGNORED file — a real face must never enter
+// this PUBLIC repo (#66); it reaches the site only via the admin photo upload.
+const PHOTO_FILE = join(__dirname, 'profile_photo.jpg');
 const USER_DATA_DIR = join(__dirname, '.chrome-profile');
 
 const LINKEDIN_EMAIL = process.env.LINKEDIN_EMAIL;
@@ -281,6 +284,7 @@ async function main() {
 
     const profile = buildProfile(included);
     writeFileSync(OUTPUT_FILE, JSON.stringify(profile, null, 2), 'utf-8');
+    await downloadPhoto(page, included);
 
     console.log('\n========== RESULT ==========');
     console.log(`Name:            ${profile.name}`);
@@ -297,6 +301,44 @@ async function main() {
     console.error('Error:', e.message);
   } finally {
     await context.close();
+  }
+}
+
+// ─────────────────────────── Avatar (#333) ───────────────────────────
+// LinkedIn is the designated portrait source when no other exists (owner
+// directive 2026-09-14). The voyager payload carries the avatar as a
+// vectorImage (rootUrl + per-size artifacts); take the largest.
+function extractPhotoUrl(included) {
+  for (const e of included) {
+    const vec =
+      (e.profilePicture && e.profilePicture.displayImageReference && e.profilePicture.displayImageReference.vectorImage) ||
+      (e.profilePicture && e.profilePicture.displayImage && e.profilePicture.displayImage.vectorImage);
+    if (vec && vec.rootUrl && Array.isArray(vec.artifacts) && vec.artifacts.length) {
+      const best = [...vec.artifacts].sort((a, b) => (b.width || 0) - (a.width || 0))[0];
+      if (best && best.fileIdentifyingUrlPathSegment) {
+        return vec.rootUrl + best.fileIdentifyingUrlPathSegment;
+      }
+    }
+  }
+  return null;
+}
+
+async function downloadPhoto(page, included) {
+  const url = extractPhotoUrl(included);
+  if (!url) {
+    console.log('Photo:           — (no avatar in the profile payload)');
+    return;
+  }
+  try {
+    // page.request rides the authenticated session's cookies.
+    const res = await page.request.get(url);
+    if (!res.ok()) throw new Error(`HTTP ${res.status()}`);
+    const body = await res.body();
+    writeFileSync(PHOTO_FILE, body);
+    console.log(`Photo:           ${body.length} bytes -> ${PHOTO_FILE} (gitignored; upload via /linkedin-sync step 3)`);
+  } catch (err) {
+    // The photo is a nice-to-have leg of the scrape — never fail the profile run over it.
+    console.log(`Photo:           download failed (${err.message}) — continuing without`);
   }
 }
 

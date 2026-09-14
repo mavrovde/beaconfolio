@@ -3,11 +3,12 @@ import uuid
 from math import ceil
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.logger import logger
+from app.models.profile_photo import ProfilePhoto
 from app.models.profile_snapshot import ProfileSnapshot
 from app.models.user import User
 from app.services.auth import get_current_admin_user
@@ -197,3 +198,94 @@ async def activate_profile_version(
         raise HTTPException(
             status_code=500, detail="Failed to activate profile version"
         )
+
+
+# --- Portrait (#333) --------------------------------------------------------
+
+# Bounded like the profile JSON above: even an authenticated admin (or a
+# stolen admin token) must not be able to exhaust memory with a huge body.
+MAX_PROFILE_PHOTO_BYTES = 5 * 1024 * 1024  # 5 MB
+
+# Magic-byte signatures, not client-declared content types — a filename or a
+# Content-Type header is an assertion, the first bytes are evidence. JPEG and
+# PNG only: the two formats the issue names and every browser renders.
+_PHOTO_SIGNATURES = (
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+)
+
+
+def _sniff_photo_type(raw: bytes) -> str | None:
+    for magic, content_type in _PHOTO_SIGNATURES:
+        if raw.startswith(magic):
+            return content_type
+    return None
+
+
+@router.post("/photo")
+async def upload_profile_photo(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    """Upload the owner's portrait (JPEG/PNG). REPLACES any previous one.
+
+    Single-active, no versions: old bytes of a face have no replay value,
+    only PII surface (#66) — so the previous row is deleted, not deactivated.
+    Served publicly by ``GET /profile/photo``; the DB row survives rollouts,
+    which is the whole point (#333).
+    """
+    raw = await file.read(MAX_PROFILE_PHOTO_BYTES + 1)
+    if len(raw) > MAX_PROFILE_PHOTO_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Photo exceeds {MAX_PROFILE_PHOTO_BYTES // (1024 * 1024)} MB limit.",
+        )
+    content_type = _sniff_photo_type(raw)
+    if content_type is None:
+        raise HTTPException(
+            status_code=400,
+            detail="File is not a JPEG or PNG image (checked by content, not filename).",
+        )
+    try:
+        await db.execute(delete(ProfilePhoto))
+        photo = ProfilePhoto(content_type=content_type, data=raw)
+        db.add(photo)
+        await db.commit()
+        await db.refresh(photo)
+    except Exception as e:
+        logger.error("Error storing profile photo: %s", e)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to store profile photo")
+    logger.info(
+        "Admin %s uploaded profile photo (%s, %d bytes)",
+        admin.email,
+        content_type,
+        len(raw),
+    )
+    return {
+        "success": True,
+        "id": photo.id,
+        "content_type": content_type,
+        "bytes": len(raw),
+    }
+
+
+@router.delete("/photo")
+async def delete_profile_photo(
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(get_current_admin_user),
+):
+    """Remove the portrait: the public endpoint 404s again and the hero
+    falls back to its baked placeholder — the pristine fork state."""
+    try:
+        result = await db.execute(delete(ProfilePhoto))
+        await db.commit()
+    except Exception as e:
+        logger.error("Error deleting profile photo: %s", e)
+        await db.rollback()
+        raise HTTPException(status_code=500, detail="Failed to delete profile photo")
+    # CursorResult in practice; typed as Result, which lacks rowcount.
+    removed = int(getattr(result, "rowcount", 0) or 0)
+    logger.info("Admin %s removed profile photo (%d row(s))", admin.email, removed)
+    return {"success": True, "removed": removed}
