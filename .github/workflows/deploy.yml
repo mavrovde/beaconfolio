@@ -440,6 +440,27 @@ jobs:
           fi
       - name: Self-test the migration-heads checker itself
         run: bash scripts/check_migration_heads.test.sh
+      # Merged-CHANGELOG contract (#391, v1.14.1 retro change A): the
+      # [Unreleased] collision exists only in the MERGED result — 5 of 16
+      # reviewed v1.14.1 PRs hit it at blocker level, and #365's variant
+      # DELETED a released heading. Same residual as the migration lint:
+      # GitHub does not re-run PR checks when the base moves, so the
+      # pre-push run against origin/main is the layer that catches a
+      # collision opened by someone else's merge.
+      - name: Merged-CHANGELOG contract (branch merged with its base)
+        run: |
+          BASE=""
+          if [ -n "${{ github.base_ref }}" ]; then
+            git fetch --no-tags --depth=50 origin "${{ github.base_ref }}" 2>/dev/null \
+              && BASE="FETCH_HEAD"
+          fi
+          if [ -n "$BASE" ]; then
+            bash scripts/check_changelog_merge.sh --against "$BASE"
+          else
+            bash scripts/check_changelog_merge.sh --against HEAD
+          fi
+      - name: Self-test the merged-changelog checker itself
+        run: bash scripts/check_changelog_merge.test.sh --mutations
 
   # ============================================
   # PROXY QA
