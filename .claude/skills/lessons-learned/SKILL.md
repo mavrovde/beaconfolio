@@ -1506,34 +1506,57 @@ prevent* — proof the author had never run it on their own branch.
   pre-push gate in the SAME PR, or it is unexamined by anything.
 - **Run your own tool on your own branch before asking for review.** The reviewer proved it had
   not been, in one command.
-### 58b. A VERIFIER fails open by default — the same bug recurs at each level you add (#383/#390)
+## 58b. A VERIFIER fails open by default — and the hole is as often in the FIXTURE as in the assertion (#383/#390)
 
-Fixing §58's tool needed a test asserting "the released tail is byte-identical". That assertion
-was wrong **three times in one PR**, each time in the same shape: *the check passed when it had
+Fixing §58's tool needed a test asserting "the released tail is byte-identical". That test was
+wrong **three times in one PR**, each time in the same shape: *the check passed when it had
 verified nothing.*
 
-1. `tail="$(sed -n '/^## \[1\./,$p' "$f")"` then `[ "$a" = "$b" ]` — command substitution strips
-   trailing newlines and `sed` is line-oriented, so trailing whitespace, a missing final newline
-   and CR bytes were **structurally invisible**. Two mutants survived at a green 26/0.
+1. `tail_before="$(sed -n '/^## \[1\.2\.0\]/,$p' "$f")"` then `[ "$a" = "$b" ]`. Command
+   substitution strips trailing newlines, so **a missing final newline was invisible**. Two mutants
+   survived at a green 26/0.
 2. Replaced with a byte extractor + `cmp`. The extractor hardcoded the fixture's heading and wrote
    a `<MISSING>` sentinel on miss — so a renamed heading gave **both** snapshots the same sentinel
    and `cmp` compared nothing. Measured: rename the heading, reintroduce the bug, get
    **28 passed / 0 failed with a green tick on the case meant to catch it**.
 3. Made the extractor `exit 1` on miss. But the call sites ignore the return and the file has no
    `set -e`, so a failed extraction left **two empty snapshots — and `cmp -s` calls two empty files
-   equal**. Loud (stderr) but still a pass.
+   equal**. Loud on stderr, still a pass.
 
-**The rule:** a verifier's failure mode is to pass, so every layer you add to one needs its own
-proof. Concretely — compare BYTES not strings when you claim bytes; never let "could not extract"
-produce a comparable value (a sentinel, an empty file, a default); assert the input to the compare
-is non-empty, because `cmp`, `diff` and `==` all say "equal" about two nothings; and derive the
-fixture from what the mutant must change — the `rstrip` mutant survived partly because the fixture
-had **no trailing whitespace to strip**, so the assertion *and* the fixture were each independently
-too weak.
+**Where the holes actually were — measured, because the obvious attribution is wrong.** It is
+tempting to blame the string compare for everything in (1). Run it:
 
-**And the fixture is part of the test.** Round 2's reviewer proved which half mattered by rebuilding
-the suite with the NEW assertion and the OLD fixture and watching the case go green again. Do that
-decomposition rather than fixing both and assuming either worked.
+| difference | seen by `[ "$(sed …)" = "$(sed …)" ]`? | real cause |
+|---|---|---|
+| missing final newline | **no** | the assertion |
+| trailing spaces / tabs | **yes** | the fixture had none |
+| CR bytes | **yes** | the fixture had none |
+
+`$(...)` strips only *trailing newlines*; it preserves trailing spaces inside lines and preserves
+`\r`. So **one assertion hole and two fixture holes** — the `rstrip` and CRLF mutants survived not
+because the compare was blind but because the fixture gave them **nothing to change**. That is the
+sharper lesson: a mutant that cannot alter your fixture is untested no matter how good your
+assertion is.
+
+**The rule.** A verifier's failure mode is to pass, so every layer you add to one needs its own
+proof:
+
+- compare BYTES, not strings, when you claim bytes;
+- never let "could not extract" produce a **comparable** value — a sentinel, an empty file, a
+  default. Two nothings are "equal" to `cmp`, to `diff` and to `==`; all three were checked;
+- assert the compare's inputs are non-empty;
+- **derive the fixture from what each mutant must change.** If the mutant strips trailing
+  whitespace, the fixture needs trailing whitespace.
+
+**Prove which half carried the weight, don't fix both and assume.** The reviewer settled it by
+rebuilding the suite with the NEW assertion and the OLD fixture and watching the case go green
+again. Decomposition beats intuition here, and intuition was wrong twice above.
+
+**The reviewer is subject to this too** — recorded at its own request. Round 2 found the
+`<MISSING>` sentinel but examined only the helper, never tracing out to ask whether the call sites
+checked its return; round 3 found exactly that. **When you find a verifier that fails open, follow
+the data flow from the failure all the way to the assertion in the SAME pass** — otherwise each
+level costs its own round. Two of this PR's four rounds were one finding split in half.
 
 ## 59. NARROWING a gate is the one change that can silently switch it off — so the narrowing rule must fail by doing MORE (#377)
 

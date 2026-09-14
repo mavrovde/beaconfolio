@@ -102,9 +102,13 @@ All notable changes to this project will be documented in this file.
   - **…and the fix to that had the same shape again.** `cut_tail`'s non-zero exit does not
     propagate (the call sites ignore it, and the file runs without `set -e`), so a failed
     extraction left two EMPTY snapshots — and `cmp -s` calls two empty files equal. Both compare
-    sites now require `[ -s ]` on each snapshot. **Three instances of one class in a single PR**,
-    recorded as lessons **§58b**: a verifier's failure mode is to pass, so every layer added to one
-    needs its own proof.
+    sites now require `[ -s ]` on each snapshot, and report an empty snapshot as an **extraction**
+    failure rather than a rewrite — `cmp` prints nothing for two empty files, so the old detail was
+    blank and pointed at the wrong file. **Three instances of one class in a single PR**, recorded
+    as lessons **§58b**: a verifier's failure mode is to pass, so every layer added to one needs its
+    own proof — and, measured during review, **the hole is as often in the FIXTURE as in the
+    assertion** (`$(...)` strips only trailing newlines, so trailing spaces and CR bytes *were*
+    visible; those two mutants survived because the fixture gave them nothing to change).
   - Proven, not asserted: self-test **28 passed / 0 failed**, and **four** mutants each make it go
     red — whole-file collapse (27/1), `rstrip` over the tail (26/2), dropping the final newline
     (25/3), and reverting `newline=""` (26/2). Against the repo's real `CHANGELOG.md`, `diff` of
