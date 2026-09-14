@@ -320,6 +320,58 @@ warn="$(python3 -W error::SyntaxWarning "$SCRIPT" "$f" 2>&1 >/dev/null)"
 [ -z "$warn" ] && ok "no SyntaxWarning / stderr noise" || bad "stderr noise" "$warn"
 rm -f "$f"
 
+# --- 8b. #383: the tail below the first released heading is BYTE-FOR-BYTE ----
+# The blank-line collapse used to run over the whole reconstructed file, so it
+# silently removed blank lines inside SHIPPED release notes. Cosmetic in prose,
+# but a released section holding a fenced block has its internal blank lines
+# collapsed too — a content change in the file of record.
+# This case fails if the collapse ever runs over the tail again.
+f="$(mktemp)"
+cat > "$f" <<'EOSNIP'
+# Changelog
+
+## [Unreleased]
+
+### Added
+- one
+
+
+### Added
+- two
+
+## [1.2.0] - 2026-01-01
+
+### Fixed
+
+
+- a released entry after TWO blank lines
+
+```bash
+echo one
+
+echo two
+```
+
+
+- trailing released entry
+
+## [1.1.0] - 2025-12-01
+
+### Added
+- older
+EOSNIP
+tail_before="$(sed -n '/^## \[1\.2\.0\]/,$p' "$f")"
+run "$f"; out="$RUN_OUT"
+tail_after="$(sed -n '/^## \[1\.2\.0\]/,$p' "$f")"
+[ "$tail_before" = "$tail_after" ] \
+  && ok "#383: released tail is byte-for-byte identical (blank lines + fence preserved)" \
+  || bad "#383: released tail was rewritten" "$(diff <(printf '%s' "$tail_before") <(printf '%s' "$tail_after") | head -6)"
+# and the fix must not cost the actual job: the duplicate ### Added still merges
+[ "$(grep -c '^### Added' "$f")" = 2 ] \
+  && ok "#383: [Unreleased] still deduped (one ### Added there, one in 1.1.0)" \
+  || bad "#383: dedup broke" "$(grep -n '^### Added' "$f")"
+rm -f "$f"
+
 # --- 9. THE REAL FILE: running it on the repo's own CHANGELOG loses nothing -
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 if [ -f "$ROOT/CHANGELOG.md" ]; then

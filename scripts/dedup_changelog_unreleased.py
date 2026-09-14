@@ -22,10 +22,13 @@ asked", never "silently dropped something":
   * Fenced code blocks are not scanned for bullets, so a `- ` line inside a
     ``` fence stays with its entry instead of being torn out as a new one.
   * Everything from the first released section (`## [x.y.z]`) down is copied
-    unchanged line-for-line; only the `[Unreleased]` block is ever rewritten.
-    (A final pass collapses runs of blank lines across the whole file, so the
-    bytes below can differ by whitespace alone — never by content. The self-test
-    asserts every release heading and every entry survives.)
+    **byte-for-byte**; only the `[Unreleased]` block is ever rewritten. The
+    blank-line collapse runs over the rebuilt block alone, never the tail — it
+    used to run over the whole file and silently dropped blank lines inside
+    shipped release notes (#383). A guarantee was weakened once to match that
+    bug; the behaviour is fixed instead, so the strong promise holds again and a
+    self-test case asserts it against a released section containing a fenced
+    block.
   * A file with no `[Unreleased]` section is left untouched (exit 0, says so).
 
 It is idempotent: running it twice changes nothing the second time. Verify after
@@ -160,19 +163,28 @@ def main(path):
             out.extend(rstrip_block(entry))
         out.append("")
 
-    new = lines[:start + 1] + [""] + out + lines[end:]
-    # collapse any run of blank lines introduced above
-    collapsed, blank = [], False
-    for line in new:
+    # Collapse runs of blank lines in the REBUILT BLOCK ONLY (#383). This pass
+    # used to run over the whole reconstructed file, including `lines[end:]` —
+    # the released history this script promises never to touch. That silently
+    # rewrote shipped release notes: blank lines vanished inside released
+    # sections, visible in #371's own diff. Cosmetic there, but a released
+    # section holding a fenced block would have had its internal blank lines
+    # collapsed too — a content change, in the file of record.
+    block, blank = [], False
+    for line in [""] + out:
         if not line.strip():
             if blank:
                 continue
             blank = True
         else:
             blank = False
-        collapsed.append(line)
+        block.append(line)
 
-    open(path, "w", encoding="utf-8").write("\n".join(collapsed))
+    # `lines[end:]` is concatenated untouched, so everything from the first
+    # released heading down stays byte-for-byte identical.
+    new = lines[:start + 1] + block + lines[end:]
+
+    open(path, "w", encoding="utf-8").write("\n".join(new))
     extra = [n for n in ordered if n not in KNOWN_ORDER]
     note = f"; kept {len(extra)} non-standard heading(s): {', '.join(extra)}" if extra else ""
     kept_total = sum(len(merged[n]) for n in ordered) - dropped

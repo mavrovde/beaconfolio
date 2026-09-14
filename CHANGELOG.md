@@ -73,6 +73,22 @@ All notable changes to this project will be documented in this file.
   outruns the post-network budget; previously both phases shared one knob and the case denied from
   whichever fired first — it failed inside the loaded pre-push gate and passed 100/0 when run alone.
 
+### Fixed
+- **`dedup_changelog_unreleased.py` no longer rewrites released history (#383)** — the blank-line
+  collapse ran over the whole reconstructed file, including the tail below the first
+  `## [x.y.z]` heading that the script's own docstring promised never to touch. It silently removed
+  blank lines inside shipped release notes (visible in #371's own diff). Cosmetic in prose, but a
+  released section containing a fenced code block would have had its internal blank lines collapsed
+  too — a content change, in the file of record. The collapse now runs over the rebuilt
+  `[Unreleased]` block alone and the tail is concatenated untouched.
+  - The docstring's **strong** guarantee is restored ("byte-for-byte below the first released
+    heading"). #371 had weakened the promise to match the bug; that is the documentation equivalent
+    of the silent-deletion mistake lessons §58 was written about — a tool that rewrites a file of
+    record must fail by doing LESS, never by dropping silently.
+  - Proven, not asserted: self-test **26 passed / 0 failed**, and a mutant reintroducing the
+    whole-file collapse makes exactly the new case fail (**25 passed / 1 failed**). Against the
+    repo's real `CHANGELOG.md`, `diff` of everything from `## [1.` down is **empty**.
+
 ## [1.14.1] - 2026-09-14
 
 ### Added
