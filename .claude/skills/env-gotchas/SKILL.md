@@ -38,9 +38,15 @@ Facts about THIS repo's environments that keep costing cycles. Check here before
   A whole category silently cannot fail on the platform CI uses, while the self-test is green on
   the author's machine — which is how this shipped inside the very PR that existed to close
   cannot-fail categories. **A shell lint's self-test is only evidence on the platform it ran on.**
-  Cheapest proof before pushing: `docker run --rm --entrypoint bash -v "$PWD":/w -w /w <any
-  Debian-based image in `docker image ls`> -c 'bash scripts/<tool>.test.sh'` — a container that
-  already exists locally, no pull, ~2 s, and it catches every BSD-vs-GNU divergence on this list.
+  Cheapest proof before pushing — measured at **2.0 s** against an image already on the box
+  (`docker image ls`; no pull, so the stack-resources guard is uninvolved):
+
+  ```bash
+  docker run --rm --entrypoint bash -v "$PWD":/w -w /w \
+    ghcr.io/mavrovde/beaconfolio-backend:1.14.0 -c 'bash scripts/<tool>.test.sh'
+  ```
+
+  It catches every BSD-vs-GNU divergence on this list, not just the backtick one.
 - **`date`**: BSD `date` has no `date -d`; use `date -v-1d` forms or python.
 - **zsh is the interactive shell**; CI and hooks run bash. `echo ===` in zsh can trigger
   `== not found` (zsh treats `=cmd` as a path expansion); `setopt`-dependent behavior and word

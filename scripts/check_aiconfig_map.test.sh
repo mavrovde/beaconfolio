@@ -287,13 +287,17 @@ rm -rf "$D"
 # nothing on the Linux runner and that category could not fail there. The case
 # below cannot see the platform difference (it runs on one grep), so pin the
 # cause instead: no single-quoted ERE in the checker may contain `\``.
-if python3 - "$SCRIPT" <<'PY2'
-import re, sys
-src = open(sys.argv[1]).read()
-sys.exit(1 if re.search(r"-oE\s+'[^']*\\`", src) else 0)
-PY2
-then ok "#400: no backslash-backtick in a single-quoted ERE (GNU grep would read it as an anchor)"
-else bad "#400: a single-quoted ERE contains \\\` — it matches nothing under GNU grep" "see grep -n -- \"-oE\" $SCRIPT"; fi
+# The sequence backslash-backtick must appear NOWHERE in the checker. Round 2
+# measured four ways around a narrower "only after -oE" regex (grep -qE,
+# grep -o -E, sed -E, a pattern held in a variable), and a check whose regex is
+# narrower than its promise is itself a cannot-fail check. Parsing shell quoting
+# to find the risky ones is worse than the disease — an apostrophe in a comment
+# breaks the parse. So the checker holds its backtick in $BT instead, there is
+# no escape anywhere in it, and this becomes a fixed-string search that cannot
+# be argued with (#400 r2).
+if LC_ALL=C grep -qF '\`' "$SCRIPT"; then
+  bad "#400: the checker contains backslash-backtick — under GNU grep that is the start-of-buffer anchor, so the pattern matches nothing" "$(LC_ALL=C grep -nF '\`' "$SCRIPT")"
+else ok "#400: backslash-backtick appears nowhere in the checker (it uses \$BT)"; fi
 
 # The lint promises bash+coreutils in four committed places; a broken or absent
 # jq must therefore change nothing. A stub that always fails stands in for
@@ -362,6 +366,37 @@ out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
 if [ $rc -eq 0 ] && ! printf '%s' "$out" | grep -q "'env'"; then
   ok "#400: a nested object inside a server is not read as a server"
 else bad "#400: nested objects must not become servers" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# Deleting .mcp.json must not make the MCP row UNINSPECTED (#400 r2 finding 1).
+D="$(mktemp -d)"; skeleton "$D"
+rm -f "$D/.mcp.json"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "NO .mcp.json"; then
+  ok "#400: an MCP row with no .mcp.json at all FAILS (the file cannot be deleted into silence)"
+else bad "#400: deleting .mcp.json must not skip the MCP row" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# …and with neither the file nor the row, there is nothing to disagree about.
+D="$(mktemp -d)"; skeleton "$D"
+rm -f "$D/.mcp.json"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("| MCP | `postgres`, `github` | demo servers |\n", ""))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -eq 0 ]; then ok "#400: no .mcp.json and no MCP row is consistent, not an error"
+else bad "#400: absent file + absent row must pass" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# A server whose value is not an object must fail CLOSED, not vanish silently.
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":{"postgres":{},"github":"oops"}}\n' > "$D/.mcp.json"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "whose value is not an object"; then
+  ok "#400: a non-object server value FAILS CLOSED (it is not dropped in silence)"
+else bad "#400: a non-object server value must fail closed" "rc=$rc $out"; fi
 rm -rf "$D"
 
 printf '\ncheck_aiconfig_map self-test: %d passed, %d failed\n' "$pass" "$fail"

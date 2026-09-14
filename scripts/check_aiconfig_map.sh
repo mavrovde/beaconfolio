@@ -22,6 +22,15 @@ ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 MAP="$ROOT/CLAUDE.md"
 SETTINGS="$ROOT/.claude/settings.json"
 problems=0
+# A literal backtick, held in a variable. The map's name column is written
+# in backticks, so nearly every pattern here needs one — and writing it as
+# backslash-backtick is the trap this file already fell into once: harmless
+# inside double quotes, but inside SINGLE quotes GNU grep reads that
+# two-character sequence as its start-of-buffer anchor while BSD grep reads a
+# literal, so the pattern matches nothing on Linux and the check silently
+# cannot fail (#400). With BT there is no escape to get wrong, and the
+# self-test can simply assert the sequence appears NOWHERE in this file.
+BT='`'
 
 fail() { problems=$((problems + 1)); printf '  ✗ %s\n' "$1"; }
 
@@ -175,44 +184,59 @@ if [ -f "$MCPJSON" ]; then
   # Depth-tracking, string-aware, so it does not depend on indentation: emit the
   # keys that open an object exactly one level inside "mcpServers".
   mcp_real="$(awk '
-    BEGIN { depth = 0; instr = 0; inservers = 0; lastkey = "" }
+    BEGIN { depth = 0; instr = 0; inservers = 0; lastkey = ""; nkeys = 0; nsrv = 0 }
     {
       n = length($0)
       for (i = 1; i <= n; i++) {
         c = substr($0, i, 1)
         if (instr) {
           if (c == "\\") { i++; continue }
-          if (c == "\"") { instr = 0; lastkey = buf; continue }
+          if (c == "\"") {
+            instr = 0; lastkey = buf
+            # A string in KEY position directly inside mcpServers names a
+            # server, whatever its value turns out to be. Counting these
+            # separately from the objects actually opened is what stops a
+            # non-object value ("github": "oops") being dropped in silence —
+            # the counts then disagree and the walk fails CLOSED (#400 r2).
+            if (inservers && depth == sdepth && expectkey) { nkeys++; expectkey = 0 }
+            continue
+          }
           buf = buf c; continue
         }
         if (c == "\"") { instr = 1; buf = ""; continue }
         if (c == "{" || c == "[") {
           depth++
-          if (!inservers && lastkey == "mcpServers") { inservers = 1; sdepth = depth }
-          else if (inservers && depth == sdepth + 1) print lastkey
+          if (!inservers && lastkey == "mcpServers") { inservers = 1; sdepth = depth; expectkey = 1 }
+          else if (inservers && depth == sdepth + 1) { print lastkey; nsrv++ }
           continue
         }
         if (c == "}" || c == "]") {
           if (inservers && depth == sdepth) inservers = 0
           depth--; continue
         }
+        if (c == "," && inservers && depth == sdepth) { expectkey = 1; continue }
       }
     }
+    END { if (nkeys != nsrv) print "__MALFORMED__" }
   ' "$MCPJSON" | sort)"
+  if printf '%s\n' "$mcp_real" | grep -qxF '__MALFORMED__'; then
+    fail ".mcp.json has a server entry whose value is not an object — fix the file; this lint will not guess"
+    mcp_real="$(printf '%s\n' "$mcp_real" | grep -vxF '__MALFORMED__')"
+  fi
   [ -n "$mcp_real" ] || fail ".mcp.json exists but no servers could be parsed from it"
   mcp_row="$(grep -E '^\| *MCP *\|' "$MAP" | head -1 | awk -F'|' '{print $3}')"
   [ -n "$mcp_row" ] || fail ".mcp.json declares servers but the map has NO | MCP | row"
   for m in $mcp_real; do
-    printf '%s' "$mcp_row" | grep -qF "\`$m\`" \
+    printf '%s' "$mcp_row" | grep -qF "${BT}${m}${BT}" \
       || fail "MCP server '$m' is in .mcp.json but not in the map's MCP row"
   done
-  # NOTE the bare backtick in the ERE. `\`` inside single quotes is
-  # backslash+backtick, which BSD grep reads as a literal backtick (green on
-  # macOS) while GNU grep reads it as its start-of-buffer ANCHOR — the pattern
-  # then matches nothing, this loop never runs, and the reverse MCP check
-  # becomes a category that CANNOT FAIL on the Linux runner. That is precisely
-  # the defect class #378 exists to close, so it is spelled out here rather
-  # than left to the next reader to rediscover (#400 review, round 1).
+  # NOTE the BARE backtick in this ERE (single quotes already protect it from
+  # the shell). Escaping it here — backslash then backtick — is what broke this
+  # check in review round 1: BSD grep reads that pair as a literal backtick, so
+  # it was green on macOS, while GNU grep reads it as the start-of-buffer
+  # ANCHOR, so on the Linux runner the pattern matched nothing, this loop never
+  # ran, and the reverse MCP check became a category that CANNOT FAIL — exactly
+  # the defect class #378 exists to close. See the BT note at the top.
   for m in $(printf '%s' "$mcp_row" | grep -oE '`[A-Za-z0-9_-]+`' | tr -d '`'); do
     printf '%s\n' "$mcp_real" | grep -qxF "$m" \
       || fail "MCP server '$m' is in the map's MCP row but not in .mcp.json"
@@ -223,6 +247,14 @@ if [ -f "$MCPJSON" ]; then
   for m in $mcp_dupes; do
     fail "MCP server '$m' is listed MORE THAN ONCE in the map's MCP row"
   done
+else
+  # No .mcp.json — but a map row claiming servers must still be wrong. Without
+  # this arm the whole block is skipped and the row goes UNINSPECTED: delete the
+  # file and the checker reports "✓ matches reality" while the map advertises
+  # three MCP servers that do not exist. A cannot-fail path reached by deleting
+  # a file is the same defect class as one reached by a bad regex (#400 r2).
+  grep -qE '^\| *MCP *\|' "$MAP" \
+    && fail "the map has an | MCP | row but there is NO .mcp.json — no server is configured"
 fi
 
 # --- 2. enabled plugins: settings.json <-> map row <-> rationale prose --------
@@ -234,10 +266,10 @@ if [ -f "$SETTINGS" ]; then
   # DROPPED plugins, which are not enabled and must not be demanded to be.
   plugin_row="$(grep -E '^\| *plugin *\|' "$MAP" | head -1 | awk -F'|' '{print $3}')"
   for p in $enabled; do
-    printf '%s' "$plugin_row" | grep -qF "\`$p\`" \
+    printf '%s' "$plugin_row" | grep -qF "${BT}${p}${BT}" \
       || fail "plugin '$p' is ENABLED in .claude/settings.json but is not listed in the map's plugin row"
     # a rationale line in the Plugins section: "- `name` — KEEP/DROPPED: why"
-    grep -qE "^ *- +(\`[a-z0-9-]+\` */ *)*\`$p\`" "$MAP" \
+    grep -qE "^ *- +(${BT}[a-z0-9-]+${BT} */ *)*${BT}${p}${BT}" "$MAP" \
       || fail "plugin '$p' is enabled but has no rationale line in the CLAUDE.md \"Plugins\" section"
   done
   # the reverse: a name in the plugin row that is not enabled anywhere
