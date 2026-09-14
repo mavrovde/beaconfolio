@@ -7,6 +7,23 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Placeholder for next release.
 
+### Fixed
+- **The three Snyk residuals from #373's review land (#381)** — (1) the patched `linkedin-api`
+  wheel version now has exactly ONE source: `backend/scripts/patch_linkedin.sh` derives it from
+  `requirements.txt` (`linkedin-api==<ver>`), and `backend/Dockerfile` runs that script instead of
+  inlining a second hardcoded copy of the whole download-patch-install sequence — a version bump is
+  now a one-line change to `requirements.txt`; (2) `snyk-security.yml` asserts up front that `.snyk`
+  carries a valid `version:` key, failing LOUDLY, because a policy file without it is silently
+  ignored and every exclude in it goes dead with no error anywhere; (3) the `snyk iac test` step is
+  REMOVED as a dead security control — measured on real runs, it had never scanned anything: both
+  the whole-checkout form and a files-scoped attempt abort with `SNYK-CLI-0012: Could not find any
+  valid IaC files`, because Snyk IaC parses Terraform/CloudFormation/Kubernetes/ARM/Helm and this
+  repo authors none of those (compose files, Dockerfiles and workflows are unsupported formats) —
+  behind `|| true` that error was invisible and the step reported green while scanning zero files;
+  image/Dockerfile risk is genuinely covered by `snyk-container.yml`. Plus a network-free
+  `patch_linkedin.test.sh` (run by CI's backend-lint job) pinning the script's derivation and both
+  exit-1 guards.
+
 ## [1.14.2] - 2026-09-14
 
 ### Added

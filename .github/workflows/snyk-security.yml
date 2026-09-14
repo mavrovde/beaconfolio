@@ -30,6 +30,16 @@ jobs:
           if [ -z "${{ secrets.SNYK_TOKEN }}" ]; then
             echo "::error::SNYK_TOKEN is not set — the scan cannot run. Add the repo secret."; exit 1
           fi
+      - name: .snyk policy is valid
+        # The ignore/exclude policy only works if Snyk can parse it. A `.snyk`
+        # without a `version:` key is SILENTLY ignored — the scans then run
+        # unfiltered and re-report everything the policy was meant to exclude,
+        # with no error anywhere (#381; the missing key shipped in #354 and was
+        # only caught by reading scan output). Fail loudly instead.
+        run: |
+          if ! grep -Eq '^version: "?v[0-9]' .snyk; then
+            echo "::error::.snyk has no valid 'version:' key — Snyk silently ignores the whole policy file, so every exclude/ignore in it is dead (#381)"; exit 1
+          fi
       - uses: snyk/actions/setup@12140f4059e244892ae643824a95459a102120dd
       # Snyk needs resolvable dependency trees for SCA: install both stacks' manifests.
       - uses: actions/setup-node@v7
@@ -55,7 +65,7 @@ jobs:
         # Use the repo's OWN patch script, like every other install leg
         # (backend/Dockerfile, deploy.yml, copilot-setup-steps.yml). The real
         # failure is not "absent from PyPI" — the run log says
-        # `ERROR: For req: linkedin-api==2.2.1. Invalid script entry point`:
+        # `ERROR: For req: linkedin-api==<pin>. Invalid script entry point`:
         # the sdist ships a malformed entry_points.txt that aborts pip.
         # patch_linkedin.sh strips it, so this now resolves properly instead of
         # limping along on a best-effort fallback (#368 review).
@@ -92,9 +102,19 @@ jobs:
           snyk test --file=frontend/package-lock.json --package-manager=npm --severity-threshold=high || true
           . "$RUNNER_TEMP/snyk-venv/bin/activate" && snyk test --file=backend/requirements.txt --command=python --severity-threshold=high || true
           snyk monitor --all-projects || true
-      - name: Snyk IaC (compose + Dockerfiles + workflows)
-        env: { SNYK_TOKEN: "${{ secrets.SNYK_TOKEN }}" }
-        run: snyk iac test --report || true
+      # The `snyk iac test` step was REMOVED here (#381 / PR #408 review round 1),
+      # not scoped: it had never scanned anything. Measured on this repo's own
+      # runs — the scoped attempt (run 34892304908) and the bare `main` baseline
+      # (run 34888882905) BOTH abort with `SNYK-CLI-0012: Could not find any
+      # valid IaC files`, because Snyk IaC parses Terraform/CloudFormation/
+      # Kubernetes/ARM/Helm and this repo authors none of those — compose files,
+      # Dockerfiles and GitHub workflows are not supported IaC formats. Behind
+      # `|| true` that error was invisible: a dead security control reporting
+      # green, the exact false-assurance pattern backend/Dockerfile's
+      # package_index guard documents. Dockerfile/image risk is actually covered
+      # by snyk-container.yml (weekly `snyk container test` on the built
+      # images). Reinstate an IaC step only if a supported format (Terraform,
+      # K8s manifests, …) ever lands in the repo.
       - name: Check SARIF is present and non-empty
         id: sarif
         run: |
