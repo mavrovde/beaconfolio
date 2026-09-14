@@ -1506,6 +1506,66 @@ prevent* — proof the author had never run it on their own branch.
   pre-push gate in the SAME PR, or it is unexamined by anything.
 - **Run your own tool on your own branch before asking for review.** The reviewer proved it had
   not been, in one command.
+## 59. NARROWING a gate is the one change that can silently switch it off — so the narrowing rule must fail by doing MORE (#377)
+
+The pre-push gate ran every leg on every push. Scoping it to the diff is the right fix (a two-file
+docs commit paid **11m44s** for suites its diff could not touch, on every push, including the five
+fix-up pushes a review round generates), but it belongs to the family of changes that can succeed
+at being fast while quietly ceasing to protect anything. A selector that returns the empty set
+passes **every single case you would naturally write**: "a backend diff must not select frontend",
+"a public diff must not select admin" — all green against a selector that selects nothing at all.
+That is §18's "a gate nobody proved can fail is no gate", wearing a performance costume.
+
+**The three habits that make a narrowing safe:**
+
+1. **The default arm runs EVERYTHING.** Not "nothing", not "the closest guess". A path nobody
+   enumerated — a new top-level directory, a rename, a file the repo does not have yet — selects
+   the full gate, and so does an empty diff, an unobtainable range, a detached HEAD and a root that
+   is not a repository. "I could not tell" must never compile to "skip". Enumerate only what you can
+   reason about; the unknown goes to the safe side by construction, not by review vigilance.
+2. **Assert the NEGATIVE and the POSITIVE, then mutate.** `must not select admin` is only half a
+   test; pair every one with `must still select public`, and then neuter the selector and require
+   the file to go red. Measured here: **122 cases pass / 0 fail** normally; with the selector
+   neutered to return nothing, **78 pass / 44 fail** — and the `--mutations` contract kills **24 of
+   24** rules, 0 survivors, 0 invalid. The headline mutation is literally "the selector returns an empty
+   selection": if that one survives, the whole change is theatre. One earlier candidate DID survive,
+   honestly — a guard made redundant by a rule that fired first. The answer was a seam assertion on
+   the function itself, not a case dressed up to pass.
+   **A mutation's search string is part of the test, and it rots.** Review round 2 caught the
+   consequence: adding a leg to the lint arms changed the source line a mutation matched on, so it
+   produced NO diff and was reported `INVALID` — the rule stopped being proved able to fail, and
+   because the round runs `--mutations || return 1` when the selection names this hook, the gate
+   denied the next push to that very branch. CI could not see it (the pipeline runs the cases
+   WITHOUT `--mutations`) and the PR was green on all 20 checks. Re-run the contract after ANY edit
+   to the file it mutates, and read its `invalid` count, not only `survived`.
+   **And a seam must OBSERVE the decision, not re-derive it.** Two drafts of the same fix failed
+   this way: one re-implemented the condition in the seam, the next re-evaluated the predicate. Both
+   left a mutation of the CONSUMER passing, because the seam kept telling the truth while the thing
+   it described had changed. Decide once into the value the consumer actually uses, and assert on
+   the real argv — plant a stub in the fixture and record what it was called with.
+3. **Some legs are never selectable.** The PII/de-brand guard runs on every push whatever changed:
+   it costs ~1s and its failure mode is public. Put such legs in an always-on set the path map
+   cannot reach, and mutate THAT too.
+
+**Two mapping traps worth stealing.** A shared library is not one project: `frontend/projects/
+shared/**` has to fan out to `public` AND `admin`, because both consume it — scoping it to `shared`
+alone would have been the plausible, wrong rule. Likewise `hook-parse-lib.sh` selects all FOUR hook
+self-tests, because a regression in the shared parsing model shows up in a *different* hook's test.
+Ask of every mapping: *whose tests can this file break, not whose directory is it in.*
+
+**Watch the budget you now spend on PROOF.** The mutation contract that makes this narrowing safe
+costs ~100s, and putting it in every round took the FULL round from 704s to **808s** against the
+hook's 900s `PreToolUse` timeout — and a timed-out hook does not deny, so proving the narrowing
+sound would have bought a fail-OPEN. It now runs when the selection NAMES the hook (so a hook really
+did change); a full round runs the plain cases exactly as before, and measured 671s.
+
+**And keep the slow, total gate reachable.** `main`, `release/*` and `PREPUSH_FULL=1` still run
+everything, and CI was left running every leg on every push. The scoped gate buys iteration speed
+on feature branches; it is explicitly not the last line of defence.
+
+**Measured payoff (#377):** docs-only push 11m44s → 13s, backend-only 11m44s → 1m21s,
+`projects/public/**` 11m44s → 15s, push to a protected branch 11m44s → 11m11s (unchanged, by design). The second-order win matters as much as the first: a gate that
+costs twelve minutes gets bypassed, and a bypassed gate protects nothing.
 
 ## Where the rules live (AI-config map)
 
@@ -1521,7 +1581,8 @@ prevent* — proof the author had never run it on their own branch.
 - **`.claude/skills/ssh-deploy/`** — the panel-free rollout loop on the shared prod host
   (failure→diagnosis per rollout step, cert renewal, multi-tenant do-not-touch); its design
   companion is `docs/wiki/production-deployment.md`.
-- **`.claude/hooks/`** — `pre-push-tests.sh` (test gate), `guard-destructive.sh` (destruction guard),
+- **`.claude/hooks/`** — `pre-push-tests.sh` (test gate, scoped to the diff by
+  `prepush-select-lib.sh` — §59), `guard-destructive.sh` (destruction guard),
   `guard-stack-resources.sh` (free-disk floor + one Docker stack, §54), `pre-merge-gate.sh` (rule 13,
   approval-covers-head, and the Closes/AC merge gate), `hook-parse-lib.sh` (the ONE parsing model
   they all source, #237), plus a `*.test.sh` self-test beside each hook — the merge gate's carries

@@ -368,7 +368,8 @@ fixtures and never touch your working tree:
 bash test-bump-version.sh                      # version carriers + CHANGELOG rotation (#186/#193)
 bash setup.test.sh                             # the onboarding wizard's guards (11 cases, #61)
 bash .claude/hooks/guard-destructive.test.sh   # destructive-command guard (#116/#188)
-bash .claude/hooks/pre-push-tests.test.sh      # the pre-push gate's own parsing (#237)
+bash .claude/hooks/pre-push-tests.test.sh      # the pre-push gate's parsing (#237) + diff→leg selection (#377)
+bash .claude/hooks/pre-push-tests.test.sh --mutations   # ...and proof those selection cases can go red
 sh proxy/test-generate-admin-config.sh         # admin allowlist / real_ip generator (#86)
 bash scripts/check_no_pii.sh                   # no personal identifiers (#66) + no maintainer-domain
                                                #   branding on guidance surfaces (#313)
@@ -378,6 +379,63 @@ bash scripts/check_no_pii.test.sh              # that checker's own 60 cases, bo
 `scripts/check_live_freshness.sh <url> <version>` is the same family — it powers the daily
 Live Freshness workflow and answers `0 fresh / 1 stale / 2 unreachable`, so a green pipeline can
 never be mistaken for a live site (#169). A self-test for it is tracked in #280.
+
+### 6. What the pre-push gate actually runs (#377)
+
+The `pre-push-tests.sh` hook no longer runs the whole suite on every push — it runs **the legs the
+diff can break**, selected by `.claude/hooks/prepush-select-lib.sh` from
+`git diff --name-only @{push}..HEAD` (falling back to `@{upstream}`, then to
+merge-base(`origin/main`)). Measured on one machine, same tree, same suites: a docs-only push
+**11m44s → 13s**, a backend-only push **11m44s → 1m21s**, a `projects/public/**` push
+**11m44s → 15s**; a push to a protected branch stays the full round (**11m11s**).
+
+| changed paths | legs |
+|---|---|
+| `backend/**` | pytest (`-n auto`, 100% coverage) + ruff + mypy + bandit |
+| `backend/migrations/**`, `backend/alembic.ini` | the above + the single-Alembic-head lint |
+| `frontend/projects/public/**` | cd-safety + the **public** Vitest project only |
+| `frontend/projects/admin/**` | cd-safety + the **admin** Vitest project only |
+| `frontend/projects/shared/**`, any other `frontend/**` | cd-safety + **all three** projects (both apps consume `shared`) |
+| `docs/**`, `*.md`, `CHANGELOG.md`, `README.md` | docs + version consistency |
+| `docker-compose*.yml`, `.env.example` | the documented-knob contract |
+| `CLAUDE.md`, `.claude/agents|commands|skills/**` | the AI-config map drift check |
+| `.claude/hooks/<name>.sh` | that hook's self-test + the AI-config map drift check |
+| `.claude/hooks/hook-parse-lib.sh` | **all four** hook self-tests (they share one parsing model) |
+| `.claude/hooks/prepush-select-lib.sh` | this selector's own self-test + the map drift check |
+| `scripts/<lint>.sh` | that lint + its self-test + the map drift check¹ |
+| **version carriers** — `VERSION`, `backend/app/main.py`, `frontend/package.json`, `frontend/package-lock.json`, `frontend/projects/shared/package.json`, `frontend/projects/public/src/app/version.ts`, `docker-compose.prod.yml` | **also** version consistency, wherever else they map² |
+| **documented-knob sources** — `backend/app/config.py`, `.env.example`, `README.md`, `docs/DEPLOYMENT.md`, `setup.sh`, `docker-compose*.yml` | **also** the documented-knob contract² |
+| **anything else** | **everything** |
+
+¹ A lint selects the map check because the selector is pure and cannot tell an EDIT from a
+DELETION — and deleting a lint leaves the AI-config map naming a file that no longer exists, which
+is exactly what `check_aiconfig_map.sh` fails on. A *rename* is already safe: the new path is
+unmapped, so it selects everything.
+² These are ADDITIVE, and they are the subtlest way a scoped gate stops noticing a real breakage —
+the file looks like "just backend code" while a whole-repo invariant hangs off it.
+
+**Renames select BOTH endpoints.** The diff is taken with `--no-renames`, because git's default
+rename detection reports only the *destination*: without it, `git mv frontend/projects/admin/…/x.ts
+frontend/projects/public/…/x.ts` would run the public legs and never `admin` — the project that just
+lost a module its specs import — and the behaviour would vary with each developer's `diff.renames`
+setting.
+
+The safety rules are not conveniences — they are the reason this is allowed to be fast:
+
+- **`main`, any `release/*` branch, `PREPUSH_FULL=1`, and any push whose refspec targets a protected
+  branch run the FULL round**, whatever the diff says. The refspec test is structural, not a
+  substring match: each word is parsed as a refspec (destination half, with a leading `+`,
+  `refs/heads/` and surrounding quotes stripped), so `+main`, `HEAD:refs/heads/main` and
+  `HEAD:refs/heads/release/1.2.3` are all recognised, while a branch merely *named*
+  `feature-main-nav` still scopes.
+- **An unmapped path, an empty diff, a range that cannot be computed, or a branch that cannot be
+  named runs the FULL round.** "I could not tell" never means "skip".
+- **The PII/de-brand guard always runs**, whatever changed.
+- **CI (`deploy.yml`) is unchanged** and still runs every leg on every push.
+
+`bash .claude/hooks/pre-push-tests.test.sh --mutations` neuters one selection rule at a time —
+including "select nothing at all" — and requires the selection cases to go red; a selector that
+silently selected nothing would otherwise pass every "X must not be selected" case.
 
 `test-bump-version.sh` also runs in CI: the `version-consistency` job executes it
 plus `./bump_version.sh --check`, and every image-build job depends on that job, so
@@ -1010,3 +1068,4 @@ uploaded profile data, never from this repository.
 ---
 
 **Built with ❤️ using Angular, FastAPI, and Ollama**
+

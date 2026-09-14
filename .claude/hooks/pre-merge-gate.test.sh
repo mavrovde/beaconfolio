@@ -473,7 +473,14 @@ GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ✅ APPROVED')" GH_STUB_SLEEP=2 
 # ...and it must be THAT deny, not the parse loop's. See run_reason's header:
 # under load the loop's budget fires first, both paths deny, and a
 # decision-only assertion let the deadline mutation survive.
-GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ✅ APPROVED')" GH_STUB_SLEEP=2 PR_MERGE_GATE_DEADLINE=1 \
+# DETERMINISTIC (#377): the parse phase gets its own budget so it provably
+# cannot trip here, leaving the POST-network deadline as the only reachable
+# deny. Before the split, both phases shared PR_MERGE_GATE_DEADLINE=1 and this
+# case denied from whichever fired first — it failed inside the loaded pre-push
+# gate and passed 100/0 when run alone. The production default is unchanged:
+# PR_MERGE_GATE_PARSE_DEADLINE defaults to PR_MERGE_GATE_DEADLINE.
+GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ✅ APPROVED')" GH_STUB_SLEEP=2 \
+  PR_MERGE_GATE_DEADLINE=1 PR_MERGE_GATE_PARSE_DEADLINE=600 \
   run_reason "gh slower than the deadline denies from the POST-NETWORK budget" \
     "could not finish within" "gh pr merge 284 --squash"
 GH_STUB_PR_FAIL=1 \

@@ -32,6 +32,16 @@
 set -u
 
 DEADLINE_SECONDS="${PR_MERGE_GATE_DEADLINE:-25}"
+# The PARSE phase's share of that budget. Defaults to the SAME number, so
+# production behaviour is byte-for-byte what it was: one budget, both phases.
+# It exists because the two phases are otherwise indistinguishable from a test
+# (#377). The self-test needs a `gh` slower than the POST-network deadline while
+# the parse phase provably cannot trip — with one knob that case was
+# LOAD-SENSITIVE: it denied from the parse loop under parallel load (observed
+# failing inside the full pre-push gate, then 100/0 when run alone), and a
+# decision-only assertion would have let the deadline mutation survive.
+# Splitting the knob makes the case deterministic without moving the default.
+PARSE_DEADLINE_SECONDS="${PR_MERGE_GATE_PARSE_DEADLINE:-$DEADLINE_SECONDS}"
 START=$SECONDS
 
 allow() { exit 0; }
@@ -79,7 +89,7 @@ case "$CMD" in
 esac
 
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/hook-parse-lib.sh"
-INSPECT_DEADLINE=$((START + DEADLINE_SECONDS))
+INSPECT_DEADLINE=$((START + PARSE_DEADLINE_SECONDS))
 
 # Does this SEGMENT (separator-split, quote-aware) invoke `gh pr merge`?
 # Reuses the SHARED peel model, so wrappers (`env X=1 gh …`, `sudo`, `timeout`),

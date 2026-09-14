@@ -4,8 +4,74 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Added
-- Placeholder for next release.
+### Changed
+- **The pre-push gate now runs only the legs the DIFF can break (#377)** — it ran the entire round
+  on every push regardless of what changed, so a two-file documentation commit paid
+  **11m44s** for backend pytest, ruff, mypy, three Vitest projects and ~12 script/hook
+  self-tests. Measured on this machine, same tree, same suites:
+
+  | push | before | after |
+  |---|---|---|
+  | docs-only (`README.md` + `CHANGELOG.md`) | 11m44s | **13s** |
+  | backend-only (one file under `backend/app/`) | 11m44s | **1m21s** |
+  | `projects/public/**` only | 11m44s | **15s** |
+  | protected branch / unmapped path | 11m44s | 11m11s (unchanged by design) |
+
+  Legs come from `git diff --name-only @{push}..HEAD` (falling back to `@{upstream}`, then to
+  merge-base(`origin/main`)) through the new `.claude/hooks/prepush-select-lib.sh`. Frontend
+  selection is **per Vitest project** — `projects/public/**` never runs `admin`, while
+  `projects/shared/**` runs all three because both apps consume it — and a change to
+  `hook-parse-lib.sh` runs all four hook self-tests, since they share that parsing model.
+  - **The polarity is the whole design, not a footnote.** Narrowing a gate is the one change that
+    can succeed at being fast while quietly ceasing to protect anything, so every ambiguity
+    resolves towards running MORE: the map's default arm is `ALL`, and so are an empty diff, a
+    range that cannot be computed, a detached HEAD, a root that is not a repository, `main`,
+    `master`, any `release/*`, `PREPUSH_FULL=1`, a refspec targeting a protected branch, and
+    `--all`/`--mirror`/`--tags`. The PII/de-brand guard is never selectable away.
+  - **Cross-cutting contracts are mapped explicitly**, because a per-directory map would miss them:
+    the six version carriers outside `docs/` (`backend/app/main.py`, `frontend/package.json`,
+    `frontend/package-lock.json`, `frontend/projects/shared/package.json`,
+    `frontend/projects/public/src/app/version.ts`, `docker-compose.prod.yml`) each select the
+    version-consistency leg, and `backend/app/config.py` / `README.md` / `docs/DEPLOYMENT.md` /
+    `setup.sh` each select the documented-knob contract they feed (#296/#297/#298).
+  - **Proved able to fail.** `pre-push-tests.test.sh` now runs **122 cases** in two layers —
+    the mapping driven directly, and the whole hook driven end-to-end against throwaway git
+    repositories so the `@{push}`/`@{upstream}`/merge-base resolution is exercised rather than
+    mocked — plus a `--mutations` contract that neuters one selection rule at a time, including
+    "the selector returns an empty selection". Result: **24 killed, 0 survived,
+    0 invalid**. Without it, a selector that silently selected nothing would pass every
+    "X must not be selected" case in the file.
+  - **Renames select BOTH endpoints.** `git diff --name-only` with git's default rename
+    detection reports only the DESTINATION, so `git mv frontend/projects/admin/…/foo.ts
+    frontend/projects/public/…/foo.ts` would have selected the public legs and never run
+    `admin` — the project that just lost a module its specs import — and the behaviour was
+    `diff.renames`-config dependent, so two developers got different coverage from one diff.
+    The selector passes `--no-renames`; two end-to-end cases and a mutation pin it.
+  - **Protected-branch detection is structural, not a substring probe.** `git push origin
+    +main` (the `+` sits where the probe wanted a space) and `git push origin
+    HEAD:refs/heads/main` (ends `/main`, not `:main`) are pushes to the prod-deploy trigger
+    that used to receive a SCOPED gate. Each word is now parsed as a refspec — destination
+    half, leading `+` and `refs/heads/` stripped — while a branch merely NAMED
+    `feature-main-nav` still scopes.
+  - **Headroom for the full round.** The reviewer measured `pre-merge-gate.test.sh --mutations`
+    at **543s alone** under load (2.37), with the hook legs subtotalling 646s *before*
+    pytest/Vitest/lints — so the 671s full round is an idle-machine number and a `main` push, the
+    case that always forces `ALL`, sat close to the 900s `PreToolUse` timeout. A timed-out hook
+    does **not** deny, so overrun there is a fail-OPEN gate, not a slow one. The hook's timeout in
+    `.claude/settings.json` is raised to **1800s**; the other three hooks are unchanged (15s/30s).
+  - **The mutation contract runs when a hook actually changed, not in every full round.** It
+    costs ~100s and putting it everywhere took the full round 704s → **808s** against the hook's
+    900s `PreToolUse` timeout — and a timed-out hook does not deny, so proving the narrowing
+    sound would have bought a fail-OPEN. A full round now runs the plain cases exactly as before
+    (measured 671s); a push that NAMES `.claude/hooks/**` additionally runs `--mutations`.
+  - **`bandit` joins the backend lint leg**, matching `deploy.yml` exactly; it was the one CI
+    backend check this gate never mirrored.
+  - **CI is untouched**: `deploy.yml` still runs every leg on every push.
+- **The merge gate's post-network deadline case is deterministic (#377)** — `pre-merge-gate.sh`
+  gained `PR_MERGE_GATE_PARSE_DEADLINE`, defaulting to `PR_MERGE_GATE_DEADLINE`, so production
+  behaviour is unchanged. The self-test can now hold the parse phase open while the stubbed `gh`
+  outruns the post-network budget; previously both phases shared one knob and the case denied from
+  whichever fired first — it failed inside the loaded pre-push gate and passed 100/0 when run alone.
 
 ## [1.14.1] - 2026-09-14
 
