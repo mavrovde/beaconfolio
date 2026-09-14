@@ -1570,7 +1570,7 @@ costs twelve minutes gets bypassed, and a bypassed gate protects nothing.
   (failure→diagnosis per rollout step, cert renewal, multi-tenant do-not-touch); its design
   companion is `docs/wiki/production-deployment.md`.
 - **`.claude/hooks/`** — `pre-push-tests.sh` (test gate, scoped to the diff by
-  `prepush-select-lib.sh` — §58), `guard-destructive.sh` (destruction guard),
+  `prepush-select-lib.sh` — §59), `guard-destructive.sh` (destruction guard),
   `guard-stack-resources.sh` (free-disk floor + one Docker stack, §54), `pre-merge-gate.sh` (rule 13,
   approval-covers-head, and the Closes/AC merge gate), `hook-parse-lib.sh` (the ONE parsing model
   they all source, #237), plus a `*.test.sh` self-test beside each hook — the merge gate's carries

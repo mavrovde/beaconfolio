@@ -1049,4 +1049,3 @@ uploaded profile data, never from this repository.
 
 **Built with ❤️ using Angular, FastAPI, and Ollama**
 
-<!-- measurement measure/docs -->

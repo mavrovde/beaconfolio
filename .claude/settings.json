@@ -25,7 +25,7 @@
           {
             "type": "command",
             "if": "Bash(git push*)",
-            "timeout": 900,
+            "timeout": 1800,
             "statusMessage": "Pre-push: docs + backend + frontend test round...",
             "command": "bash \"${CLAUDE_PROJECT_DIR:-.}/.claude/hooks/pre-push-tests.sh\""
           },

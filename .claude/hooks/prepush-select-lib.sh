@@ -80,10 +80,15 @@ prepush_all_hook_legs() { printf 'aiconfig\nhook:guard-destructive\nhook:guard-s
 #     Settings field, or documenting one, is exactly when #296/#297/#298
 #     happened.
 #
-#   NOT included, deliberately: `scripts/*.sh` does not select `aiconfig`. The
-#   map check asks "does every lint on disk have a row" — editing a lint cannot
-#   change that, and RENAMING one shows up as an unmapped new path, which
-#   already selects ALL.
+#   * LINT SCRIPTS select `aiconfig` too. The earlier reasoning — "the map check
+#     asks whether every lint on disk has a row, and editing a lint cannot change
+#     that" — holds for an EDIT but not for a DELETE (#388 review, minor): remove
+#     `scripts/check_foo.sh` and the map now names a file that does not exist,
+#     which is exactly what check_aiconfig_map.sh fails on. A rename is safe
+#     because the new path is unmapped and selects ALL, but a pure deletion has
+#     no new path to notice. The selector is deliberately pure — it never touches
+#     the filesystem — so it cannot tell an edit from a deletion; `aiconfig` is a
+#     sub-second bash lint, so it is added to both.
 # ---------------------------------------------------------------------------
 prepush_contract_legs() {
   case "$1" in
@@ -126,13 +131,13 @@ prepush_legs_for_path() {
     esac ;;
 
   # --- repo-contract lints (scripts/) --------------------------------------
-  scripts/check_no_pii.sh|scripts/check_no_pii.test.sh) echo pii ;;
-  scripts/check_compose_env.sh|scripts/check_compose_env.test.sh) echo compose ;;
-  scripts/check_migration_heads.sh|scripts/check_migration_heads.test.sh) echo migrations ;;
-  scripts/check_live_freshness.sh|scripts/check_live_freshness.test.sh) echo freshness ;;
+  scripts/check_no_pii.sh|scripts/check_no_pii.test.sh) printf 'pii\naiconfig\n' ;;
+  scripts/check_compose_env.sh|scripts/check_compose_env.test.sh) printf 'compose\naiconfig\n' ;;
+  scripts/check_migration_heads.sh|scripts/check_migration_heads.test.sh) printf 'migrations\naiconfig\n' ;;
+  scripts/check_live_freshness.sh|scripts/check_live_freshness.test.sh) printf 'freshness\naiconfig\n' ;;
   scripts/check_aiconfig_map.sh|scripts/check_aiconfig_map.test.sh) echo aiconfig ;;
-  scripts/dedup_changelog_unreleased.py|scripts/dedup_changelog_unreleased.test.sh) echo dedup ;;
-  scripts/run_frontend_suites.sh|scripts/run_frontend_suites.test.sh) printf 'fe:runner\n'; prepush_fe_all_legs ;;
+  scripts/dedup_changelog_unreleased.py|scripts/dedup_changelog_unreleased.test.sh) printf 'dedup\naiconfig\n' ;;
+  scripts/run_frontend_suites.sh|scripts/run_frontend_suites.test.sh) printf 'fe:runner\naiconfig\n'; prepush_fe_all_legs ;;
 
   # --- compose / documented-knob contract ----------------------------------
   docker-compose*.yml|.env.example) echo compose ;;
@@ -215,6 +220,25 @@ prepush_force_full_reason() {
     *:main|*:main\ *|*\ main|*\ main\ *|*:master|*:master\ *|*\ master|*\ master\ *|*release/*)
       echo "the push command targets a protected branch"; return 0 ;;
   esac
+  # ...and the same question asked STRUCTURALLY, because the substring probe
+  # above misses real spellings (#388 review, minor): `git push origin +main`
+  # (the `+` sits where the probe wants a space) and
+  # `git push origin HEAD:refs/heads/main` (ends `/main`, not `:main`). Both are
+  # pushes to the prod-deploy trigger that would otherwise get a SCOPED gate.
+  # For every word: take the destination half of a refspec (after the last `:`),
+  # drop a leading `+` (force) and any `refs/heads/` prefix, then compare.
+  local w dst
+  for w in $cmd; do
+    case "$w" in -*) continue ;; esac          # flags are not refspecs
+    dst="${w//\'/}"; dst="${dst//\"/}"   # `origin 'HEAD:main'` is still main
+    dst="${dst##*:}"
+    dst="${dst#+}"
+    dst="${dst#refs/heads/}"
+    case "$dst" in
+      main|master|release/*)
+        echo "the push command targets a protected branch"; return 0 ;;
+    esac
+  done
   # A push that publishes MORE than the current branch: --all / --mirror send
   # every branch (main included) and --tags / --follow-tags publish release
   # tags. The diff of ONE branch says nothing about what those carry.
@@ -249,5 +273,20 @@ prepush_changed_files() {
     [ -n "$base" ] || return 1
     range="$base..HEAD"
   fi
-  git -C "$root" diff --name-only "$range" 2>/dev/null || return 1
+  # --no-renames is LOAD-BEARING, not tidiness (#388 review, blocker 1).
+  # With rename detection on — git's default, and also whatever `diff.renames`
+  # happens to be set to in the developer's config — a rename reports ONLY the
+  # destination path:
+  #
+  #   R100 frontend/projects/admin/…/foo.ts -> frontend/projects/public/…/foo.ts
+  #   default     -> frontend/projects/public/…/foo.ts
+  #   --no-renames-> BOTH paths
+  #
+  # So `git mv` from admin/ to public/ would select the public legs and never
+  # run `admin` — which has just lost the module its specs import. The same
+  # erases the version-consistency leg when a version carrier is renamed. Worse,
+  # it is config-dependent: two developers get different coverage from the same
+  # diff. Listing both endpoints can only ever select MORE legs, which is the
+  # correct direction for a gate.
+  git -C "$root" diff --no-renames --name-only "$range" 2>/dev/null || return 1
 }

@@ -341,6 +341,28 @@ if [ "${PREPUSH_PRINT_LEGS:-0}" = "1" ]; then
   exit 0
 fi
 
+# Same seam for the ONE decision that is not visible in the leg list: whether
+# this round also runs the mutation contract. That must be driven by `leg_exact`
+# and never by `leg` — under `leg`, a full round (` ALL `) would answer yes and
+# spend ~543s of extra budget in exactly the round that already runs everything,
+# pushing it past the PreToolUse timeout. A timed-out hook does not deny, so the
+# cost of getting this wrong is a fail-OPEN gate.
+# Without this seam the call site is untestable and the guard survives mutation
+# (#388 review, major 2 — the reviewer swapped `leg_exact`→`leg` and all 108
+# cases still passed).
+#
+# The predicate is defined ONCE and consumed by both the seam and the call site.
+# An earlier draft of this fix re-implemented the condition here; the contract
+# then reported a false kill, because mutating the call site left this copy
+# still telling the truth. A seam that re-derives what it claims to observe is
+# the same fake-green shape the hooks' self-tests exist to prevent.
+want_mutation_contract() { leg_exact hook:pre-push-tests; }
+
+if [ "${PREPUSH_PRINT_MUTATION_DECISION:-0}" = "1" ]; then
+  if want_mutation_contract; then printf 'MUTATIONS\n'; else printf 'PLAIN\n'; fi
+  exit 0
+fi
+
 run_checks() {
   echo "== leg selection (#377): $SELECT_REASON =="
   echo "== legs: $LEGS_PRETTY =="
@@ -470,7 +492,7 @@ run_checks() {
       # `leg_exact` is the distinction: in a full round we do not know what
       # changed, so we run the cases exactly as before #377; when the selection
       # NAMES this hook, we additionally run the mutation contract.
-      if leg_exact hook:pre-push-tests; then
+      if want_mutation_contract; then
         echo "== pre-push self-gate + leg-selection self-test + mutation contract (#237/#377) =="
         bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" --mutations || return 1
       else

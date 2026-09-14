@@ -275,11 +275,17 @@ sel "a frontend workspace file runs every project" \
     "fe:admin fe:cdsafety fe:public fe:shared pii" frontend/angular.json
 sel "compose + .env.example select the documented-knob contract" \
     "compose docs pii" docker-compose.prod.yml .env.example
-sel "a script's self-test is selected by that script" \
-    "compose pii" scripts/check_compose_env.sh
-sel "the PII checker itself selects the pii leg" "pii" scripts/check_no_pii.test.sh
-sel "the CHANGELOG history-rewriter selects its own self-test" \
-    "dedup pii" scripts/dedup_changelog_unreleased.py
+# A lint script selects its own leg AND `aiconfig` (#388 review, minor): the
+# selector is pure and cannot tell an EDIT from a DELETION, and a deleted lint
+# leaves the AI-config map naming a file that no longer exists — precisely what
+# check_aiconfig_map.sh fails on. A rename is already safe (the new path is
+# unmapped ⇒ ALL); a pure deletion has no new path to notice.
+sel "a script's self-test is selected by that script, plus the map check" \
+    "aiconfig compose pii" scripts/check_compose_env.sh
+sel "the PII checker itself selects the pii leg, plus the map check" \
+    "aiconfig pii" scripts/check_no_pii.test.sh
+sel "the CHANGELOG history-rewriter selects its own self-test, plus the map check" \
+    "aiconfig dedup pii" scripts/dedup_changelog_unreleased.py
 sel "one hook selects ONLY that hook's self-test" \
     "aiconfig hook:pre-merge-gate pii" .claude/hooks/pre-merge-gate.sh
 sel "a hook's self-test selects the same hook" \
@@ -420,6 +426,93 @@ e2e "--tags publishes release tags, so it runs EVERYTHING" \
     "ALL" "$R" "$P --tags origin"
 e2e "--all publishes every branch, so it runs EVERYTHING" \
     "ALL" "$R" "$P --all origin"
+
+# --- RENAMES: both endpoints must select (#388 review, blocker 1) -----------
+# git's DEFAULT rename detection reports only the DESTINATION path, so a
+# `git mv` across a project boundary would select the destination's legs and
+# silently skip the source's -- exactly where the breakage is, since the source
+# project just lost a module its specs import. It is also `diff.renames`-config
+# dependent, so two developers would get different coverage from one diff.
+# (Case 2 discriminates: without --no-renames it yields only `docs pii`, losing
+# every backend leg for a file that moved OUT of backend/.)
+# The selector passes --no-renames; these cases fail if that is ever dropped.
+mkrenamefixture() { # mkrenamefixture <branch> <from> <to>
+  local br="$1" from="$2" to="$3" d
+  d="$(mktemp -d)"; FIXTURES+=("$d")
+  git init -q -b main "$d" >/dev/null 2>&1
+  git -C "$d" config user.email selftest@example.com
+  git -C "$d" config user.name  selftest
+  git -C "$d" config commit.gpgsign false
+  # rename detection is ON by default; set it explicitly so the case also proves
+  # the flag beats a hostile local config, not merely the default.
+  git -C "$d" config diff.renames true
+  mkdir -p "$d/$(dirname "$from")"
+  printf 'export const x = 1;\n' > "$d/$from"
+  git -C "$d" add -A >/dev/null; git -C "$d" commit -qm base >/dev/null
+  git -C "$d" update-ref refs/remotes/origin/main HEAD
+  git -C "$d" checkout -q -b "$br"
+  mkdir -p "$d/$(dirname "$to")"
+  git -C "$d" mv "$from" "$to" >/dev/null
+  git -C "$d" commit -qm move >/dev/null
+  git -C "$d" config "branch.$br.remote" origin
+  git -C "$d" config "branch.$br.merge" refs/heads/main
+  printf '%s\n' "$d"
+}
+
+R="$(mkrenamefixture fix/mv-admin-to-public \
+      frontend/projects/admin/src/app/foo.ts \
+      frontend/projects/public/src/app/foo.ts)"
+e2e "a rename from admin/ to public/ still runs ADMIN (both endpoints select)" \
+    "fe:admin fe:cdsafety fe:public pii" "$R" "$P origin HEAD"
+
+R="$(mkrenamefixture fix/mv-backend-to-docs backend/app/main.py docs/moved.md)"
+e2e "a rename out of backend/ still runs the BACKEND legs" \
+    "backend docs lint pii" "$R" "$P origin HEAD"
+
+# --- the mutation contract must NOT run in a full round (#388 review, major 2) -
+# `pre-merge-gate.test.sh --mutations` measured 543s alone under load; the hook
+# legs subtotal 646s before pytest/Vitest. Spending that in a fail-closed ALL
+# round would push the round past the 900s PreToolUse timeout -- and a timed-out
+# hook does NOT deny, so it would trade a slow gate for an OPEN one.
+# These cases pin the call site to `leg_exact`; with `leg` the ALL case flips.
+mut_decision() { # mut_decision <repo> <push command>
+  printf '{"tool_input":{"command":%s}}' "$(jq -Rn --arg c "$2" '$c')" \
+    | CLAUDE_PROJECT_DIR="$1" PREPUSH_PRINT_MUTATION_DECISION=1 PREPUSH_FULL=0 bash "$HOOK"
+}
+chk_decision() { # chk_decision <desc> <want> <repo> <cmd>
+  local got; got="$(mut_decision "$3" "$4" | tr -d '\n')"
+  if [ "$got" = "$2" ]; then printf 'PASS  [%s]  %s\n' "$got" "$1"
+  else printf 'FAIL  got="%s" want="%s"  %s\n' "$got" "$2" "$1"; fails=$((fails + 1)); fi
+}
+
+R="$(mkfixture fix/hookchange main .claude/hooks/pre-push-tests.sh)"
+chk_decision "a diff that NAMES this hook runs the mutation contract" \
+  "MUTATIONS" "$R" "$P origin HEAD"
+
+R="$(mkfixture fix/unmapped-full main importer/ledger.py)"
+chk_decision "a fail-closed ALL round runs the PLAIN cases, not the mutations" \
+  "PLAIN" "$R" "$P origin HEAD"
+
+R="$(mkfixture fix/mainpush main docs/guide.md)"
+chk_decision "a push to main (full round) runs the PLAIN cases, not the mutations" \
+  "PLAIN" "$R" "$P origin HEAD:main"
+
+# --- refspec spellings that still target main (#388 review, minor) ----------
+# The substring probe missed `+main` (the `+` sits where it wants a space) and
+# `refs/heads/main` (ends `/main`, not `:main`). Both are pushes to the
+# prod-deploy trigger; both used to get a SCOPED gate.
+R="$(mkfixture fix/refspec-plus main docs/guide.md)"
+e2e "a force refspec '+main' runs EVERYTHING" \
+    "ALL" "$R" "$P origin +main"
+e2e "a fully-qualified 'HEAD:refs/heads/main' runs EVERYTHING" \
+    "ALL" "$R" "$P origin HEAD:refs/heads/main"
+e2e "a force + fully-qualified '+HEAD:refs/heads/main' runs EVERYTHING" \
+    "ALL" "$R" "$P origin +HEAD:refs/heads/main"
+e2e "a fully-qualified release branch runs EVERYTHING" \
+    "ALL" "$R" "$P origin HEAD:refs/heads/release/1.2.3"
+# ...and the structural probe must not over-match a branch merely NAMED for main
+e2e "a feature branch whose NAME contains 'main' still scopes" \
+    "docs pii" "$R" "$P origin HEAD:feature-main-nav"
 
 R="$(mkfixture fix/unmapped main importer/ledger.py)"
 e2e "an unmappable path runs EVERYTHING (fail closed)" \
@@ -606,12 +699,23 @@ mutate die "$LIBF" "an unnameable branch (detached HEAD) no longer forces the fu
   "replace::    HEAD|'')     echo=>    HEADXX)      echo"
 mutate die "$LIBF" "PREPUSH_FULL=1 is ignored" \
   'replace::[ "${PREPUSH_FULL:-0}" = "1" ] && { echo=>[ "${PREPUSH_FULL:-0}" = "9" ] && { echo'
-mutate die "$LIBF" "a refspec targeting main is no longer recognised" \
-  'replace::    *:main|*:main\ *=>    *:mainXX|*:mainXX\ *'
+# The protected-branch check now has TWO layers: a substring probe and a
+# structural one that parses each word as a refspec. The structural layer
+# SUBSUMES the substring layer, so mutating the substring probe alone can no
+# longer kill -- and a mutation that cannot kill is not evidence. The contract
+# therefore targets the structural layer, which alone carries `+main` and
+# `refs/heads/main`. The substring probe is retained as deliberate redundancy on
+# a control whose failure mode is running a SCOPED gate on a prod-deploy trigger.
+mutate die "$LIBF" "the structural refspec probe stops recognising a protected branch" \
+  'replace::      main|master|release/*)=>      mainXX|masterXX|releaseXX/*)'
 mutate die "$LIBF" "--all/--tags no longer force the full round" \
   'replace::    *--all*|*--mirror*|*--tags*|*--follow-tags*)=>    *--allXX*|*--mirrorXX*)'
 mutate die "$LIBF" "an unobtainable git range reports success instead of failing" \
   'replace::  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 1=>  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo docs/fake.md; return 0; }'
+mutate die "$LIBF" "rename detection hides the SOURCE path of a git mv (#388 blocker 1)" \
+  'replace::  git -C "$root" diff --no-renames --name-only "$range" 2>/dev/null || return 1=>  git -C "$root" diff --name-only "$range" 2>/dev/null || return 1'
+mutate die "$HOOKF" "the mutation contract leaks into every full round (fail-open risk, #388 major 2)" \
+  'replace::want_mutation_contract() { leg_exact hook:pre-push-tests; }=>want_mutation_contract() { leg hook:pre-push-tests; }'
 mutate die "$HOOKF" "the hook ignores the selector and prints a fixed narrow set" \
   'replace::| prepush_select_legs)=>| true; echo " docs ")'
 mutate die "$HOOKF" "the hook no longer fails closed when the range is unobtainable" \

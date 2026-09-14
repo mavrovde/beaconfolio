@@ -34,13 +34,31 @@ All notable changes to this project will be documented in this file.
     `frontend/projects/public/src/app/version.ts`, `docker-compose.prod.yml`) each select the
     version-consistency leg, and `backend/app/config.py` / `README.md` / `docs/DEPLOYMENT.md` /
     `setup.sh` each select the documented-knob contract they feed (#296/#297/#298).
-  - **Proved able to fail.** `pre-push-tests.test.sh` gained 55 selection cases in two layers —
+  - **Proved able to fail.** `pre-push-tests.test.sh` now runs **118 cases** in two layers —
     the mapping driven directly, and the whole hook driven end-to-end against throwaway git
     repositories so the `@{push}`/`@{upstream}`/merge-base resolution is exercised rather than
     mocked — plus a `--mutations` contract that neuters one selection rule at a time, including
-    "the selector returns an empty selection". Result: **20 killed, 0 survived,
+    "the selector returns an empty selection". Result: **23 killed, 0 survived,
     0 invalid**. Without it, a selector that silently selected nothing would pass every
     "X must not be selected" case in the file.
+  - **Renames select BOTH endpoints.** `git diff --name-only` with git's default rename
+    detection reports only the DESTINATION, so `git mv frontend/projects/admin/…/foo.ts
+    frontend/projects/public/…/foo.ts` would have selected the public legs and never run
+    `admin` — the project that just lost a module its specs import — and the behaviour was
+    `diff.renames`-config dependent, so two developers got different coverage from one diff.
+    The selector passes `--no-renames`; two end-to-end cases and a mutation pin it.
+  - **Protected-branch detection is structural, not a substring probe.** `git push origin
+    +main` (the `+` sits where the probe wanted a space) and `git push origin
+    HEAD:refs/heads/main` (ends `/main`, not `:main`) are pushes to the prod-deploy trigger
+    that used to receive a SCOPED gate. Each word is now parsed as a refspec — destination
+    half, leading `+` and `refs/heads/` stripped — while a branch merely NAMED
+    `feature-main-nav` still scopes.
+  - **Headroom for the full round.** The reviewer measured `pre-merge-gate.test.sh --mutations`
+    at **543s alone** under load (2.37), with the hook legs subtotalling 646s *before*
+    pytest/Vitest/lints — so the 671s full round is an idle-machine number and a `main` push, the
+    case that always forces `ALL`, sat close to the 900s `PreToolUse` timeout. A timed-out hook
+    does **not** deny, so overrun there is a fail-OPEN gate, not a slow one. The hook's timeout in
+    `.claude/settings.json` is raised to **1800s**; the other three hooks are unchanged (15s/30s).
   - **The mutation contract runs when a hook actually changed, not in every full round.** It
     costs ~100s and putting it everywhere took the full round 704s → **808s** against the hook's
     900s `PreToolUse` timeout — and a timed-out hook does not deny, so proving the narrowing
