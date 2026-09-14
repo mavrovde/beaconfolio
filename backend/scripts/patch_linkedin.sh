@@ -16,7 +16,10 @@ set -e
 # from backend/.)
 
 REQ="${1:-requirements.txt}"
-VER="$(grep -E '^linkedin-api==' "$REQ" | head -1 | sed -E 's/^linkedin-api==([0-9][0-9A-Za-z.]*).*$/\1/')"
+# sed -n …p: a line whose version part is NOT numeric-dotted simply doesn't
+# print, so it falls into the guard below instead of passing the raw line
+# through into $VER and dying later inside pip (#408 review round 1).
+VER="$(sed -nE 's/^linkedin-api==([0-9][0-9A-Za-z.]*).*$/\1/p' "$REQ" | head -1)"
 if [ -z "$VER" ]; then
   echo "patch_linkedin.sh: no 'linkedin-api==<version>' pin found in $REQ" >&2
   exit 1
@@ -29,7 +32,7 @@ if [ ! -f "/tmp/wheels/${WHEEL}" ]; then
   # The wheel filename convention broke (upstream repackaged?) — say which
   # file WAS downloaded rather than failing on a mystery path later.
   echo "patch_linkedin.sh: expected /tmp/wheels/${WHEEL}, found:" >&2
-  ls /tmp/wheels >&2
+  ls /tmp/wheels >&2 || true   # under set -e a failed ls would pre-empt exit 1
   exit 1
 fi
 mkdir -p /tmp/patched

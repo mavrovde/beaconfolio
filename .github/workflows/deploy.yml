@@ -53,6 +53,12 @@ jobs:
           python -m pip install --upgrade pip
           bash scripts/patch_linkedin.sh
           pip install -r requirements-dev.txt
+      - name: patch_linkedin.sh self-test (failure branches)
+        # The happy path is exercised by every install leg (the line above,
+        # plus five more in this file); the exit-1 guards are exercised only
+        # here. Network-free — pip/python are PATH-stubbed (#381, #408 round 1).
+        working-directory: ./backend
+        run: bash scripts/patch_linkedin.test.sh
       - name: Run Ruff (lint)
         working-directory: ./backend
         run: ruff check . --output-format=github

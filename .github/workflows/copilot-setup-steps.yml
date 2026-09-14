@@ -33,7 +33,7 @@ jobs:
       - name: Install backend dependencies
         working-directory: ./backend
         # patch_linkedin.sh is mandatory before any backend install: the pinned
-        # linkedin-api==2.2.1 sdist has an invalid entry point that aborts pip.
+        # linkedin-api sdist (pin in requirements.txt) has an invalid entry point that aborts pip.
         # Every install leg in deploy.yml and backend/Dockerfile does the same.
         run: |
           python -m pip install --upgrade pip
