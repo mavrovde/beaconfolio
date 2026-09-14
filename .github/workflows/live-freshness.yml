@@ -90,10 +90,19 @@ jobs:
         if: always()
         env:
           # A forker overrides with their own hostnames via a repo variable.
-          TLS_HOSTNAMES: ${{ vars.TLS_HOSTNAMES || 'beaconfolio.com www.beaconfolio.com admin.beaconfolio.com' }}
+          # The maintainer's three are the default ONLY on the canonical repo:
+          # on a fork they would probe someone else's certificates and print a
+          # vacuous green while monitoring none of the fork's own (#413 review,
+          # major 2). A fork without TLS_HOSTNAMES falls back to the hostname
+          # of its PUBLIC_URL below — the same variable the job gate documents.
+          TLS_HOSTNAMES: ${{ vars.TLS_HOSTNAMES || (github.repository == 'mavrovde/beaconfolio' && 'beaconfolio.com www.beaconfolio.com admin.beaconfolio.com' || '') }}
           MIN_DAYS: 21
         run: |
           set -u
+          if [ -z "$TLS_HOSTNAMES" ]; then
+            TLS_HOSTNAMES="$(printf '%s' "$PUBLIC_URL" | sed -E 's#^https?://##; s#[/:].*##')"
+            echo "TLS_HOSTNAMES unset — derived from PUBLIC_URL: $TLS_HOSTNAMES"
+          fi
           rc=0
           {
             echo "## Certificate expiry (minimum ${MIN_DAYS}d)"
@@ -103,8 +112,12 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           now=$(date +%s)
           for host in $TLS_HOSTNAMES; do
-            end=$(echo | openssl s_client -servername "$host" -connect "$host:443" 2>/dev/null \
-                  | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2) || end=""
+            # timeout: an unreachable host must fail THIS hostname's row, not
+            # hang the step until the job timeout. The empty-$end guard below
+            # is what actually catches a failed probe — GH steps run bash -e
+            # WITHOUT pipefail, so the pipeline's exit status is cut's (0).
+            end=$(echo | timeout 15 openssl s_client -servername "$host" -connect "$host:443" 2>/dev/null \
+                  | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
             if [ -z "$end" ]; then
               echo "| $host | (no certificate readable) | — | 🚨 unreachable |" >> "$GITHUB_STEP_SUMMARY"
               echo "::error title=TLS probe failed::$host presented no readable certificate."

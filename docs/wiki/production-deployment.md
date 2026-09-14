@@ -1155,6 +1155,7 @@ ssh-keygen -t ed25519 -f ./beaconfolio_deploy -C 'github-actions rollout' -N ''
 | `DEPLOY_DIR` | no | Compose project dir (default `/opt/beaconfolio`; set it if your host uses another path) |
 | `DEPLOY_SSH_PORT` | no | Default 22 |
 | `PUBLIC_URL` (**variable**) | forks: yes | Health-gate + Live Freshness URL |
+| `TLS_HOSTNAMES` (**variable**) | no | Space-separated hostnames the certificate-expiry alarm probes (#310). Canonical repo defaults to the maintainer's three; a fork without it probes only its `PUBLIC_URL` hostname — set it to cover `admin.` and `www.` too |
 
 What each stage does, and what it means for neighbours:
 
