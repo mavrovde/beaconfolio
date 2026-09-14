@@ -36,9 +36,11 @@
 #   * check 4's set semantics cannot see MULTIPLICITY loss (two identical lines
 #     collapsing to one) — accepted, because the dedup fixer legitimately
 #     collapses exact duplicates.
-#   * checks 1 and 3 are not fence-aware (check 2 is): a fenced `## [x.y.z]`
-#     line would be miscounted. This repo's CHANGELOG has never carried a
-#     fenced release heading; revisit if one ever appears.
+#   * checks 1 and 3 are not fence-aware (check 2 is), and neither is check
+#     4's rotation scan: a fenced `## [x.y.z]` line would be miscounted, and a
+#     fenced released heading inside a new section would mis-scope the
+#     rotation exemption. This repo's CHANGELOG has never carried a fenced
+#     release heading; revisit if one ever appears.
 #   * the pre-push run measures against the LOCAL origin/main, which is as
 #     fresh as the last fetch — a collision landed on main seconds ago is
 #     caught by the CI run and the merge gate's approval-covers-head check.

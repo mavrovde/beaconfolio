@@ -179,6 +179,31 @@ chain_check "commit prose AND real chain"  "git commit -m \"then $P\" && $P orig
 chain_check "fetch then push (HEAD fixed)" "git fetch origin && $P origin b"              GATE
 chain_check "plain push, no chain"         "$P origin main"                               GATE
 chain_check "quoted prose chain is data"   "gh pr comment 1 --body \"run git commit -m x && $P\"" ALLOW
+# round-2 minors: the deny is ORDER-AWARE (a head-mover AFTER the push cannot
+# mis-vet it — the pushed HEAD was already examined) and unquoted-heredoc PROSE
+# must not escalate a GATE to a hard DENY (strip_text_heredocs keeps those
+# bodies inspected by design; the deny uses strip_all_heredoc_bodies instead).
+chain_check "push THEN amend (order-aware)" "$P origin b && git commit --amend --no-edit" GATE
+chain_check "push THEN pull (order-aware)"  "$P origin b; git pull origin main"           GATE
+chain_check "unquoted-heredoc prose + push" "cat > notes.md <<EOF
+git commit -m draft
+EOF
+$P origin main"                                                                           GATE
+
+# round-2 major: an oversized command must stay GATE — a hard DENY must never
+# issue from a parse the size bound already declared untrusted (the reviewer
+# measured a 24716-char commit-prose command with NO push in it being denied).
+# Bespoke case because it needs PREPUSH_MAX_CMD_LEN; live under SELECTION_ONLY
+# so its mutation can be killed.
+big_prose="git commit -m '$(printf 'about the %s %.0s' "$PU" $(seq 1 40))'"
+out="$(printf '{"tool_input":{"command":%s}}' "$(jq -Rn --arg c "$big_prose" '$c')" \
+      | PREPUSH_DRY_RUN=1 PREPUSH_MAX_CMD_LEN=50 bash "$HOOK")"
+if [ "$out" = "GATE" ]; then
+  printf 'PASS  [GATE]  oversized commit-prose command stays GATE (chain deny stands down)\n'
+else
+  printf 'FAIL  got=%s want=GATE  oversized commit-prose command must stay GATE\n' "$out"
+  fails=$((fails + 1))
+fi
 
 # --- degraded path: unparseable payload (no .tool_input.command) ------------
 # Without a command field the real text is invisible; push-looking payloads
@@ -639,6 +664,18 @@ FR="$(mkrepo https://github.com/mavrovde/beaconfolio.wiki.git)"
 check_in "#353: a non-push command in a foreign repo is still ALLOW" "$FR" "git status" ALLOW
 rm -rf "$FR"
 
+# round-2 blocker: the push-rides-alone deny must NOT fire on a chained push of
+# a DIFFERENT repository — `add && commit && push` is exactly the wiki workflow
+# #353 exists for, and this gate does not vet that repository at all. The deny
+# therefore sits AFTER the foreign-repo pass-through.
+FR="$(mkrepo https://github.com/mavrovde/beaconfolio.wiki.git)"
+check_in "#406 r2: a CHAINED commit+push of the WIKI still passes through" \
+         "$FR" "git add -A && git commit -m notes && $P" ALLOW
+rm -rf "$FR"
+# …while the same chain in THIS project is exactly what the deny exists for.
+check_in "#406 r2: the same chained commit+push in THIS project is DENIED" \
+         "$PROJECT" "git add -A && git commit -m notes && $P" DENY
+
 # --- the push directory is the COMMAND's, not the hook's cwd (#402 blocker 1)
 # The hook stands in some ambient cwd, but `cd <dir> &&` and `git -C <dir>`
 # both push a repository it is not standing in. Reading identity from $PWD
@@ -1042,6 +1079,12 @@ mutate die "$HOOKF" "the chain deny fires on EVERY push (deny-everything polarit
   'replace::if command_chains_head_mover; then=>if command_is_git_push; then'
 mutate die "$HOOKF" "commit drops out of the head-mover list" \
   'replace::    commit|merge|rebase|cherry-pick=>    xcommitx|merge|rebase|cherry-pick'
+mutate die "$HOOKF" "the chain deny ignores the size bound (denies from an untrusted parse)" \
+  'replace::  [ "${#CMD}" -gt "$PREPUSH_MAX_CMD_LEN" ] && return 1=>  :'
+mutate die "$HOOKF" "the chain deny goes order-blind (push-then-amend denied again)" \
+  'replace::    if segment_invokes_git_push "$seg"; then IFS="$OLD"; return 1; fi=>    :'
+mutate die "$HOOKF" "the chain deny reads unquoted-heredoc prose as commands again" \
+  'replace::quote_split "$(strip_all_heredoc_bodies "$CMD")"=>quote_split "$(strip_text_heredocs "$CMD")"'
 mutate die "$HOOKF" "the hook ignores the selector and prints a fixed narrow set" \
   'replace::| prepush_select_legs)=>| true; echo " docs ")'
 mutate die "$HOOKF" "the hook no longer fails closed when the range is unobtainable" \

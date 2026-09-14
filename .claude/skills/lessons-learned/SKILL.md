@@ -1853,7 +1853,12 @@ never saw, which went red in CI. The failure is silent precisely when it matters
 rule and was violated anyway under release pressure — so it is now STRUCTURAL:
 `pre-push-tests.sh` denies any real push chained (any separator) with a HEAD-moving git command
 (`commit`/`merge`/`rebase`/`cherry-pick`/`am`/`revert`/`reset`/`pull`/`checkout`/`switch`),
-quote-aware so prose stays data, pinned by never-stubbed `chain_check` cases + 3 mutations.
+quote-aware so prose stays data, pinned by never-stubbed `chain_check` cases + 6 mutations.
+The deny's edges matter as much as the deny (#406 round 2): it fires only where it can be RIGHT —
+after the foreign-repo pass-through (a chained wiki push mis-vets nothing), only when the
+head-mover comes BEFORE the push (`push && commit --amend` is fine), never above the size bound
+(a hard deny must not issue from a parse already declared untrusted — that stays GATE), and never
+from heredoc prose (all bodies stripped for this decision; a miss falls back to GATE).
 General shape: **a rule that exists only in memory/discipline WILL be violated under pressure;
 when the violation is mechanically detectable, make the hook detect it** (same arc as §54's
 stack guard and the rule-13 merge gate).

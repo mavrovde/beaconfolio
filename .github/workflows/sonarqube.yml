@@ -51,10 +51,67 @@ jobs:
     needs: check-secrets
     if: needs.check-secrets.outputs.enabled == 'true'
     runs-on: ubuntu-latest
+    # The scanner reads the coverage reports named in sonar-project.properties
+    # (backend/coverage.xml, frontend/coverage/*/lcov.info). Until #407 this job
+    # ran WITHOUT producing them, so the quality gate read `new_coverage = 0.0`
+    # and was structurally RED on every PR — a normalised red (the #372 shape).
+    # The tests therefore run HERE, before the scan, same commands as deploy.yml's
+    # test jobs. That duplicates the suites in a second workflow by design: this
+    # one runs in parallel with deploy.yml on runner minutes, not on the push
+    # budget, and a coverage-blind Sonar gate measures nothing.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_beaconfolio
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # full history so new-code detection and blame are accurate
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: "pip"
+      - name: Install backend dependencies
+        working-directory: ./backend
+        run: |
+          python -m pip install --upgrade pip
+          bash scripts/patch_linkedin.sh
+          pip install -r requirements-dev.txt
+      - name: Backend coverage (pytest → backend/coverage.xml)
+        working-directory: ./backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/test_beaconfolio
+          SECRET_KEY: test-secret-key-for-ci
+          OLLAMA_BASE_URL: http://localhost:11434
+          # Rule 10: explicit empty credential — no paid service is reachable.
+          BEACONFOLIO_GEMINI_API_KEY: ""
+        run: pytest -n auto --tb=short --cov=app --cov-report=xml
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm i --legacy-peer-deps
+      - name: Frontend coverage (Vitest ×3 → frontend/coverage/*/lcov.info)
+        # run_frontend_suites.sh = the signature-narrow retry for the upstream
+        # Vitest worker-teardown race (#319, #309), same as deploy.yml.
+        run: bash scripts/run_frontend_suites.sh --coverage
 
       - name: Analyze with SonarQube
         uses: SonarSource/sonarqube-scan-action@v8

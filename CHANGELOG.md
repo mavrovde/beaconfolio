@@ -271,6 +271,15 @@ All notable changes to this project will be documented in this file.
   whichever fired first — it failed inside the loaded pre-push gate and passed 100/0 when run alone.
 
 ### Fixed
+- **The SonarCloud quality gate stops being structurally red (#407, #406 review round 2)** — the
+  `Analysis` job ran the scanner with no test step, so the coverage reports named in
+  `sonar-project.properties` never existed at scan time and the gate read `new_coverage = 0.0 < 80`
+  on every PR regardless of content — a normalised red, the #372 shape. The job now generates the
+  coverage before scanning: backend `pytest --cov-report=xml` against a pgvector service container
+  (rule 10: explicit empty paid-API credential) and `run_frontend_suites.sh --coverage` for all
+  three Vitest projects — the same commands as deploy.yml's test jobs, deliberately duplicated in
+  the parallel workflow (runner minutes, not the push budget; a coverage-blind gate measures
+  nothing).
 - **`check_changelog_merge.sh` check 4 is rotation-aware (#406 review, blocker 1)** — a release PR
   moves the whole `[Unreleased]` block under a brand-new released heading by design, and the lint's
   block-scoped set semantics read that as loss: the first release PR after it shipped drew **346
@@ -286,9 +295,18 @@ All notable changes to this project will be documented in this file.
   CI instead. `pre-push-tests.sh` now structurally denies any real push chained with
   `commit`/`merge`/`rebase`/`checkout`/`switch`/`reset`/`pull`/… (same quote-aware segment parsing,
   so quoted prose stays data), with the message naming the remedy: run the state change first, then
-  push as its OWN command. Pinned by 8 `chain_check` cases that stay live under the mutation
-  harness, plus 3 mutations (deny removed / deny-everything polarity / `commit` dropped from the
-  head-mover list).
+  push as its OWN command. Round 2 sharpened the deny's edges: it sits **after** the #353
+  foreign-repo pass-through (a chained wiki push mis-vets nothing — this gate does not vet that
+  repository at all), it is **order-aware** (`push && commit --amend` is fine; the pushed HEAD was
+  already examined), it **stands down above the size bound** (a hard deny must never issue from a
+  parse the bound declared untrusted — `command_is_git_push` already GATEd conservatively there),
+  and it strips **every** heredoc body, unquoted delimiters included, so document prose cannot
+  escalate a GATE to a DENY (missing a real head-mover only falls back to GATE, the pre-#406
+  behavior). Pinned by 14 dedicated cases (11 `chain_check`, one oversized bespoke, two
+  foreign-repo fixtures) that stay live under the mutation harness, plus 6 mutations (deny
+  removed / deny-everything polarity / `commit`
+  dropped from the head-mover list / size bound ignored / order-blind / unquoted-heredoc prose
+  read as commands).
 - **Per-target importer state ledgers can no longer reach the public repo** — `.gitignore` covered
   only `importer/state.json`, but the importer writes one ledger per target
   (`state.<env>.json`), each holding personal LinkedIn URN activity data; the untracked

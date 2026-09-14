@@ -319,55 +319,6 @@ command_is_git_push() {
 
 command_is_git_push || allow
 
-# --- THE PUSH RIDES ALONE (#406 review round 1, blocker 2) -------------------
-# This hook fires BEFORE the command body executes. A push chained after a git
-# command that MOVES HEAD (`git commit -m … && git push …`) is therefore vetted
-# against the PRE-COMMIT state: measured same-day incident — the gate saw
-# HEAD == origin/main (empty diff), certified trivially, and the chain then
-# pushed a commit the gate never examined; the broken CHANGELOG rotation it
-# would have caught went red in CI instead. Structural remedy: DENY the chain
-# outright. Same subcommand-extraction shape as segment_invokes_git_push, so
-# quoted prose ("run `git commit && git push`") stays data via quote_split.
-segment_invokes_head_mover() {
-  local seg="$1" first rest tok
-  seg="${seg//$NL_SENTINEL/ }"
-  seg="$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+/ /g')"
-  first="${seg%% *}"
-  [ "$first" = "git" ] || return 1
-  [ "$first" = "$seg" ] && return 1
-  rest="${seg#* }"
-  while :; do
-    tok="${rest%% *}"
-    case "$tok" in
-      -C|-c|--git-dir|--work-tree|--namespace|--config-env)
-        [ "$tok" = "$rest" ] && return 1
-        rest="${rest#* }"; tok="${rest%% *}"
-        [ "$tok" = "$rest" ] && return 1
-        rest="${rest#* }" ;;
-      -*) [ "$tok" = "$rest" ] && return 1; rest="${rest#* }" ;;
-      *) break ;;
-    esac
-  done
-  tok="${rest%% *}"
-  tok="${tok#\"}"; tok="${tok#\'}"; tok="${tok%\"}"; tok="${tok%\'}"
-  case "$tok" in
-    commit|merge|rebase|cherry-pick|am|revert|reset|pull|checkout|switch) return 0 ;;
-  esac
-  return 1
-}
-command_chains_head_mover() {
-  local seg OLD="$IFS"
-  IFS=$'\n'
-  for seg in $(quote_split "$(strip_text_heredocs "$CMD")"); do
-    if segment_invokes_head_mover "$seg"; then IFS="$OLD"; return 0; fi
-  done
-  IFS="$OLD"
-  return 1
-}
-if command_chains_head_mover; then
-  deny "PUSH RIDES ALONE: this command chains a HEAD-moving git command (commit/merge/rebase/checkout/…) with git push, so the gate would vet the WRONG commit — the hook runs before the chain executes. Run the state change first, then push as its OWN command."
-fi
-
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/../.." && pwd)}"
 LOG="$PREPUSH_LOG"
 
@@ -532,6 +483,102 @@ if [ "$FOREIGN" = "1" ]; then
   printf 'pre-push gate: foreign repo (%s), gates not applicable — this project is %s\n' \
     "$THEIRS" "$OURS" >&2
   allow
+fi
+
+# --- THE PUSH RIDES ALONE (#406 review rounds 1-2) ---------------------------
+# This hook fires BEFORE the command body executes. A push chained after a git
+# command that MOVES HEAD (`git commit -m … && git push …`) is therefore vetted
+# against the PRE-COMMIT state: measured same-day incident — the gate saw
+# HEAD == origin/main (empty diff), certified trivially, and the chain then
+# pushed a commit the gate never examined; the broken CHANGELOG rotation it
+# would have caught went red in CI instead. Structural remedy: DENY the chain
+# outright. Same subcommand-extraction shape as segment_invokes_git_push, so
+# quoted prose ("run `git commit && git push`") stays data via quote_split.
+#
+# Placement is load-bearing (round-2 blocker): this sits AFTER the foreign-repo
+# pass-through, because a chained push of a DIFFERENT repository (the wiki
+# workflow #353 exists for) mis-vets nothing — this gate does not vet that
+# repository at all — so the deny would only re-teach the bypass habit #353
+# removed. Every path that reaches here IS a gated push of THIS project.
+segment_invokes_head_mover() {
+  local seg="$1" first rest tok
+  seg="${seg//$NL_SENTINEL/ }"
+  seg="$(printf '%s' "$seg" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+/ /g')"
+  first="${seg%% *}"
+  [ "$first" = "git" ] || return 1
+  [ "$first" = "$seg" ] && return 1
+  rest="${seg#* }"
+  while :; do
+    tok="${rest%% *}"
+    case "$tok" in
+      -C|-c|--git-dir|--work-tree|--namespace|--config-env)
+        [ "$tok" = "$rest" ] && return 1
+        rest="${rest#* }"; tok="${rest%% *}"
+        [ "$tok" = "$rest" ] && return 1
+        rest="${rest#* }" ;;
+      -*) [ "$tok" = "$rest" ] && return 1; rest="${rest#* }" ;;
+      *) break ;;
+    esac
+  done
+  tok="${rest%% *}"
+  tok="${tok#\"}"; tok="${tok#\'}"; tok="${tok%\"}"; tok="${tok%\'}"
+  case "$tok" in
+    commit|merge|rebase|cherry-pick|am|revert|reset|pull|checkout|switch) return 0 ;;
+  esac
+  return 1
+}
+# For the DENY decision only: drop EVERY heredoc body, quoted delimiter or not
+# (round-2 minor — strip_text_heredocs deliberately keeps unquoted-delimiter
+# bodies inspected, which is the right fail-closed shape for GATE but let prose
+# in a plain <<EOF document escalate a GATE to a hard DENY). Missing a real
+# head-mover here only falls back to GATE — the pre-#406 behavior — so the
+# false-negative direction is safe by construction.
+strip_all_heredoc_bodies() {
+  local input="$1" out="" line masked head rest delim i j n end _t
+  local -a lines=()
+  while IFS= read -r line; do lines+=("$line"); done <<< "$input"
+  n=${#lines[@]}
+  for (( i=0; i<n; i++ )); do
+    line="${lines[i]}"
+    out+="$line"$'\n'
+    case "$line" in *'<<'*) ;; *) continue ;; esac
+    masked="$(mask_quotes "$line")"
+    case "$masked" in *"<<"*) ;; *) continue ;; esac
+    head="${masked%%<<*}"
+    rest="${line:${#head}}"
+    [ "${rest:2:1}" = "<" ] && continue     # here-string, not a heredoc
+    delim="$(printf '%s' "$rest" | sed -nE "s/^<<-?[[:space:]]*[\"']?\\\\?([A-Za-z_][A-Za-z0-9_]*)[\"']?.*/\1/p")"
+    [ -z "$delim" ] && continue
+    end=-1
+    for (( j=i+1; j<n; j++ )); do
+      _t="${lines[j]}"
+      _t="${_t#"${_t%%[![:space:]]*}"}"
+      if [ "$_t" = "$delim" ]; then end=$j; break; fi
+    done
+    [ "$end" -lt 0 ] && continue            # no terminator: strip nothing
+    i=$end
+  done
+  printf '%s' "$out"
+}
+command_chains_head_mover() {
+  # A hard DENY must never issue from a parse the size bound already declared
+  # untrusted (round-2 major): command_is_git_push GATEd conservatively above
+  # this length, and GATE is where an oversized command stays.
+  [ "${#CMD}" -gt "$PREPUSH_MAX_CMD_LEN" ] && return 1
+  local seg OLD="$IFS"
+  IFS=$'\n'
+  for seg in $(quote_split "$(strip_all_heredoc_bodies "$CMD")"); do
+    # ORDER-AWARE (round-2 minor): only a head-mover BEFORE the first push
+    # mis-vets it — by the time `git push … && git commit --amend` runs its
+    # amend, the gate has already vetted the HEAD that was actually pushed.
+    if segment_invokes_git_push "$seg"; then IFS="$OLD"; return 1; fi
+    if segment_invokes_head_mover "$seg"; then IFS="$OLD"; return 0; fi
+  done
+  IFS="$OLD"
+  return 1
+}
+if command_chains_head_mover; then
+  deny "PUSH RIDES ALONE: this command chains a HEAD-moving git command (commit/merge/rebase/checkout/…) before git push, so the gate would vet the WRONG commit — the hook runs before the chain executes. Run the state change first, then push as its OWN command."
 fi
 
 # --- From here on, this IS a real push: run the gate. -----------------------
