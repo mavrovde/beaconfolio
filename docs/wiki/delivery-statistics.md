@@ -96,8 +96,9 @@ tool that **silently deleted** unrecognised sections — 66 commits in this repo
 history carry one. Rounds spent finding those are not waste.
 
 **2. Two PRs dominated, and that part was avoidable.** #373 took 8 verdicts and #371
-took 4 — **12 of 41 verdicts, 964,411 tokens, 46% of all review spend (37% of total
-spend), on 2 of 17 PRs.** The causes were self-inflicted and specific:
+took 4 — **12 of 41 verdicts, at least 964,411 tokens, 46% of all review spend (37% of
+total spend), on 2 of 17 PRs.** That is a floor: it sums only the ten runs dedicated to
+those two PRs, so any verdict raised for either inside a batched run is uncounted. The causes were self-inflicted and specific:
 
 - a fix aimed at the **wrong vulnerability** (reverse tabnabbing, when the alert was an
   open redirect);
