@@ -477,8 +477,11 @@ check "pipe: escaped b\\ash"         "echo \"$DV $V\" | b\\ash"                 
 # ...and unquoting must not reclassify a benign quoted argument as a shell.
 check "pipe: quoted non-shell"       "echo \"x\" | \"grep\" x"                     allow
 # ...nor may the reduction break the FILE-operand exemption: `bash "ci.sh"`
-# reduces to `bash ci.sh`, which reads the file, not the pipe.
-check "pipe: quoted file operand"    "echo \"x\" | bash \"ci.sh\""                 allow
+# reduces to `bash ci.sh`, which reads the file, not the pipe — so even a
+# DESTRUCTIVE piped payload is inert here. The payload must be destructive
+# or the pin is vacuous: a benign one allows whatever the exemption answers
+# (round-2 review measured exactly that against an exemption-deleted mutant).
+check "pipe: quoted file operand"    "echo \"$DV $V\" | bash \"ci.sh\""            allow
 check "pipe: sudo -E bash"           "echo \"$D $T\" | sudo -E bash"               deny
 check "pipe: xargs -0 bash -c"       "echo \"$DV $V\" | xargs -0 bash -c"          deny
 check "pipe: zsh"                    "echo \"$D $T\" | zsh"                        deny
