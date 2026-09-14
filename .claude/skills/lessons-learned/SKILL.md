@@ -1684,11 +1684,20 @@ by **two**, because the behavioural case *cannot see it* on the platform the aut
 The false claim reached a committed CHANGELOG and cost a review round.
 
 **This is not a one-person mistake.** The reviewer made the identical error, in the same PR, from
-the same Python-heredoc workflow, and caught it only by printing `repr()`. Two independent people,
-same trap, same afternoon.
+the same Python-heredoc workflow. Two independent people, same trap, same afternoon.
 
-**The rule.** The existing guard — assert the needle still exists, fail the run INVALID if it rotted
-(§58b, #388) — is necessary and **not sufficient**. It proves you changed *something*; it does not
+**What caught it there is the generalisable half:** not `repr()`, but a **contradicted prediction**
+— they expected 30/1, measured 29/2, and went looking for why. `repr()` only confirmed what the
+mismatch had already flagged. So the habit worth copying is *predict the mutation's result before
+running it*; a mutation whose outcome you did not predict cannot surprise you, and surprise is the
+only signal that the instrument is wrong. Nobody predicted the author's run, which is why it stood
+for two rounds.
+
+**The rule.** The existing guard — assert the needle still exists, fail the run INVALID if it
+rotted — is necessary and **not sufficient**. (That guard lives in the `--mutations` harnesses
+themselves, e.g. `scripts/check_changelog_merge.test.sh:203` and the four hook self-tests, *not* in
+§58b: the citation here originally pointed at §58b/#388 and was wrong on both halves, which is a
+fitting bug for this particular lesson to have shipped with.) It proves you changed *something*; it does not
 prove you changed it into the thing you meant. Assert the shape of the MUTANT too:
 
 ```python
@@ -1697,7 +1706,13 @@ assert b.count("\\") == 2 and "\\\\" not in b, "not the intended single-backslas
 ```
 
 …and then **look at the mutated line** (`grep -n … | cat -v`) before trusting any number it
-produces. One `cat -v` would have shown `\\\`` where `\\`` was intended.
+produces. One `cat -v` would have shown the two-backslash form where the one-backslash form was
+intended.
+
+The `== 2` is deliberate and checked: the intended mutant carries **one** backslash before each of
+**two** backticks, so two in total; the invalid one carried two before each, so four. (A reviewer
+read this as three — hence this sentence, because a lesson about unverified numbers is the worst
+possible place to leave one unshown.)
 
 **Why it matters more than a rotted needle.** A rotted needle yields a missing result, which is
 obvious. A wrong mutant yields a *confident wrong number* that looks exactly like evidence — and

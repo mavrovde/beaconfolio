@@ -109,8 +109,10 @@ All notable changes to this project will be documented in this file.
   mutation is killed on **both** platforms, but not by the same cases: **one case on macOS** (the
   meta-test alone) and **two under GNU grep** (the meta-test plus the behavioural case). That
   asymmetry is the whole argument for the meta-test — the behavioural case cannot see this bug on
-  the platform the author is typing on. Counts are stated as cases-killed rather than totals
-  because the totals in this very entry were wrong three times as cases were added. Same round: the `jq`
+  the platform the author is typing on. Counts are stated as cases-killed rather than
+  totals because the mutation figures in this very entry were wrong twice (a mis-measured mutant,
+  then a stale pair) and the PR body carried a third stale count — the totals themselves were only
+  ever out of date, never wrong. Same round: the `jq`
   dependency is gone (four committed places promise bash+coreutils, and jq-less it failed closed
   with three bogus drift errors) — `.mcp.json` is now walked by a depth-tracking `awk` that is
   indentation-independent and does not mistake a nested `env` object for a server; `tooling` rows,

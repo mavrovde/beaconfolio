@@ -449,5 +449,15 @@ if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "whose value is not an object";
 else bad "#400: agreeing-row array must still fail" "rc=$rc $out"; fi
 rm -rf "$D"
 
+# The one MCP mechanism the reviewer found UNPINNED: neutering the
+# "parsed nothing" guard left the suite at 38/0, so nothing tested it (#400 r4).
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":{}}\n' > "$D/.mcp.json"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "no servers could be parsed"; then
+  ok "#400: an EMPTY mcpServers block FAILS (the parsed-nothing guard is pinned)"
+else bad "#400: empty mcpServers must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
 printf '\ncheck_aiconfig_map self-test: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]
