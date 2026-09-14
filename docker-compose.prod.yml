@@ -87,7 +87,7 @@ services:
       - app-network
 
   backend:
-    image: ${IMAGE_REPO:-ghcr.io/mavrovde/beaconfolio}-backend:${IMAGE_TAG:-1.14.2}
+    image: ${IMAGE_REPO:-ghcr.io/mavrovde/beaconfolio}-backend:${IMAGE_TAG:-1.14.3}
     restart: always
     logging: *default-logging
     mem_limit: ${BACKEND_MEM_LIMIT:-4g}
@@ -205,7 +205,7 @@ services:
       - app-network
 
   frontend:
-    image: ${IMAGE_REPO:-ghcr.io/mavrovde/beaconfolio}-frontend:${IMAGE_TAG:-1.14.2}
+    image: ${IMAGE_REPO:-ghcr.io/mavrovde/beaconfolio}-frontend:${IMAGE_TAG:-1.14.3}
     restart: always
     logging: *default-logging
     mem_limit: ${FRONTEND_MEM_LIMIT:-1g}
@@ -225,7 +225,7 @@ services:
       - app-network
 
   admin-frontend:
-    image: ${IMAGE_REPO:-ghcr.io/mavrovde/beaconfolio}-admin-frontend:${IMAGE_TAG:-1.14.2}
+    image: ${IMAGE_REPO:-ghcr.io/mavrovde/beaconfolio}-admin-frontend:${IMAGE_TAG:-1.14.3}
     restart: always
     logging: *default-logging
     mem_limit: ${ADMIN_FRONTEND_MEM_LIMIT:-512m}
@@ -260,7 +260,7 @@ services:
       - app-network
 
   proxy:
-    image: ${IMAGE_REPO:-ghcr.io/mavrovde/beaconfolio}-proxy:${IMAGE_TAG:-1.14.2}
+    image: ${IMAGE_REPO:-ghcr.io/mavrovde/beaconfolio}-proxy:${IMAGE_TAG:-1.14.3}
     # NO fixed container name (#310): `global_proxy` claimed a host-GLOBAL
     # identity by name on a box beaconfolio does not own. Resolve it via
     # `docker compose -f docker-compose.prod.yml ps -q proxy` instead of a
