@@ -87,8 +87,11 @@ All notable changes to this project will be documented in this file.
   The segment is now reduced through `argv_split` — the ONE quoting model (#217/#237) — inside
   the peel loop, fork-free and only when a quote character is present; an unterminated quote
   leaves the fragment raw, exactly as before. Also closes the same class for a quoted stdin
-  flag (`bash "-s"`). Five new self-test deny cases (each measured `allow` against the pre-fix
-  hook) plus a quoted-non-shell allow pin; full suite incl. every `cost:` budget case green.
+  flag (`bash "-s"`) and for backslash escapes (`ba\sh`, `b\ash` — round-1 review finding: the
+  quote-only trigger class had left them open). ANSI-C escape *decoding* (`$'ba\x73h'`) is
+  explicitly out of scope — `argv_split` unquotes, it does not interpret. Seven new self-test
+  deny cases (each measured `allow` against the pre-fix hook) plus quoted-non-shell and
+  quoted-file-operand allow pins; full suite incl. every `cost:` budget case green.
 - **Reverted the premature v1.14.3 version bump (#411)** — the release PR was cut with only
   #381 and the v1.14.2 retrospective delivered while 12 issues planned under `release:v1.14.3`
   were still open; the deploy run was cancelled before rollout, so prod stayed at 1.14.2 and no

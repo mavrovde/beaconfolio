@@ -502,8 +502,13 @@ pipes_into_shell() {
       # with single spaces matches the whitespace-collapsed shape the parsing
       # below assumes. An UNTERMINATED quote means this segment is a fragment
       # cut at a newline — leave it raw, exactly as before this change.
+      # Backslash is in the trigger class because `ba\sh` is the same binary
+      # too and argv_split already strips the escape (#370 round 1 — the
+      # quote-only class re-opened the door it was closing). ANSI-C escape
+      # DECODING ($'ba\x73h') is out of scope: argv_split unquotes, it does
+      # not interpret; that spelling still allows.
       case "$seg" in
-        *[\"\']*)
+        *[\"\'\\]*)
           argv_split "$seg"
           if [ "$ARGV_SPLIT_UNTERMINATED" = 0 ] && [ "${#ARGV_SPLIT_RESULT[@]}" -gt 0 ]; then
             # printf -v, not "${arr[*]}": IFS is newline inside this loop, so

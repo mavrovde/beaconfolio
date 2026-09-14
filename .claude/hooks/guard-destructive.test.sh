@@ -470,8 +470,15 @@ check "pipe: quoted 'bash'"          "echo \"$DV $V\" | 'bash'"                 
 check "pipe: split ba\"sh\""         "echo \"$DV $V\" | ba\"sh\""                  deny
 check "pipe: ansi \$'bash'"          "echo \"$DV $V\" | \$'bash'"                  deny
 check "pipe: bash quoted \"-s\""     "echo \"$DV $V\" | bash \"-s\""               deny
+# Backslash escapes are a quoting mechanism too (#370 round 1): both measured
+# allow with the quote-only trigger class, same binary either way.
+check "pipe: escaped ba\\sh"         "echo \"$DV $V\" | ba\\sh"                    deny
+check "pipe: escaped b\\ash"         "echo \"$DV $V\" | b\\ash"                    deny
 # ...and unquoting must not reclassify a benign quoted argument as a shell.
 check "pipe: quoted non-shell"       "echo \"x\" | \"grep\" x"                     allow
+# ...nor may the reduction break the FILE-operand exemption: `bash "ci.sh"`
+# reduces to `bash ci.sh`, which reads the file, not the pipe.
+check "pipe: quoted file operand"    "echo \"x\" | bash \"ci.sh\""                 allow
 check "pipe: sudo -E bash"           "echo \"$D $T\" | sudo -E bash"               deny
 check "pipe: xargs -0 bash -c"       "echo \"$DV $V\" | xargs -0 bash -c"          deny
 check "pipe: zsh"                    "echo \"$D $T\" | zsh"                        deny
