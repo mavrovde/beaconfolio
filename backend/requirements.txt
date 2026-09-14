@@ -20,6 +20,6 @@ Pillow==12.3.0
 setuptools==84.0.0
 
 
-google-genai==2.22.0
+google-genai==2.23.0
 respx==0.23.1
 linkedin-api==2.2.1

@@ -19,7 +19,7 @@ rfc3986-validator==0.1.1
 
 
 # Linting & Formatting
-ruff==0.16.6
+ruff==0.16.7
 
 # Type Checking
 mypy==2.3.1
