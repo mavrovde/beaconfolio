@@ -206,8 +206,11 @@ if [ -f "$MCPJSON" ]; then
         if (c == "\"") { instr = 1; buf = ""; continue }
         if (c == "{" || c == "[") {
           depth++
-          if (!inservers && lastkey == "mcpServers") { inservers = 1; sdepth = depth; expectkey = 1 }
-          else if (inservers && depth == sdepth + 1) { print lastkey; nsrv++ }
+          # Only a BRACE opens mcpServers or a server. An array value
+          # ("github": []) used to be counted as a server object; now it is not,
+          # so the key/object counts disagree and the walk fails closed (#400 r3).
+          if (!inservers && lastkey == "mcpServers" && c == "{") { inservers = 1; sdepth = depth; expectkey = 1 }
+          else if (inservers && depth == sdepth + 1 && c == "{") { print lastkey; nsrv++ }
           continue
         }
         if (c == "}" || c == "]") {
@@ -217,11 +220,14 @@ if [ -f "$MCPJSON" ]; then
         if (c == "," && inservers && depth == sdepth) { expectkey = 1; continue }
       }
     }
-    END { if (nkeys != nsrv) print "__MALFORMED__" }
-  ' "$MCPJSON" | sort)"
-  if printf '%s\n' "$mcp_real" | grep -qxF '__MALFORMED__'; then
+    END { if (nkeys != nsrv) exit 3 }
+  ' "$MCPJSON")"; awk_rc=$?
+  mcp_real="$(printf '%s' "$mcp_real" | sort)"
+  # Signalled by EXIT STATUS, not by a sentinel line: an in-band marker can be
+  # forged by a server literally named after it, and "a value that collides with
+  # the error channel" is the same cannot-fail family this PR is closing (#400 r3).
+  if [ "$awk_rc" -eq 3 ]; then
     fail ".mcp.json has a server entry whose value is not an object — fix the file; this lint will not guess"
-    mcp_real="$(printf '%s\n' "$mcp_real" | grep -vxF '__MALFORMED__')"
   fi
   [ -n "$mcp_real" ] || fail ".mcp.json exists but no servers could be parsed from it"
   mcp_row="$(grep -E '^\| *MCP *\|' "$MAP" | head -1 | awk -F'|' '{print $3}')"

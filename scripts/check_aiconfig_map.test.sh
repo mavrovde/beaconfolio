@@ -399,5 +399,35 @@ if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "whose value is not an object";
 else bad "#400: a non-object server value must fail closed" "rc=$rc $out"; fi
 rm -rf "$D"
 
+# An ARRAY value is not a server object (#400 r3 nit).
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":{"postgres":{},"github":[]}}\n' > "$D/.mcp.json"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "whose value is not an object"; then
+  ok "#400: an ARRAY server value FAILS CLOSED (it is not counted as an object)"
+else bad "#400: an array server value must fail closed" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# The malformed signal travels by EXIT STATUS, so no server name can forge it.
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":{"postgres":{},"__MALFORMED__":{}}}\n' > "$D/.mcp.json"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("`postgres`, `github`", "`postgres`, `__MALFORMED__`"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -eq 0 ]; then ok "#400: a server named __MALFORMED__ cannot forge the error channel"
+else bad "#400: the malformed signal must not be forgeable by a server name" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# mcpServers itself as an array is not silently 'no servers'.
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":[{"postgres":{}}]}\n' > "$D/.mcp.json"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ]; then ok "#400: mcpServers as an ARRAY fails (not read as zero servers)"
+else bad "#400: mcpServers as an array must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
 printf '\ncheck_aiconfig_map self-test: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

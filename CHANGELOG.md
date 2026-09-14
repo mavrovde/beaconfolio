@@ -105,8 +105,11 @@ All notable changes to this project will be documented in this file.
   Measured on one input: BSD prints `` `postgres` ``, GNU prints nothing. The pattern is now bare,
   the checker now holds its backtick in a `$BT` variable so no escape exists to get wrong, a
   self-test asserts the sequence appears **nowhere** in it, and **the whole suite is run in a
-  Debian container** as well as on macOS: **34 passed / 0 failed on both**, with the round-1 bug
-  replayed as a mutation killed by two independent cases on each platform. Same round: the `jq`
+  Debian container** as well as on macOS: **37 passed / 0 failed on both**. Replaying the round-1
+  bug as a mutation is killed on **both** platforms, but not by the same case: **33/1 on macOS**
+  (the meta-test alone) and **32/2 under GNU grep** (the meta-test plus the behavioural case). That
+  asymmetry is the whole argument for the meta-test — the behavioural case cannot see this bug on
+  the platform the author is typing on. Same round: the `jq`
   dependency is gone (four committed places promise bash+coreutils, and jq-less it failed closed
   with three bogus drift errors) — `.mcp.json` is now walked by a depth-tracking `awk` that is
   indentation-independent and does not mistake a nested `env` object for a server; `tooling` rows,
