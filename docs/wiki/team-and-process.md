@@ -92,10 +92,11 @@ Six properties of this loop are non-negotiable, and each exists because its abse
 cost something measurable.
 
 **Issues are the notebook.** Every idea, bug, deferred fix and research decision is a
-GitHub issue — never only in chat or in an agent's memory. As of 2026-09-14 the
-repository holds **162 issues (50 open) across 11 thematic milestones** and **173
-merged PRs**. Milestones are reusable *themes*, not versions; a per-version milestone
-scheme would have produced fifteen dead buckets by now.
+GitHub issue — never only in chat or in an agent's memory. At the `v1.14.1` tag the
+repository held **162 issues across 11 thematic milestones** and **173 merged PRs** (the
+open count moves daily and is deliberately not quoted here). Milestones are reusable
+*themes*, not versions; a per-version milestone scheme would have produced fifteen dead
+buckets by now.
 
 **No orphan issues.** Every issue carries a milestone, a priority label
 (`P0-critical` … `P3-low`) and at least one area label. `/issue-triage` sweeps for
@@ -152,9 +153,18 @@ the build when the map stops describing the filesystem. The same pattern repeats
 | "The AI-config map must be accurate" | `check_aiconfig_map.sh` (pre-push + CI + `verify_all.sh`) |
 | "Every documented setting must reach the container" | `check_compose_env.sh` — the same bug shipped three times first |
 | "Exactly one Alembic head" | `check_migration_heads.sh`, measured against `origin/main` — two PRs were each single-head alone and forked the chain only in the merged result, which would have stopped the prod backend booting |
-| "One `[Unreleased]` CHANGELOG section" | `dedup_changelog_unreleased.py` — a heading-only check passes while *entries* are doubled |
 | "No real PII or retired branding in a public repo" | `check_no_pii.sh`, whose exclude list **fails closed** |
 | "Don't merge without a review" | `pre-merge-gate.sh` |
+
+**And the counter-example, which is the most useful row in the table:** *"one `[Unreleased]`
+CHANGELOG section"* is **not** on it. The repository owns a tool —
+`scripts/dedup_changelog_unreleased.py`, which knows that a heading-only check passes while
+*entries* are doubled — but it is a **fixer invoked by a command someone must remember to run**,
+not a gate. Its self-test runs in the pre-push gate and tests *the script*, never the
+repository's own `CHANGELOG.md`. In the v1.14.1 cycle that rule was broken at blocker level on
+**5 of 16 reviewed PRs**, more than any other class, *after* the tool shipped. Knowledge was
+never the gap; enforcement level was. Promoting it to a lint is filed as issue **#391**, and the
+next retrospective checks whether that happened.
 
 **The corollary is uncomfortable and worth stating plainly:** a check nobody has proven
 can fail is not a check. Four "passing" cases in one test file turned out to be
@@ -213,14 +223,17 @@ the reviews caught, among other things:
 - a **live open redirect** that survived three separate fixes and three green CI boards;
 - a **new security bypass introduced by an optimisation** to the destructive-command
   guard — the author assumed a helper was identity on quote-free input; it also
-  de-escaped `\X` and blanked `#`, turning two guarded commands from deny to allow;
+  de-escaped `\X` and blanked `#`. The review measured **seven** guarded commands flipping
+  from deny to allow — one of them the exact command from the incident the guard was written
+  for — and 15 of 23 quote-free inputs producing a different *decision*;
 - a drift checker whose entire `lint` category could not fail;
 - a CHANGELOG tool that **silently deleted** unrecognised sections — 66 commits in this
   repository's history carry one;
 - a branch commit that had deleted a released `## [1.14.0]` heading.
 
-Every one of those was green on CI. **Zero review rounds in the v1.12.0–v1.14.1 series
-found nothing.**
+Every one of those was green on CI. **In v1.14.1, no review round found nothing** — all 41
+verdicts raised at least one finding. That is measured for v1.14.1 only; the earlier releases
+in the series were not counted this way, so read it as one release's result, not a law.
 
 ### Findings are fixed in the PR
 
@@ -255,10 +268,13 @@ Two instruments, and a standing rule about both.
 
 **Effort telemetry, captured live.** Per-agent token and wall-clock cost is recorded
 *during* the cycle, because it is **not recoverable afterwards** — when a release
-manager was asked to reconstruct it, it correctly refused. The v1.14.1 baseline: 25
-agent runs, ~2.48M subagent tokens, ~5.6 agent-hours, **21 of 25 runs (84%) review**.
-(Subagent totals only; main-loop tokens are not included, so the true cycle cost is
-higher — state the caveat rather than implying precision the measurement lacks.)
+manager was asked to reconstruct it, it correctly refused. The v1.14.1 baseline:
+**26 agent runs, 2,600,168 subagent tokens, 361.8 agent-minutes (6.0h), 23 of 26 runs
+(88%) review — 81% of spend.** The per-run table is committed as an appendix to
+`docs/retrospectives/v1.14.1.md`, because a number held only in a machine-local scratch
+file is not something a reader can check. (Subagent totals only; main-loop tokens are not
+included, so the true cycle cost is higher — state the caveat rather than implying
+precision the measurement lacks.)
 
 **GitHub Project 3** carries per-item `Tokens (k)`, `Time of processing (min)`,
 `Review rounds`, `Agent` and `Model`, updated **immediately on every merge**, never
@@ -313,6 +329,7 @@ series stays comparable:
 | v1.12.0 | 10 | 2.4 | 20% | 58% |
 | v1.13.0 | 16 | 3.13 | 0% | 68% |
 | v1.14.0 | 11 | 1.82 | 27% | 45% |
+| v1.14.1 | 17 | 2.41 | 29% | 59% |
 
 The counting conventions are not pedantry — they were written because four hand counts
 of the same window (30, 32, 34, 29) were reported and **none reproduced**. Two lessons
@@ -339,13 +356,23 @@ target against a measured v1.14.1 baseline:
 
 | Dimension | v1.14.1 baseline | v1.14.2 target |
 |---|---|---|
-| Mean review rounds / PR | 2.5 (33 rounds, 13 PRs) | ≤ 1.6 |
-| Round-1 approvals | 15% (2 of 13) | ≥ 50% |
-| Subagent tokens / merged PR | ~191k | ≤ 120k |
-| Review share of spend | 80% | ≤ 65% |
+| Mean review rounds / PR | **2.41** (41 verdicts, 17 PRs) | ≤ 1.6 |
+| Round-1 approvals | **29% (5 of 17)** | ≥ 50% |
+| Subagent tokens / merged PR | **~153k** (2.60M ÷ 17) | ≤ 120k |
+| Review share of spend | **81%** | ≤ 65% |
 | Docs-only push | full gate (~15 min) | ≤ 2 min |
 | PR opened → first verdict | often hours | ≤ 30 min |
-| Fake-greens reaching review | 6 | 0 |
+| Fake-greens reaching review | **5** | 0 |
+
+**The first three baseline cells are corrections, and the correction is itself the lesson.**
+Issue #386 filed them as *2.5 (33 rounds, 13 PRs)*, *15% (2 of 13)* and *~191k* — counted
+mid-assembly over a partial corpus that omitted four merged PRs, including the release PR. The
+canonical corpus is 17 PRs / 41 verdicts. Two of the targets were calibrated against numbers
+that were wrong in the *flattering* direction on rounds and the *harsh* direction on cost, so
+the baseline moved without the targets needing to. **A target measured against a wrong baseline
+is worse than no target** — it produces confident reporting of a change that did not happen.
+The canonical figures are in `docs/retrospectives/v1.14.1.md`, which is where this table is
+reconciled from; #386 carries the correction as a comment.
 
 ---
 
@@ -390,12 +417,12 @@ not compound.
 This process is heavy for a portfolio site, and pretending otherwise would be the same
 failure mode the process exists to prevent. The trade is deliberate:
 
-- Review consumes **80% of the agent budget**. The justification is the defect list in
+- Review consumes **81% of the agent budget**. The justification is the defect list in
   [§ What review actually catches](#what-review-actually-catches) — a live open
   redirect and a self-inflicted security bypass, both green on CI.
-- The mean PR takes **~2.5 review rounds**, so most work is seen at least twice.
-- Two PRs in one cycle consumed **39% of all review spend** — cost is dominated by
-  outliers, not by the median.
+- The mean PR takes **2.41 review rounds**, so most work is seen at least twice.
+- Two PRs in one cycle consumed **46% of all review spend** (37% of total) — cost is
+  dominated by outliers, not by the median.
 
 The counterweights are the KPIs above, the scoped-gate work in #377, and the standing
 rule that agent parallelism stays at **solo + one agent** outside an explicitly

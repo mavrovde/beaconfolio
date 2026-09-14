@@ -28,8 +28,8 @@ explains which is right.
 | Median files / PR | 14 | 20 | **8** | ↘ smaller PRs |
 | **Merges on a stale approval** | not measured | **4 of 10** | **0 of 16**³ | ↘ **much better** |
 | PRs merged with no verdict at all | 0 | 1 (#321) | **1 (#355)** | flat |
-| Subagent tokens | not recorded | 8.38M¹ | ~2.48M² | — |
-| Agent-time | 23.5h tag→tag | 35.5h¹ | ~5.6h² | — |
+| Subagent tokens | not recorded | 8.38M¹ | **2.60M**² | — |
+| Agent-time | 23.5h tag→tag | 35.5h¹ | **6.0h**² | — |
 
 ¹ Project 3 recorded fields, including one still-`In Progress` item whose host work has
 not shipped — the figure is not purely v1.14.0's delivered scope.
@@ -41,8 +41,8 @@ establishable** in this repository — every merge reports the same identity —
 this as "no merge that reached the gate carried an uncovered commit", not as proof that
 every merge reached it. #355 is direct evidence at least one did not.
 
-**Round-1 approvals rose in every release of the series — 0% → 27% → 29% — while
-median PR size fell 14 → 20 → 8.** That is the headline, and the next section is about
+**Round-1 approvals rose in every release of the series — 0% → 27% → 29%**, while
+median PR size went **14 → 20 → 8** — a rise, then a fall to half where it started. That is the headline, and the next section is about
 why the other columns went the wrong way at the same time.
 
 ---
@@ -96,16 +96,16 @@ tool that **silently deleted** unrecognised sections — 66 commits in this repo
 history carry one. Rounds spent finding those are not waste.
 
 **2. Two PRs dominated, and that part was avoidable.** #373 took 8 verdicts and #371
-took 4 — **12 of 41 verdicts, roughly 973,000 tokens, 39% of all review spend, on 2 of
-17 PRs.** The causes were self-inflicted and specific:
+took 4 — **12 of 41 verdicts, 964,411 tokens, 46% of all review spend (37% of total
+spend), on 2 of 17 PRs.** The causes were self-inflicted and specific:
 
 - a fix aimed at the **wrong vulnerability** (reverse tabnabbing, when the alert was an
   open redirect);
 - a guard **that never ran in production** — the specs exercised a configuration the
   deployed app does not use, so three green rounds proved nothing;
 - a claim that a value was a module constant when it was read from the environment;
-- coverage reported from the **wrong stack** — a frontend measurement quoted for a
-  backend file, more than once.
+- a published count of remediated findings that was wrong twice running — "from 65 to 9
+  actionable findings" when the measurement was 8, then 5.
 
 Each cost a full round. None was a hard problem; all were unverified claims.
 
@@ -143,10 +143,12 @@ shows the columns that improved is advertising.
 ### The cost columns are not yet a series
 
 v1.13.0 recorded no tokens at all. v1.14.0's 8.38M comes from Project 3 fields and
-includes an item still in progress. v1.14.1's ~2.48M was captured live from agent
-completion reports and covers **subagents only**.
+includes an item still in progress. v1.14.1's 2,600,168 was captured live from agent
+completion reports and covers **subagents only**; the per-run table is committed as an
+appendix to `docs/retrospectives/v1.14.1.md`, so it is the first cost figure in this
+series a reader can re-derive.
 
-**Do not read 8.38M → 2.48M as a 70% cost reduction.** They measure different
+**Do not read 8.38M → 2.60M as a 69% cost reduction.** They measure different
 populations. The columns stay because a series has to start somewhere, but the first
 release where two adjacent numbers are comparable is the next one — and that is itself
 a target below.
@@ -165,7 +167,17 @@ Briefly, because the conventions changed the headline more than once.
 `REQUEST CHANGES`.** Position, not authorship — every agent here posts under the
 owner's identity, so an author's fix report and a reviewer's verdict cannot be told
 apart any other way. A loose full-body match returns **44** for this window against the
-canonical **41**; the three extras are author fix reports.
+canonical **41**. The three extras are *not* all author fix reports, which is worth
+stating precisely: one is (#371's `## All four blockers fixed, plus the majors`), one is a
+release-manager's review *request* (#385), and one is a close-the-loop comment (#355).
+
+**And the canonical filter has the same hole one level in.** Because it keys on position,
+it admits #373's author comment `## Round-2 APPROVE noted — and the head moved, so this
+needs a round 3` — a note that an approval no longer covered the head, counted as a
+verdict. Under the convention's own wording ("posted **review** bodies") the window is
+**40 / 2.35 / 58%**. The published figures keep 41 because that is what the documented
+filter returns as run; the discrepancy is recorded in `docs/retrospectives/README.md` so
+the next cycle fixes the filter instead of rediscovering it.
 
 **Run the widened sweep even when you expect nothing.** Every first line the matcher
 *rejected* was read for this window. It found **no missed verdict** — the rejects are
@@ -199,12 +211,12 @@ Targets for v1.14.2 (issue **#386**), restated against the corrected baseline.
 | Round-1 approvals | **29%** | ≥ 50% |
 | PRs merged with no verdict | **1** | **0** |
 | Merges on a stale approval | **0** | **0** (hold) |
-| PRs consuming >4 verdicts | **2** | ≤ 1 |
-| Subagent tokens / merged PR | ~146k | ≤ 120k |
-| Review share of agent spend | 80% | ≤ 65% |
+| PRs consuming ≥4 verdicts | **2** | ≤ 1 |
+| Subagent tokens / merged PR | **~153k** (2.60M ÷ 17) | ≤ 120k |
+| Review share of agent spend | **81%** | ≤ 65% |
 | Docs-only push wall-clock | full gate, ~15 min | ≤ 2 min |
 | PR opened → first verdict | often hours | ≤ 30 min |
-| Fake-greens reaching review | 6 | 0 |
+| Fake-greens reaching review | **5** | 0 |
 
 ### What is actually being changed to hit them
 
@@ -235,13 +247,18 @@ report before/after wall-clock for all three shapes — not "should be faster".
 (425k tokens across four runs) is banned, and stale-base rounds (~140k) are now a
 mechanical deny. The rest follows from fewer rounds.
 
-**Zero fake-greens.** Every one of the six was found by *mutation*, never by reading —
+**Zero fake-greens.** Every one of the five was found by *mutation*, never by reading —
 four in a single test file (an indentation-protected fixture, a masking bug, a harness
 that never asserted the script ran, and a counter killed by a subshell), plus an entire
 lint category that could not fail. The target is not "write better tests" but a
 mechanical step: **neuter the thing under test and confirm the suite goes red, before
-requesting review.** The load-bearing hooks and lints already carry `--mutations`
-contracts; extending that to new checks is the work.
+requesting review.**
+
+How far that is from true today, measured rather than assumed: of the four `PreToolUse`
+hooks, **three** carry a `--mutations` contract (`pre-push-tests`, `pre-merge-gate`,
+`guard-stack-resources`) and `guard-destructive` does not; of the seven `scripts/*.test.sh`
+self-tests, **none** does — including `dedup_changelog_unreleased.test.sh`, which
+is where four of the five fake-greens lived. Closing that gap is filed as issue **#393**.
 
 **Make the cost columns comparable.** Capture per-agent telemetry live for every run,
 so v1.14.2 is the first release whose token figure can be honestly compared with its
