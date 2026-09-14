@@ -1853,7 +1853,7 @@ never saw, which went red in CI. The failure is silent precisely when it matters
 rule and was violated anyway under release pressure — so it is now STRUCTURAL:
 `pre-push-tests.sh` denies any real push chained (any separator) with a HEAD-moving git command
 (`commit`/`merge`/`rebase`/`cherry-pick`/`am`/`revert`/`reset`/`pull`/`checkout`/`switch`),
-quote-aware so prose stays data, pinned by never-stubbed `chain_check` cases + 6 mutations.
+quote-aware so prose stays data, pinned by never-stubbed `chain_check` cases + 7 mutations.
 The deny's edges matter as much as the deny (#406 round 2): it fires only where it can be RIGHT —
 after the foreign-repo pass-through (a chained wiki push mis-vets nothing), only for a push a
 head-mover PRECEDES — decided per push, not first-push-wins: `push && commit --amend` is fine

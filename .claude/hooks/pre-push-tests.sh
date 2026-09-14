@@ -585,11 +585,21 @@ command_chains_head_mover() {
     # SECOND push follows the amend, so the first-push short-circuit round 2
     # shipped would have waved it through.
     if segment_invokes_head_mover "$seg"; then mover=1; continue; fi
-    if [ "$mover" = "1" ] && segment_invokes_git_push "$seg"; then IFS="$OLD"; return 0; fi
+    if [ "$mover" = "1" ] && segment_invokes_git_push "$seg"; then
+      # segment_invokes_git_push answers "push" on deadline EXPIRY (its GATE
+      # polarity) — re-check before denying, so an unanalysed segment can
+      # never be the one that turns a GATE into a hard DENY (round-4 nit).
+      [ "$SECONDS" -ge "$INSPECT_DEADLINE" ] && { IFS="$OLD"; return 1; }
+      IFS="$OLD"; return 0
+    fi
   done
   IFS="$OLD"
   return 1
 }
+# KNOWN LIMIT (round-4 review, accepted): segment_invokes_head_mover does not
+# peel wrappers, so `sudo git commit && git push` or a chain inside
+# `bash -c "…"` falls back to GATE rather than DENY — the safe direction (the
+# push is still gated; only the extra discipline signal is missed).
 if command_chains_head_mover; then
   deny "PUSH RIDES ALONE: this command chains a HEAD-moving git command (commit/merge/rebase/checkout/…) before git push, so the gate would vet the WRONG commit — the hook runs before the chain executes. Run the state change first, then push as its OWN command."
 fi

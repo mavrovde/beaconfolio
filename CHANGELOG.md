@@ -305,11 +305,11 @@ All notable changes to this project will be documented in this file.
   conservatively there),
   and it strips **every** heredoc body, unquoted delimiters included, so document prose cannot
   escalate a GATE to a DENY (missing a real head-mover only falls back to GATE, the pre-#406
-  behavior). Pinned by 14 dedicated cases (11 `chain_check`, one oversized bespoke, two
-  foreign-repo fixtures) that stay live under the mutation harness, plus 6 mutations (deny
+  behavior). Pinned by 15 dedicated cases (12 `chain_check`, one oversized bespoke, two
+  foreign-repo fixtures) that stay live under the mutation harness, plus 7 mutations (deny
   removed / deny-everything polarity / `commit`
-  dropped from the head-mover list / size bound ignored / order-blind / unquoted-heredoc prose
-  read as commands).
+  dropped from the head-mover list / size bound ignored / order-blind / first-push
+  short-circuit restored / unquoted-heredoc prose read as commands).
 - **Per-target importer state ledgers can no longer reach the public repo** — `.gitignore` covered
   only `importer/state.json`, but the importer writes one ledger per target
   (`state.<env>.json`), each holding personal LinkedIn URN activity data; the untracked
