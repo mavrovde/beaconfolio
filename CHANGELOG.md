@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **`LICENSE` (MIT) + complete env samples — the #61 onboarding close-out** — the README has
+  promised `[MIT](LICENSE)` since the template rewrite while no `LICENSE` file existed, so a
+  forker had no actual license grant; the file now exists at root. `backend/.env.example` gains
+  the 17 `Settings` knobs it still omitted (DB pool, messenger channels #263, translation #248,
+  engagement analytics #249/#326, owner language, tailored-link rate limits #250, proxy trust
+  #273, AI crawler policy) — every `app/config.py` field is now represented, measured by
+  diffing the two. A tiny `frontend/.env.example` documents the only env the SSR server reads
+  (`NG_ALLOWED_HOSTS`, `PORT`, `NODE_ENV`) and why nothing else exists: frontend rebranding is
+  runtime backend config (#65), never a rebuild. The other #61 items (one-command `setup.sh`,
+  template-first README, comprehensive root sample) had already shipped in earlier work.
 - **Certificate-expiry alarm in the Live Freshness workflow (#310)** — a daily "Certificate
   expiry" step measures `notAfter` for every hostname in the `TLS_HOSTNAMES` repository variable
   (default: the maintainer's three) and goes red under 21 days remaining — Caddy renews at ~30
