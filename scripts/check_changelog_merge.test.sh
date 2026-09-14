@@ -107,6 +107,40 @@ rc=$(run "$SCRIPT")
 if [ "$rc" = 1 ] && grep -q 'check 3: released heading.*1\.2\.0' "$T/out"; then ok
 else bad "check 3: deleted released heading must fail (#365)" "$(cat "$T/out")"; fi
 
+# --- check 3, de-rotation-aware (v1.14.3 revert) ---------------------------
+# Reverting an UNSHIPPED release deletes the newest released heading and moves
+# its section back under [Unreleased]; the base is freshly rotated (stub only).
+# That must PASS — with a note, so the exemption is visible, never silent.
+mkbase
+python3 - "$T/base" "$T/merged" <<'PY'
+import sys
+t = open(sys.argv[1]).read()
+head, rest = t.split("## [1.2.0]", 1)
+rotated = ("# Changelog\n\n## [Unreleased]\n\n### Added\n- Placeholder for next release.\n\n"
+           "## [1.3.0] - 2026-02-01\n\n### Added\n- base entry A\n\n### Fixed\n- base fix B\n\n")
+open(sys.argv[1], "w").write(rotated + "## [1.2.0]" + rest)   # base = rotated
+open(sys.argv[2], "w").write(t)                               # merged = de-rotated original
+PY
+rc=$(run "$SCRIPT")
+if [ "$rc" = 0 ] && grep -q 'de-rotated' "$T/out"; then ok
+else bad "check 3: reverting an unshipped release (de-rotation) must pass with a note" "$(cat "$T/out")"; fi
+
+# ...but the exemption demands EVERY section line survive: a de-rotation that
+# loses an entry still fails check 3.
+mkbase
+python3 - "$T/base" "$T/merged" <<'PY'
+import sys
+t = open(sys.argv[1]).read()
+head, rest = t.split("## [1.2.0]", 1)
+rotated = ("# Changelog\n\n## [Unreleased]\n\n### Added\n- Placeholder for next release.\n\n"
+           "## [1.3.0] - 2026-02-01\n\n### Added\n- base entry A\n\n### Fixed\n- base fix B\n\n")
+open(sys.argv[1], "w").write(rotated + "## [1.2.0]" + rest)
+open(sys.argv[2], "w").write(t.replace("- base entry A\n", ""))  # entry LOST on the way back
+PY
+rc=$(run "$SCRIPT")
+if [ "$rc" = 1 ] && grep -q 'check 3: .*1\.3\.0' "$T/out"; then ok
+else bad "check 3: a de-rotation that LOSES a line must still fail" "$(cat "$T/out")"; fi
+
 # --- check 4: [Unreleased] content line lost -------------------------------
 mkbase
 sed '/- base entry A/d' "$T/base" > "$T/merged"
@@ -334,6 +368,14 @@ PY
   mutate "rotation exemption becomes BLANKET (old released content absolves a loss)" \
     'under_new_heading = line.rstrip() not in base_released' \
     'under_new_heading = True' assert_rotation_blanket
+  # The de-rotation exemption (v1.14.3 revert) must not be a blanket pass:
+  # if every missing released heading counts as de-rotated, the #365 case —
+  # a merge deleting a released section — sails through. assert_check3's
+  # fixture deletes [1.2.0], which is neither the newest heading nor backed
+  # by a stub-only base [Unreleased], so the real exemption never fires there.
+  mutate "de-rotation exemption becomes BLANKET (any deleted released heading passes)" \
+    'if l.rstrip() == first_base_released and not base_unrel_real and sec and all(s in merged_unrel for s in sec):' \
+    'if True:' assert_check3
   # The stub exemption (v1.14.2 retro) must be exactly ONE string: if it
   # absolves every line, a genuinely lost entry passes. assert_check4's
   # fixture loses `- base entry A`, which the real exemption never touches.
