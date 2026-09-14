@@ -1533,10 +1533,15 @@ tempting to blame the string compare for everything in (1). Run it:
 | CR bytes | **yes** | the fixture had none |
 
 `$(...)` strips only *trailing newlines*; it preserves trailing spaces inside lines and preserves
-`\r`. So **one assertion hole and two fixture holes** — the `rstrip` and CRLF mutants survived not
-because the compare was blind but because the fixture gave them **nothing to change**. That is the
-sharper lesson: a mutant that cannot alter your fixture is untested no matter how good your
-assertion is.
+`\r`. So **one assertion hole and two fixture holes**. Be precise about which mutant hit which:
+the two that survived at 26/0 were **`rstrip`** — a fixture hole, it had no trailing whitespace to
+strip — and **drop-the-final-newline**, the one genuine assertion hole. The CR defect was never a
+surviving mutant at all: at that head there was nothing to revert and no CRLF case existed, so it
+was a **live undetected defect found by byte probing**, which is its own warning — mutation only
+tests the failures you already thought of.
+
+That is the sharper lesson: a mutant that cannot alter your fixture is untested no matter how good
+your assertion is — and a defect no mutant describes is invisible to the contract entirely.
 
 **The rule.** A verifier's failure mode is to pass, so every layer you add to one needs its own
 proof:

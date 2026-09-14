@@ -18,6 +18,12 @@ All notable changes to this project will be documented in this file.
     action moves the check from a command to a lint measured against the merged result.
   - **Corrects the KPI baseline published on #386**: "2 of 13 (15%)" was counted mid-assembly over a
     partial corpus; canonical is **5 of 17 (29%)** and **41/17 = 2.41**.
+- **Lessons §58b correction (#390 review follow-up)** — the entry said "the `rstrip` and CRLF
+  mutants survived"; there was no CRLF *mutant* at that head. The two that survived at 26/0 were
+  `rstrip` (a fixture hole) and drop-the-final-newline (the one real assertion hole), and the CR
+  defect was a **live defect found by byte probing**, not by mutation. Folded in here rather than
+  spent as its own review round, on the reviewer's explicit advice. The corrected text carries a
+  stronger warning: mutation only tests the failures you already thought of.
 - **Two wiki articles (`docs/wiki/`)** — *Team and process*, how a one-human/eight-agent team ships
   and why nearly every rule here is executable rather than written down; and *Delivery statistics*,
   the v1.13.0 → v1.14.0 → v1.14.1 series with the v1.14.2 KPI plan and its falsifiers.
@@ -127,7 +133,9 @@ All notable changes to this project will be documented in this file.
     as lessons **§58b**: a verifier's failure mode is to pass, so every layer added to one needs its
     own proof — and, measured during review, **the hole is as often in the FIXTURE as in the
     assertion** (`$(...)` strips only trailing newlines, so trailing spaces and CR bytes *were*
-    visible; those two mutants survived because the fixture gave them nothing to change).
+    visible). Of the two mutants that survived at 26/0, `rstrip` was a fixture hole and
+    drop-the-final-newline the one real assertion hole; the CR defect was never a mutant at all but
+    a live defect found by byte probing — mutation only tests the failures you already thought of.
   - Proven, not asserted: self-test **28 passed / 0 failed**, and **four** mutants each make it go
     red — whole-file collapse (27/1), `rstrip` over the tail (26/2), dropping the final newline
     (25/3), and reverting `newline=""` (26/2). Against the repo's real `CHANGELOG.md`, `diff` of
