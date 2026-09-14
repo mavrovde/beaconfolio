@@ -320,6 +320,127 @@ warn="$(python3 -W error::SyntaxWarning "$SCRIPT" "$f" 2>&1 >/dev/null)"
 [ -z "$warn" ] && ok "no SyntaxWarning / stderr noise" || bad "stderr noise" "$warn"
 rm -f "$f"
 
+# --- 8b. #383: the tail below the first released heading is BYTE-FOR-BYTE ----
+# The blank-line collapse used to run over the whole reconstructed file, so it
+# silently removed blank lines inside SHIPPED release notes. Cosmetic in prose,
+# but a released section holding a fenced block has its internal blank lines
+# collapsed too — a content change in the file of record.
+# This case fails if the collapse ever runs over the tail again.
+f="$(mktemp)"
+cat > "$f" <<'EOSNIP'
+# Changelog
+
+## [Unreleased]
+
+### Added
+- one
+
+
+### Added
+- two
+
+## [1.2.0] - 2026-01-01
+
+### Fixed
+
+
+- a released entry after TWO blank lines
+
+```bash
+echo one
+
+echo two
+```
+
+
+- trailing released entry   
+- entry with a tab	
+
+## [1.1.0] - 2025-12-01
+
+### Added
+- older
+EOSNIP
+# Compare BYTES, not lines (#390 review). `tail_before="$(sed -n ...)"` cannot
+# see this: command substitution strips trailing newlines and sed is
+# line-oriented, so trailing whitespace, a missing final newline and CR bytes are
+# all structurally invisible to a string compare. Two mutants survived that
+# assertion at a green 26/0 — an rstrip over the tail, and dropping the final
+# newline. Extract the tail as raw bytes and `cmp`.
+cut_tail() { # cut_tail <file> <out> — raw bytes from the FIRST released heading
+  # Finds the heading by pattern, and EXITS NON-ZERO if there is none. The first
+  # draft hardcoded `## [1.2.0]` and wrote a `<MISSING>` sentinel on miss — so if
+  # a fixture heading ever changed, both snapshots became the same sentinel and
+  # `cmp` compared nothing while printing a green tick. Measured: renaming the
+  # fixture heading and reintroducing the #383 bug gave 28 passed / 0 failed with
+  # a ✓ on the very case meant to catch it (#390 review). A helper that silently
+  # passes is the exact defect class this file exists to detect.
+  python3 -c 'import re, sys
+b = open(sys.argv[1], "rb").read()
+m = re.search(rb"^## \[[0-9]", b, re.M)
+if not m:
+    sys.stderr.write("cut_tail: no released heading in %s\n" % sys.argv[1])
+    sys.exit(1)
+open(sys.argv[2], "wb").write(b[m.start():])' "$1" "$2" || return 1
+}
+tb="$(mktemp)"; ta="$(mktemp)"
+cut_tail "$f" "$tb"
+run "$f"; out="$RUN_OUT"
+cut_tail "$f" "$ta"
+# `[ -s ]` on both: cut_tail's non-zero exit does NOT propagate (the call sites
+# ignore it and the file runs without `set -e`), so a failed extraction leaves
+# two EMPTY snapshots -- and `cmp -s` calls two empty files equal (#390 review,
+# round 3). An empty snapshot is never legitimate here.
+if [ ! -s "$tb" ] || [ ! -s "$ta" ]; then
+  # Distinguish the two failures: an empty snapshot means EXTRACTION failed, and
+  # reporting that as "the tail was rewritten" sends the reader to the wrong file
+  # (cmp also prints nothing for two empty files, so the detail would be blank).
+  bad "#383: tail extraction FAILED (empty snapshot) — not a rewrite" \
+      "before=$(wc -c <"$tb" | tr -d ' ')B after=$(wc -c <"$ta" | tr -d ' ')B"
+elif cmp -s "$tb" "$ta"; then
+  ok "#383: released tail is BYTE-identical (blank lines, fence, trailing space, final newline)"
+else
+  bad "#383: released tail was rewritten" "$(cmp "$tb" "$ta" 2>&1 | head -3)"
+fi
+rm -f "$tb" "$ta"
+# and the fix must not cost the actual job: the duplicate ### Added still merges
+[ "$(grep -c '^### Added' "$f")" = 2 ] \
+  && ok "#383: [Unreleased] still deduped (one ### Added there, one in 1.1.0)" \
+  || bad "#383: dedup broke" "$(grep -n '^### Added' "$f")"
+rm -f "$f"
+
+# --- 8c. #383/#390: LINE ENDINGS survive the round trip ---------------------
+# `open(path, encoding="utf-8")` does universal-newline translation, so CRLF and
+# a lone CR were silently rewritten to LF and the write-back made it permanent.
+# A lone \r inside a released entry is a CONTENT change, not whitespace -- and
+# it falsified the docstring's byte-for-byte promise. Both opens pass newline="".
+for _mode in crlf lonecr; do
+  f="$(mktemp)"
+  python3 -c '
+import sys
+mode = sys.argv[2]
+base = ("# Changelog\n\n## [Unreleased]\n\n### Added\n- one\n\n\n### Added\n- two\n\n"
+        "## [1.2.0] - 2026-01-01\n\n### Fixed\n- a released entry\n\n```bash\necho one\n\necho two\n```\n")
+if mode == "crlf":
+    data = base.replace("\n", "\r\n")
+else:
+    data = base.replace("- a released entry", "- a released\rentry")
+open(sys.argv[1], "w", encoding="utf-8", newline="").write(data)' "$f" "$_mode"
+  tb="$(mktemp)"; ta="$(mktemp)"
+  cut_tail "$f" "$tb"
+  run "$f"; out="$RUN_OUT"
+  cut_tail "$f" "$ta"
+  if [ ! -s "$tb" ] || [ ! -s "$ta" ]; then
+    bad "#390: $_mode tail extraction FAILED (empty snapshot)" \
+        "before=$(wc -c <"$tb" | tr -d ' ')B after=$(wc -c <"$ta" | tr -d ' ')B"
+  elif cmp -s "$tb" "$ta"; then
+    ok "#390: released tail byte-identical with $_mode line endings"
+  else
+    bad "#390: $_mode line endings were rewritten" "$(cmp "$tb" "$ta" 2>&1 | head -3)"
+  fi
+  rm -f "$f" "$tb" "$ta"
+done
+
 # --- 9. THE REAL FILE: running it on the repo's own CHANGELOG loses nothing -
 ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 if [ -f "$ROOT/CHANGELOG.md" ]; then

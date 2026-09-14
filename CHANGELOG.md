@@ -73,6 +73,47 @@ All notable changes to this project will be documented in this file.
   outruns the post-network budget; previously both phases shared one knob and the case denied from
   whichever fired first — it failed inside the loaded pre-push gate and passed 100/0 when run alone.
 
+### Fixed
+- **`dedup_changelog_unreleased.py` no longer rewrites released history (#383)** — the blank-line
+  collapse ran over the whole reconstructed file, including the tail below the first
+  `## [x.y.z]` heading that the script's own docstring promised never to touch. It silently removed
+  blank lines inside shipped release notes (visible in #371's own diff). Cosmetic in prose, but a
+  released section containing a fenced code block would have had its internal blank lines collapsed
+  too — a content change, in the file of record. The collapse now runs over the rebuilt
+  `[Unreleased]` block alone and the tail is concatenated untouched.
+  - The docstring's **strong** guarantee is restored ("byte-for-byte below the first released
+    heading"). #371 had weakened the promise to match the bug; that is the documentation equivalent
+    of the silent-deletion mistake lessons §58 was written about — a tool that rewrites a file of
+    record must fail by doing LESS, never by dropping silently.
+  - **A second bug had to be fixed before "byte-for-byte" was true** (#390 review): `open()` did
+    universal-newline translation, so CRLF and lone-CR line endings were rewritten to LF and the
+    write-back made it permanent — and a lone `\r` inside a released entry is a **content** change,
+    not whitespace. Both opens now pass `newline=""`.
+  - **The first assertion could not see any of this.** `tail="$(sed -n ...)"` strips trailing
+    newlines and is line-oriented, so trailing whitespace, a missing final newline and CR bytes were
+    structurally invisible; two mutants survived it at a green 26/0. The case now extracts the tail
+    as raw bytes and uses `cmp`.
+  - **The byte-extraction helper itself had a silent-pass path** (#390 review, round 2): it
+    hardcoded the fixture's release heading and wrote a `<MISSING>` sentinel when it found none, so
+    a renamed heading made both snapshots the same sentinel and `cmp` compared nothing while
+    printing a green tick — measured at 28/0 with the #383 bug reintroduced. It now finds the first
+    released heading by pattern and exits non-zero if there is none. A helper that silently passes
+    is the exact defect class this file exists to detect.
+  - **…and the fix to that had the same shape again.** `cut_tail`'s non-zero exit does not
+    propagate (the call sites ignore it, and the file runs without `set -e`), so a failed
+    extraction left two EMPTY snapshots — and `cmp -s` calls two empty files equal. Both compare
+    sites now require `[ -s ]` on each snapshot, and report an empty snapshot as an **extraction**
+    failure rather than a rewrite — `cmp` prints nothing for two empty files, so the old detail was
+    blank and pointed at the wrong file. **Three instances of one class in a single PR**, recorded
+    as lessons **§58b**: a verifier's failure mode is to pass, so every layer added to one needs its
+    own proof — and, measured during review, **the hole is as often in the FIXTURE as in the
+    assertion** (`$(...)` strips only trailing newlines, so trailing spaces and CR bytes *were*
+    visible; those two mutants survived because the fixture gave them nothing to change).
+  - Proven, not asserted: self-test **28 passed / 0 failed**, and **four** mutants each make it go
+    red — whole-file collapse (27/1), `rstrip` over the tail (26/2), dropping the final newline
+    (25/3), and reverting `newline=""` (26/2). Against the repo's real `CHANGELOG.md`, `diff` of
+    everything from `## [1.` down is **empty**; 28 release headings and 235 entries unchanged.
+
 ## [1.14.1] - 2026-09-14
 
 ### Added
