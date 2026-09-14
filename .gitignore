@@ -51,8 +51,10 @@ scraper/.chrome-profile/
 scraper/session.json
 scraper/session.json.stale-*
 
-# Importer — local processed-URN ledger (personal LinkedIn activity data)
-importer/state.json
+# Importer — local processed-URN ledgers (personal LinkedIn activity data).
+# The importer writes one per target (state.json, state.<env>.json); none may
+# reach the public repo.
+importer/state*.json
 
 
 

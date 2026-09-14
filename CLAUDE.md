@@ -96,7 +96,7 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
 | skill | `e2e-validation` | the E2E loop + its traps, for agents (#117) |
 | skill | `env-gotchas` | macOS/BSD/gh platform pitfalls (#119) |
 | skill | `ssr-cd-safety` | zoneless repaint + SSR HTTP contract (#118) |
-| hook | `pre-push-tests.sh` | PreToolUse Bash: docs + backend + frontend gates before every real `git push` (command-position aware, #237), SCOPED TO THE DIFF since #377 — main/`release/*`/`PREPUSH_FULL=1` still run everything; since #353 a push of a DIFFERENT repository (the wiki) passes through, but only when that is positively established |
+| hook | `pre-push-tests.sh` | PreToolUse Bash: fast diff-scoped contract checks + formatting/compilation confirmation (ruff, per-project `tsc --noEmit`) before every real `git push`, HARD sub-minute budget — deep suites (pytest/mypy/bandit/Vitest) run in CI + at merge time, `PREPUSH_DEEP=1` opts in locally (command-position aware, #237), SCOPED TO THE DIFF since #377 — and since v1.14.2 on EVERY branch including `main` (owner directive 2026-09-14: push cost tracks the diff; CI runs every leg on every `main` push and is the full backstop); `PREPUSH_FULL=1` forces the full round; since #353 a push of a DIFFERENT repository (the wiki) passes through, but only when that is positively established |
 | hook | `guard-destructive.sh` | PreToolUse Bash: blocks irreversible local/infra destruction (rule 9) |
 | hook | `pre-merge-gate.sh` | PreToolUse Bash: refuses `gh pr merge` without an APPROVE verdict, with an APPROVE that predates the head, or with `Closes #NN` against unticked criteria (rule 13 enforced, not asked); a `PR_MERGE_GATE=0` bypass is allowed but never invisible — it appends to a local audit log and posts a PR comment (#392) |
 | hook | `guard-stack-resources.sh` | PreToolUse Bash: free-disk floor + ONE Docker compose project before any `up`/`build`/`run`/`pull` (v1.14.0 retro — three parallel stacks crashed the daemon) |
@@ -137,19 +137,34 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
   after a release or a painful incident to turn measured agent behavior (review rounds, effort
   telemetry, incidents) into edits to the charters/skills/hooks themselves.
 - **Hooks** (`.claude/hooks/`, via committed `.claude/settings.json`, all `PreToolUse Bash`):
-  `pre-push-tests.sh` runs docs + backend pytest + backend lint/type (ruff check + ruff format --check
-  + mypy + bandit) + frontend tests before every `git push` (env-configurable: `PREPUSH_RUN_LINT`/
-  `PREPUSH_RUN_RUFF`/`PREPUSH_RUN_MYPY`/`PREPUSH_RUN_BANDIT` …, self-gating). Since **#377 it runs only
+  `pre-push-tests.sh` gates every real `git push` under a **HARD sub-minute budget** (owner
+  constraint 2026-09-14: "push cannot be longer than 1 minute. Never ever."): it runs the fast,
+  diff-scoped contract checks (docs/version, PII, repo lints, hook self-tests) **plus a
+  formatting/compilation confirmation on the code the diff touches** (owner directive
+  2026-09-14: "for simple push … formatting, compilation, something easy"): ruff check/format
+  on backend Python (~0.1s) and per-selected-project `tsc --noEmit` on frontend TS (~1s each),
+  while the deep legs — backend pytest, mypy/bandit, the Vitest projects — run in CI on every
+  push/PR and at merge time instead; `PREPUSH_DEEP=1` opts a push into running them locally
+  (env-configurable: `PREPUSH_RUN_LINT`/`PREPUSH_RUN_RUFF`/`PREPUSH_RUN_TSC`/`PREPUSH_RUN_MYPY`/
+  `PREPUSH_RUN_BANDIT` …, self-gating).
+  Since **#377 it runs only
   the legs the DIFF can break**, selected by `.claude/hooks/prepush-select-lib.sh` from
   `git diff --name-only @{push}..HEAD` (falling back to `@{upstream}`, then to
   merge-base(`origin/main`)): measured on one machine, a docs-only push went **11m44s → 13s**, a
-  backend-only push **11m44s → 1m21s**, and a `projects/public/**` push **11m44s → 15s**; a push to a
-  protected branch stays the full round (11m11s, unchanged within noise).
-  The polarity is the whole design — an unmapped path, an empty or unobtainable diff, an unnameable
-  branch, `main`, any `release/*` and `PREPUSH_FULL=1` all run EVERYTHING, and the PII/de-brand guard
-  is never selectable away. Frontend selection is per Vitest project (`projects/shared/**` fans out to
-  all three because both apps consume it; `projects/public/**` never runs `admin`), and a change to
-  `hook-parse-lib.sh` runs all four hook self-tests. **CI is unchanged and still runs every leg.**
+  backend-only push **11m44s → 1m21s**, and a `projects/public/**` push **11m44s → 15s**.
+  **Since v1.14.2 the scope applies on EVERY branch, `main` and `release/*` included** (owner
+  directive 2026-09-14: "the push cannot be longer than 1-3 minutes — it must be related to the
+  size of the committed code, not a README during 40 minutes") — the forced full round on `main`
+  had grown to 30-40 minutes and duplicated CI 1:1, since CI runs every leg on every `main` push
+  anyway. The polarity is otherwise unchanged — an unmapped path, an empty or unobtainable diff, an
+  unnameable branch, `--all`/`--mirror`/`--tags`/`--follow-tags` and `PREPUSH_FULL=1` all run
+  EVERYTHING, and the PII/de-brand guard is never selectable away. Workflow files
+  (`.github/**`), `sonar-project.properties`, `.gitignore` and `.mcp.json` are ENUMERATED as
+  no-local-leg paths (CI is their only test surface) rather than unmapped, so a scanner-config edit
+  no longer buys the full round. Frontend selection is per Vitest project (`projects/shared/**` fans
+  out to all three because both apps consume it; `projects/public/**` never runs `admin`), and a
+  change to `hook-parse-lib.sh` runs all four hook self-tests. **CI is unchanged and still runs
+  every leg.**
   `pre-push-tests.test.sh --mutations` neuters one selection rule at a time — including "select
   nothing at all" — and requires the cases to go red, because a selector that silently selects
   nothing would pass every "X must not be selected" case; `guard-destructive.sh` blocks irreversible
@@ -161,7 +176,7 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
   three concurrent stacks filled the disk, crashed the daemon and cost ~2 hours; one stack of this
   project measures 15.35 GB of images + 3.09 GB of build cache + 6.97 GB of volumes). All four hooks are
   **command-position aware** (quoted prose is data, #204/#237) and share ONE parsing model,
-  `.claude/hooks/hook-parse-lib.sh`; each has a self-test (`*.test.sh`) beside it, and all four self-tests run inside the pre-push gate — `pre-merge-gate.test.sh` and `guard-stack-resources.test.sh` with their `--mutations` contracts, because the merge gate's first self-test passed every case against a gate whose blocking had been removed.
+  `.claude/hooks/hook-parse-lib.sh`; each has a self-test (`*.test.sh`) beside it, and the gate runs a hook's self-test only when the diff selects it — **plain cases only: no `--mutations` contract ever runs locally** (v1.14.2, owner's 1-3-minute push budget; the merge gate's contract alone measured 543s and this gate's own ~9 minutes). CI runs the merge-gate, stack-guard and pre-push contracts with `--mutations` unconditionally on every push, because the merge gate's first self-test passed every case against a gate whose blocking had been removed and that class of fake-green must stay pinned somewhere unconditional; argv-observed stub cases keep the local call sites from quietly reintroducing the flag.
   `pre-merge-gate.sh` blocks `gh pr merge` unless the newest posted verdict states APPROVE, that APPROVE is newer than every commit on the PR, and every `Closes #NN` points at an issue with all acceptance criteria ticked; bypass one authorized command with `PR_MERGE_GATE=0`. **An approval covers the head it reviewed** (v1.14.0 retro): replaying the real threads at merge time, **four of the ten reviewed merges** carried commits no approval had seen (an 11-PR corpus; #321 merged with no verdict at all) — #320 merged four commits after its only verdict (including the fixes to the reviewer's own findings and a behaviour change), #315 merged two seconds before its delta-confirm was posted, #314 merged a `main` merge, and the release PR #327 merged a CHANGELOG commit, so the `v1.14.0` tag sits on an uncovered commit. A merge of `main` is not benign: that is how #325's Alembic head fork appeared. The remedy is a `## ✅ APPROVE — round N (delta-confirm at <sha>)`, not a bypass. **A verdict is a body whose FIRST NON-EMPTY LINE states `APPROVE` or `REQUEST CHANGES`** (v1.13.0 retro): reading the whole body let an author's fix-report on #291 count as the newest verdict and would have allowed a merge against a standing REQUEST CHANGES — reviewer and author share one identity here, so only the marker's position separates them. Fix reports must not open with a marker.
   Four repo-contract lints run in the pre-push gate: `scripts/check_compose_env.sh` (a documented knob must reach the container — #296/#297/#298) and `scripts/check_migration_heads.sh` (exactly one Alembic head, measured on the working tree UNIONED with `origin/main` — #323/#325), both of which **also run in CI** (`deploy.yml`, Version Consistency job); `scripts/check_aiconfig_map.sh` (the AI-config map matches the filesystem and `enabledPlugins`), which runs in the gate, in CI and in `verify_all.sh` — a map nobody diffs stops being true, which is why this one is executable rather than a review checklist item (#246); and `scripts/run_frontend_suites.sh` (one signature-narrow retry for the upstream worker-teardown race), which now runs in **BOTH** the pre-push gate and CI (#319). It solves **two distinct failure modes**, and only the first is CI-exempt: (a) the `&&`-chain problem — `npm test` chains the three projects, so a flake in `public` meant `admin` never ran — which CI genuinely does not have, since it runs the three as separate jobs; and (b) **the teardown race itself**, which hits CI exactly as it hits the gate and made the pipeline *less* robust than the local check. The earlier "gate-only" claim conflated the two. In CI each frontend job invokes it as `FRONTEND_PROJECTS=<one> … --coverage`, so the wrapper retries that single project and the other two stay parallel. Each lint has a `*.test.sh` beside it that also runs in the gate. Note what the migration lint's CI half canNOT see: GitHub does not re-run a PR's checks when its base moves, so the pre-push run against `origin/main` and the merge gate's approval-covers-head check are the layers that actually catch a fork opened by someone else's merge.
 - **Plugins** (project scope; curation rationale + review cadence per #122 — re-review each
@@ -221,12 +236,17 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
    arbitrary `setTimeout`, no silently swallowed exceptions, no suppressed type/lint errors.
 2. **Tests with every change.** Keep coverage **≥95%** (the project standard is 100%). Cover error
    paths (400/500/timeouts), not just happy paths. Add a regression test for every bug fixed.
-3. **Deliver via PR; green before push.** **Never push feature work directly to `main`** — always
-   branch → pull request → merge (the merge is the sanctioned prod trigger). Before pushing, run the
-   **full** local suite: backend (ruff/format + mypy + pytest) **and** all frontend project tests
-   **and** the Docker E2E — not just one part. A shared pre-push hook
-   (`.claude/hooks/pre-push-tests.sh`) enforces docs + backend + frontend. Never push code that fails
-   a gate; keep the PR description's checklist current.
+3. **Deliver via PR; the PUSH is fast, the MERGE is deep.** **Never push feature work directly to
+   `main`** — always branch → pull request → merge (the merge is the sanctioned prod trigger).
+   **A push costs under one minute — never ever more** (owner constraint 2026-09-14): the shared
+   pre-push hook (`.claude/hooks/pre-push-tests.sh`) runs only the fast, diff-scoped contract
+   checks plus a formatting/compilation confirmation of the changed code (ruff on backend,
+   `tsc --noEmit` per frontend project — seconds); the deep suites — backend (mypy + pytest),
+   all frontend project tests,
+   Docker E2E — run in CI on every push/PR and MUST be green (plus rule 12's local E2E evidence
+   where it applies) **before the merge**, which rule 13's review gate enforces. `PREPUSH_DEEP=1`
+   opts a push into running the deep legs locally. Never merge code that fails a gate; keep the PR
+   description's checklist current.
 4. **Typing is law.** Pydantic models for backend schemas; explicit TypeScript interfaces (no `any`)
    mirroring them. All backend I/O is async.
 5. **Frontend discipline.** State via RxJS Observables rendered with the `async` pipe (components
@@ -368,9 +388,12 @@ for issue-driven work — humans and AI agents both follow it.
    - area: `backend` / `frontend` / `infra` / `ci-cd` / `performance` / `tech-debt` /
      `architecture` / `content` / `i18n`
    - priority: `P0-critical` / `P1-high` / `P2-medium` / `P3-low`
-6. **PRs link issues.** Use `Closes #NN` / `Fixes #NN` for issues a merge resolves, `Refs #NN` for
-   partial/related work. State how the PR satisfies each of the issue's **acceptance criteria**; keep
-   the PR checklist current.
+6. **PRs link issues — and carry the SAME labels + milestone, AT CREATION.** Use `Closes #NN` /
+   `Fixes #NN` for issues a merge resolves, `Refs #NN` for partial/related work. State how the PR
+   satisfies each of the issue's **acceptance criteria**; keep the PR checklist current. Every PR
+   gets its issue's milestone, type/area/priority labels, **and the `release:vX.Y.Z` label of the
+   release it targets** when it is opened — not retro-fitted (owner, 2026-09-14: two unlabeled
+   PRs in one day; the release label is how the cycle's work is queried at retro time).
 7. **Close-the-loop (verify before closing).** When work lands, comment on the issue with what was
    done + links, **verify against its acceptance criteria / test steps**, then close it (or note the
    remaining status if partial). Never close on assumption. **A `Closes #NN` auto-close is NOT

@@ -408,6 +408,12 @@ jobs:
       # cost optimisation opened a real bypass, and CI would have stayed green.
       # These are hermetic (stubbed `gh`, fake `npm`, no network), so they belong
       # here as much as the script lints above.
+      # The plain cases run here for the fast signal; the `--mutations`
+      # contracts run in the parallel `hook-mutation-contracts` job below
+      # (#404 review round 1, major 3): running them serially inside THIS job
+      # took Version Consistency from 2m00s to 12m28s measured, and all four
+      # build jobs `needs:` this one — the push saving must not be paid back
+      # on the prod-deploy critical path.
       - name: Self-test the destructive-command guard
         run: bash .claude/hooks/guard-destructive.test.sh
       - name: Self-test the merge gate
@@ -478,6 +484,31 @@ jobs:
       # caught at PR time, not on Monday (#392).
       - name: Self-test the no-verdict-merge detector
         run: bash scripts/audit_no_verdict_merges.test.sh --mutations
+
+  # ============================================
+  # HOOK MUTATION CONTRACTS (parallel, off the build path)
+  # ============================================
+  # `--mutations` proves each hook's self-test CAN go red — the merge gate's
+  # first self-test passed every case against a gate whose blocking had been
+  # removed, and that class of fake-green must stay pinned somewhere
+  # unconditional (v1.14.2). They are CI-only: the local gate never runs them
+  # (owner budget: push <= 1 minute; the merge gate's contract alone measured
+  # 543s). One matrix job per contract so wall-clock is ~max, not ~sum, and no
+  # build job waits on them (#404 review round 1, major 3 — inside Version
+  # Consistency they took the deploy critical path from 2m00s to 12m28s).
+  # pre-push-tests.test.sh asserts these invocations exist (major 4), so
+  # deleting one of them turns that self-test red locally AND here.
+  hook-mutation-contracts:
+    name: Hook Mutation Contract (${{ matrix.hook }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        hook: [pre-push-tests, pre-merge-gate, guard-stack-resources]
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run ${{ matrix.hook }} self-test with its mutation contract
+        run: bash .claude/hooks/${{ matrix.hook }}.test.sh --mutations
 
   # ============================================
   # PROXY QA

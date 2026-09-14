@@ -37,19 +37,34 @@ set -uo pipefail
 #   PREPUSH_LOG            where the combined log is written
 #   PREPUSH_CHECK_DOCS     1/0 — run the docs check (CHANGELOG [Unreleased] + README)
 #   PREPUSH_RUN_GUARDTEST  1/0 — run the destruction-guard hook self-test (#116)
+#   PREPUSH_DEEP           1/0 — master switch for the DEEP legs (pytest, mypy/
+#                          bandit, Vitest). Default 0: deep runs in CI on every
+#                          push/PR and at merge time (owner constraint
+#                          2026-09-14: "push cannot be longer than 1 minute.
+#                          Never ever."); 1 opts this push into running them
+#                          locally. The per-leg knobs below default to it.
 #   PREPUSH_RUN_BACKEND    1/0 — run backend pytest (needs the DB above)
-#   PREPUSH_RUN_LINT       1/0 — run backend lint/type leg (ruff + mypy), mirroring CI
-#   PREPUSH_RUN_RUFF       1/0 — within the lint leg, run `ruff check .` + `ruff format --check .`
-#   PREPUSH_RUN_MYPY       1/0 — within the lint leg, run `mypy app --ignore-missing-imports`
-#   PREPUSH_RUN_FRONTEND   1/0 — run frontend shared/public/admin unit tests
-#   PREPUSH_RUN_BANDIT     1/0 — within the lint leg, run `bandit -r app -ll --skip B101`
+#   PREPUSH_RUN_LINT       1/0 — run the DEEP backend type/security leg (mypy + bandit)
+#   PREPUSH_RUN_RUFF       1/0 — FAST half of the backend leg: `ruff check .` +
+#                          `ruff format --check .` on any push whose diff selects
+#                          it (~0.1s measured; owner directive 2026-09-14: a
+#                          simple push confirms FORMATTING + COMPILATION — depth
+#                          belongs to CI on the GitHub side)
+#   PREPUSH_RUN_MYPY       1/0 — within the deep lint leg, run `mypy app --ignore-missing-imports`
+#   PREPUSH_RUN_FRONTEND   1/0 — run frontend shared/public/admin unit tests (deep)
+#   PREPUSH_RUN_TSC        1/0 — FAST half of the frontend leg: per-selected-project
+#                          `tsc --noEmit` compile confirmation (~1s each, measured)
+#   PREPUSH_RUN_BANDIT     1/0 — within the deep lint leg, run `bandit -r app -ll --skip B101`
 #   PREPUSH_FULL           1/0 — force the FULL round regardless of the diff
 #                          (#377). The escape hatch when you distrust the
-#                          mapping; main/release branches force it anyway.
+#                          mapping.
 #   PREPUSH_PRINT_LEGS     1/0 — print the selected legs and exit WITHOUT
 #                          running anything and WITHOUT emitting a permission
 #                          decision. For the self-test (#377) only; like
 #                          PREPUSH_DRY_RUN it cannot be mistaken for an allow.
+#   PREPUSH_PRINT_DEEP     1/0 — print the consumed deep/fast leg values and
+#                          exit, same non-decision contract as PREPUSH_PRINT_LEGS
+#                          (#404 review round 1). For the self-test only.
 #   PREPUSH_DRY_RUN        1/0 — print GATE or ALLOW (the self-gate decision)
 #                          and exit WITHOUT running any checks or emitting hook
 #                          JSON. For the self-test (#237) only.
@@ -63,13 +78,39 @@ set -uo pipefail
 : "${PREPUSH_LOG:=/tmp/beaconfolio-prepush-tests.log}"
 : "${PREPUSH_CHECK_DOCS:=1}"
 : "${PREPUSH_RUN_GUARDTEST:=1}"
-: "${PREPUSH_RUN_BACKEND:=1}"
-: "${PREPUSH_RUN_LINT:=1}"
+# HARD PUSH BUDGET (owner constraint 2026-09-14, standing): "push cannot be
+# longer than 1 minute. Never ever." The DEEP legs — backend pytest, the
+# mypy/bandit leg and the Vitest projects — therefore no longer run at
+# push time by default: CI runs all of them on every push and PR, and the
+# rule-13 merge gate + approval-covers-head is where depth belongs. What a
+# simple push DOES confirm locally is FORMATTING + COMPILATION (owner
+# directive 2026-09-14): ruff check/format (~0.1s) when backend code is in the
+# diff, per-project `tsc --noEmit` (~1s each) when frontend code is. The
+# selection still NAMES the deep legs (the log shows what was deferred), and
+# PREPUSH_DEEP=1 opts a push into running them locally.
+: "${PREPUSH_DEEP:=0}"
+: "${PREPUSH_RUN_BACKEND:=$PREPUSH_DEEP}"
+: "${PREPUSH_RUN_LINT:=$PREPUSH_DEEP}"
 : "${PREPUSH_RUN_RUFF:=1}"
+: "${PREPUSH_RUN_TSC:=1}"
 : "${PREPUSH_RUN_MYPY:=1}"
-: "${PREPUSH_RUN_FRONTEND:=1}"
+: "${PREPUSH_RUN_FRONTEND:=$PREPUSH_DEEP}"
 : "${PREPUSH_DRY_RUN:=0}"
 export TEST_DATABASE_URL
+
+# Self-test seam (#404 review round 1, blocker 1): print the CONSUMED deep/fast
+# leg values and exit — no checks run, no permission decision emitted, so this
+# can never be mistaken for an allow (same contract as PREPUSH_PRINT_LEGS).
+# It observes the values the run will actually use, never re-derives them: the
+# default flip these pin (deep legs off at push time unless PREPUSH_DEEP=1) is
+# a polarity inversion, lessons §59's exact shape, and it survived the whole
+# mutation contract until this seam existed.
+if [ "${PREPUSH_PRINT_DEEP:-0}" = "1" ]; then
+  printf 'BACKEND=%s LINT=%s FRONTEND=%s RUFF=%s TSC=%s\n' \
+    "$PREPUSH_RUN_BACKEND" "$PREPUSH_RUN_LINT" "$PREPUSH_RUN_FRONTEND" \
+    "$PREPUSH_RUN_RUFF" "$PREPUSH_RUN_TSC"
+  exit 0
+fi
 
 allow() {
   if [ "$PREPUSH_DRY_RUN" = "1" ]; then printf 'ALLOW\n'; exit 0; fi
@@ -485,17 +526,6 @@ leg() {
   return 1
 }
 
-# Was this leg selected BY NAME — i.e. do we positively know this area changed?
-# `ALL` means "could not tell", which is not the same as "this changed", and one
-# check below needs the distinction (see the mutation-contract comment).
-leg_exact() {
-  case "$LEGS" in
-    *" ALL "*) return 1 ;;
-    *" $1 "*)  return 0 ;;
-  esac
-  return 1
-}
-
 # Self-test seam (same shape as PREPUSH_DRY_RUN above): print the decision and
 # exit WITHOUT running any check and WITHOUT emitting a permission decision, so
 # this can never be mistaken for an allow.
@@ -504,39 +534,23 @@ if [ "${PREPUSH_PRINT_LEGS:-0}" = "1" ]; then
   exit 0
 fi
 
-# Same seam for the ONE decision that is not visible in the leg list: whether
-# this round also runs the mutation contract. That must be driven by `leg_exact`
-# and never by `leg` — under `leg`, a full round (` ALL `) would answer yes and
-# spend ~543s of extra budget in exactly the round that already runs everything,
-# pushing it past the PreToolUse timeout. A timed-out hook does not deny, so the
-# cost of getting this wrong is a fail-OPEN gate.
-# Without this seam the call site is untestable and the guard survives mutation
-# (#388 review, major 2 — the reviewer swapped `leg_exact`→`leg` and all 108
-# cases still passed).
-#
-# The predicate is defined ONCE and consumed by both the seam and the call site.
-# An earlier draft of this fix re-implemented the condition here; the contract
-# then reported a false kill, because mutating the call site left this copy
-# still telling the truth. A seam that re-derives what it claims to observe is
-# the same fake-green shape the hooks' self-tests exist to prevent.
-# Decided ONCE, into the value the invocation actually uses. Two earlier drafts
-# of this got it wrong in the same way at different levels: the first
-# re-implemented the condition inside the seam, the second had the seam
-# re-EVALUATE the predicate. Both left a mutation of the consumer passing,
-# because the seam re-derived the answer instead of observing the decision.
-# Now there is one array: the seam prints it and the call site expands it, so a
-# mutation anywhere on this path is visible to the self-test.
-MUT_ARGS=()
-if leg_exact hook:pre-push-tests; then MUT_ARGS=(--mutations); fi
-
-if [ "${PREPUSH_PRINT_MUTATION_DECISION:-0}" = "1" ]; then
-  if [ "${#MUT_ARGS[@]}" -gt 0 ]; then printf 'MUTATIONS\n'; else printf 'PLAIN\n'; fi
-  exit 0
-fi
+# MUTATION CONTRACTS ARE CI-ONLY (v1.14.2, owner directive 2026-09-14: a push
+# must cost 1-3 minutes, proportional to the diff). The gate used to run
+# `--mutations` locally — first in every round that selected a hook leg
+# (543s measured for the merge gate's alone), then, after #388, when the diff
+# named the hook (still ~9 minutes for any edit to this gate). Both violate
+# the budget. deploy.yml now runs all three hook contracts with `--mutations`
+# unconditionally on every push, so the contracts stay proven at the layer
+# with the time budget; the local rounds run the plain cases only, always.
+# The argv-observed stub cases in pre-push-tests.test.sh pin that no call
+# site below quietly reintroduces the flag.
 
 run_checks() {
   echo "== leg selection (#377): $SELECT_REASON =="
   echo "== legs: $LEGS_PRETTY =="
+  if [ "$PREPUSH_DEEP" != "1" ]; then
+    echo "== deep legs (pytest/mypy/bandit/Vitest) run in CI, not at push time — PREPUSH_DEEP=1 opts in locally; fast halves (ruff, tsc --noEmit) confirm formatting + compilation (owner budget: push <= 1 minute) =="
+  fi
   if [ "$PREPUSH_CHECK_DOCS" = "1" ]; then
     if leg docs; then
       echo "== docs check =="
@@ -678,36 +692,26 @@ run_checks() {
       bash "$ROOT/.claude/hooks/guard-destructive.test.sh" || return 1
     fi
     if leg hook:pre-push-tests && [ -f "$ROOT/.claude/hooks/pre-push-tests.test.sh" ]; then
-      # --mutations ONLY when a hook actually changed. That contract is what
-      # proves this gate's own selector can go red — a selector that quietly
-      # selects NOTHING is the same anti-pattern as a check that cannot fail
-      # (lessons §18/§46) — but it costs ~100s, and MEASURED the full round went
-      # 704s -> 808s against the 900s PreToolUse timeout in .claude/settings.json.
-      # A timed-out hook does not deny, so spending that headroom in every
-      # fail-closed full round would trade a speed problem for a fail-OPEN one.
-      # `leg_exact` is the distinction: in a full round we do not know what
-      # changed, so we run the cases exactly as before #377; when the selection
-      # NAMES this hook, we additionally run the mutation contract.
-      if [ "${#MUT_ARGS[@]}" -gt 0 ]; then
-        echo "== pre-push self-gate + leg-selection self-test + mutation contract (#237/#377) =="
-      else
-        echo "== pre-push self-gate + leg-selection self-test (#237/#377) =="
-      fi
-      bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" ${MUT_ARGS[@]+"${MUT_ARGS[@]}"} || return 1
+      # Plain cases only — the mutation contract that proves this selector can
+      # go red (lessons §18/§46) runs in CI on every push, never here (see the
+      # CI-only comment above; measured ~9 minutes against the owner's
+      # 1-3-minute push budget, and against the 900s PreToolUse timeout a
+      # timed-out hook does not DENY, so overspending here risks fail-OPEN).
+      echo "== pre-push self-gate + leg-selection self-test (#237/#377) =="
+      bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" || return 1
     fi
     if leg hook:guard-stack-resources && [ -f "$ROOT/.claude/hooks/guard-stack-resources.test.sh" ]; then
-      # --mutations for the same reason as the merge gate below: this guard's
-      # value is entirely in the denies, and a guard nobody proved can deny is
-      # documentation (lessons §18).
-      echo "== stack-resource guard self-test + mutation contract =="
-      bash "$ROOT/.claude/hooks/guard-stack-resources.test.sh" --mutations || return 1
+      # Plain cases only; the mutation contract is CI's (see above).
+      echo "== stack-resource guard self-test =="
+      bash "$ROOT/.claude/hooks/guard-stack-resources.test.sh" || return 1
     fi
     if leg hook:pre-merge-gate && [ -f "$ROOT/.claude/hooks/pre-merge-gate.test.sh" ]; then
-      # --mutations is the point: the FIRST version of that self-test passed
-      # 14/14 against a gate whose blocking had been removed. Running the cases
-      # without the mutation contract would repeat exactly that.
-      echo "== merge-gate self-test + mutation contract =="
-      bash "$ROOT/.claude/hooks/pre-merge-gate.test.sh" --mutations || return 1
+      # The FIRST version of this self-test passed 14/14 against a gate whose
+      # blocking had been removed — the mutation contract is what proves the
+      # cases can go red, and CI runs it with --mutations on every push
+      # (543s measured under load — far past the local push budget).
+      echo "== merge-gate self-test =="
+      bash "$ROOT/.claude/hooks/pre-merge-gate.test.sh" || return 1
     fi
   fi
 
@@ -738,14 +742,24 @@ run_checks() {
         ./venv/bin/pytest -q -n auto --cov-fail-under=100 ) || return 1
   fi
 
-  if [ "$PREPUSH_RUN_LINT" = "1" ] && leg lint; then
-    echo "== backend lint/type (ruff + mypy + bandit) =="
-    if [ "$PREPUSH_RUN_RUFF" = "1" ]; then
-      echo "-- ruff check --"
+  # FAST half of the backend leg (owner directive 2026-09-14: a simple push
+  # confirms FORMATTING + COMPILATION; deep checks belong to CI). ruff catches
+  # syntax errors and format drift in ~0.1s measured, so it runs on EVERY push
+  # whose diff selects the lint leg — not only under PREPUSH_DEEP. The [-x]
+  # guard mirrors bandit's below: self-test fixture repos carry no venv, and
+  # the skip is printed, never silent.
+  if [ "$PREPUSH_RUN_RUFF" = "1" ] && leg lint; then
+    if [ -x "$ROOT/backend/venv/bin/ruff" ]; then
+      echo "== backend fast check (ruff check + format, formatting/compilation) =="
       ( cd "$ROOT/backend" && ./venv/bin/ruff check . ) || return 1
-      echo "-- ruff format --check --"
       ( cd "$ROOT/backend" && ./venv/bin/ruff format --check . ) || return 1
+    else
+      echo "== backend fast check SKIPPED: no backend/venv/bin/ruff here (CI still runs it) =="
     fi
+  fi
+
+  if [ "$PREPUSH_RUN_LINT" = "1" ] && leg lint; then
+    echo "== backend deep lint/type (mypy + bandit) =="
     if [ "$PREPUSH_RUN_MYPY" = "1" ]; then
       echo "-- mypy --"
       ( cd "$ROOT/backend" && ./venv/bin/mypy app --ignore-missing-imports --no-error-summary ) || return 1
@@ -756,6 +770,36 @@ run_checks() {
     if [ "${PREPUSH_RUN_BANDIT:-1}" = "1" ] && [ -x "$ROOT/backend/venv/bin/bandit" ]; then
       echo "-- bandit --"
       ( cd "$ROOT/backend" && ./venv/bin/bandit -r app -ll --skip B101 -q ) || return 1
+    fi
+  fi
+
+  # FAST half of the frontend leg (owner directive 2026-09-14): the changed
+  # project must still COMPILE before the push — per-selected-project
+  # `tsc --noEmit`, measured ~1s each on this tree. Template/DI errors and the
+  # unit suites are CI's job; this only stops a push that cannot compile at
+  # all. The sourcemap/rootDir overrides neutralise Angular emit options that
+  # conflict with --noEmit; they change nothing about what is type-checked.
+  # `shared` fans out to all three legs in the selector, so a shared change
+  # compiles all three consumers (~3s).
+  if [ "$PREPUSH_RUN_TSC" = "1" ] && { leg fe:shared || leg fe:public || leg fe:admin; }; then
+    TSC="$ROOT/frontend/node_modules/.bin/tsc"
+    TSC_FLAGS="--noEmit --inlineSources false --sourceMap false"
+    if [ -x "$TSC" ]; then
+      echo "== frontend fast compile (tsc --noEmit, per selected project) =="
+      if leg fe:shared; then
+        echo "-- shared --"
+        ( cd "$ROOT/frontend" && "$TSC" $TSC_FLAGS -p projects/shared/tsconfig.lib.json ) || return 1
+      fi
+      if leg fe:public; then
+        echo "-- public --"
+        ( cd "$ROOT/frontend" && "$TSC" $TSC_FLAGS --rootDir . -p projects/public/tsconfig.app.json ) || return 1
+      fi
+      if leg fe:admin; then
+        echo "-- admin --"
+        ( cd "$ROOT/frontend" && "$TSC" $TSC_FLAGS --rootDir . -p projects/admin/tsconfig.app.json ) || return 1
+      fi
+    else
+      echo "== frontend fast compile SKIPPED: no frontend/node_modules/.bin/tsc here (CI still runs the build) =="
     fi
   fi
 

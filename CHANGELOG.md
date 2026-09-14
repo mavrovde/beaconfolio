@@ -108,6 +108,41 @@ All notable changes to this project will be documented in this file.
   Discussion #387 opens both for comment.
 
 ### Changed
+- **The pre-push gate now costs what the push changed — on EVERY branch (owner directive
+  2026-09-14: "the push cannot be longer than 1-3 minutes … it must be related to the size of the
+  committed code, not a README during 40 minutes")** — three compounding rules made a one-file
+  text push to `main` cost 30-40 minutes, and each is fixed at its root:
+  (a) **`main`/`release/*` no longer force the full round** — the #377 diff scoping now applies to
+  every branch. The delta of a push to `main` (`@{push}..HEAD`) is exact, the same fail-closed
+  path map applies to it, and CI runs every leg on every `main` push anyway, so the forced local
+  full round duplicated CI 1:1. The structural refspec parser that recognised `+main`/
+  `refs/heads/main` went with the rule it served; `--all`/`--mirror`/`--tags`/`--follow-tags`,
+  an unnameable branch, an empty/unobtainable diff and unmapped paths still run everything.
+  (b) **No `--mutations` contract runs locally, ever** — the merge-gate contract (measured 543s
+  alone under load) and the stack-guard contract ran in every round that selected their legs,
+  which under (a) meant every push to `main`; even the #388 compromise (mutations when the diff
+  names the hook) costs ~9 minutes for any edit to the gate itself, past the budget. **CI now runs
+  all three hook contracts with `--mutations` unconditionally on every push**, the layer with the
+  time budget; the local call sites are argv-observed through planted stubs, with a killing
+  mutation per call site for "starts running `--mutations` locally again".
+  (c) **`.github/**`, `sonar-project.properties`, `.gitignore` and `.mcp.json` are enumerated as
+  no-local-leg paths** (docs + pii, or the AI-config drift check for `.mcp.json`) instead of
+  unmapped-⇒-ALL — no local leg can exercise a workflow or scanner config, so the full round
+  validated nothing about exactly the files that triggered it (`sonar-project.properties` was the
+  measured 40-minute case). Genuinely unknown paths still fail closed to ALL.
+  (d) **The deep legs left the push path entirely (owner constraint: "push cannot be longer than
+  1 minute. Never ever.")** — backend pytest, the ruff/mypy/bandit lint leg and the three Vitest
+  projects default to CI-and-merge-time (they run there on every push and PR); the selection still
+  names them so the push log states what was deferred, and `PREPUSH_DEEP=1` opts a push into
+  running them locally. Engineering rule 3 rewritten accordingly: the PUSH is fast, the MERGE is
+  deep.
+  (e) **A simple push still confirms FORMATTING + COMPILATION of the code it touches** (owner
+  directive 2026-09-14: "for simple push … formatting, compilation, something easy, to confirm
+  that it works and will not broke the PR"): when the diff selects backend code, `ruff check` +
+  `ruff format --check` run as the fast half of the lint leg (~0.1s measured); when it selects a
+  frontend project, that project gets a `tsc --noEmit` compile confirmation (~1s each, `shared`
+  fans out to all three consumers). mypy/bandit/pytest/Vitest stay deep (CI + `PREPUSH_DEEP=1`);
+  `PREPUSH_RUN_TSC=0`/`PREPUSH_RUN_RUFF=0` opt the fast halves off.
 - **The AI-config drift checker's own blind spots closed (#378)** — two categories that
   **could not fail**, the exact defect class the checker exists to catch. The `| MCP |` row was
   invisible because the kind pattern was `[a-z]+` and the row is uppercase (deleting it passed);
@@ -231,6 +266,11 @@ All notable changes to this project will be documented in this file.
   whichever fired first — it failed inside the loaded pre-push gate and passed 100/0 when run alone.
 
 ### Fixed
+- **Per-target importer state ledgers can no longer reach the public repo** — `.gitignore` covered
+  only `importer/state.json`, but the importer writes one ledger per target
+  (`state.<env>.json`), each holding personal LinkedIn URN activity data; the untracked
+  `state.beaconfolio-prod.json` in the working tree was one `git add -A` away from publication.
+  The pattern is now `importer/state*.json`, and the ignore-comment names the reason.
 - **The pre-push gate no longer fires on a DIFFERENT repository (#353)** — the hook is registered
   for the session, not for a directory, so `git push` in any checkout ran THIS project's suites.
   Measured 2026-09-10: a docs-only push of the project **wiki** (a separate repository) was blocked

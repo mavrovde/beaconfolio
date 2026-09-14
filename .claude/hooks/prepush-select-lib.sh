@@ -26,8 +26,17 @@
 #   * `.claude/hooks/hook-parse-lib.sh` selects EVERY hook self-test, because
 #     all four hooks share that one parsing model (#237) — a regression there
 #     shows up in a DIFFERENT hook's test;
-#   * main, master, `release/*`, an unnameable branch, and a push whose refspec
-#     targets a protected branch all run everything (prepush_force_full_reason).
+#   * an unnameable branch, `--all`/`--mirror`/`--tags`/`--follow-tags`, and
+#     PREPUSH_FULL=1 run everything (prepush_force_full_reason).
+#
+# PROTECTED BRANCHES SCOPE TOO (owner directive 2026-09-14, v1.14.2): "the push
+# cannot be longer than 1-3 minutes — it must be related to the size of the
+# committed code, not a README during 40 minutes." `main`/`release/*` used to
+# force the full round regardless of the diff, which made every push to main —
+# including a one-file text change — pay 30-40 minutes for suites its diff
+# could not touch. The delta of a push to main (`@{push}..HEAD`) is EXACT, the
+# same map applies, and CI runs every leg on every push to main anyway — the
+# local full round duplicated CI 1:1. The fail-closed arms above are untouched.
 #
 # Every one of those rules is a one-line, individually mutable statement below,
 # and `pre-push-tests.test.sh --mutations` kills each of them in turn. If you
@@ -171,9 +180,21 @@ prepush_legs_for_path() {
   CHANGELOG.md) printf 'changelog\ndocs\n' ;;
   docs/*|*.md) echo docs ;;
 
+  # --- files no LOCAL leg can exercise (owner directive 2026-09-14) ---------
+  # CI is the only test surface for a workflow file or a scanner/config text
+  # file — running backend pytest and three Vitest projects for a
+  # `sonar-project.properties` edit validates NOTHING about what changed (it
+  # cost the owner a 40-minute round on a one-file push). These are ENUMERATED,
+  # not unmapped: each still runs docs (doc presence + version consistency,
+  # seconds) plus the always-on pii guard; `.mcp.json` is an AI-config surface,
+  # so it runs the drift check instead.
+  .github/*) echo docs ;;
+  sonar-project.properties|.gitignore) echo docs ;;
+  .mcp.json) echo aiconfig ;;
+
   # --- ANYTHING ELSE: fail closed ------------------------------------------
-  # .github/**, proxy/**, scraper/**, importer/**, .gitignore, a brand-new
-  # top-level directory … none has a leg that can exercise it, and guessing
+  # proxy/**, scraper/**, importer/**, a brand-new top-level directory … none
+  # has a leg that can exercise it, none is ENUMERATED above, and guessing
   # "nothing" is how a narrowed gate stops gating.
   *) prepush_unmapped_path ;;
   esac
@@ -215,49 +236,16 @@ prepush_force_full_reason() {
   local branch="$1" cmd="${2-}"
   [ "${PREPUSH_FULL:-0}" = "1" ] && { echo "PREPUSH_FULL=1"; return 0; }
   case "$branch" in
-    main|master) echo "branch $branch is the prod-deploy trigger"; return 0 ;;
-    release/*)   echo "release branch $branch"; return 0 ;;
     HEAD|'')     echo "branch could not be determined"; return 0 ;;
   esac
-  # Refspec / remote-branch spellings: `git push origin HEAD:main` from a
-  # feature branch is still a push to main. Deliberately a substring probe over
-  # the whole command — over-matching costs ONE redundant full round;
-  # under-matching would run a scoped gate on a prod-deploy trigger.
-  # Refspec / remote-branch spellings, asked STRUCTURALLY. `git push origin
-  # HEAD:main` from a feature branch is still a push to main.
+  # `main`/`release/*` — by NAME or by any refspec spelling — deliberately do
+  # NOT force a full round any more (owner directive 2026-09-14, v1.14.2; see
+  # the header). The delta of a push to main is exact (`@{push}..HEAD`), the
+  # same path map applies to it, every fail-closed arm still fails closed, and
+  # CI runs every leg on every push to main — the forced local full round
+  # duplicated CI 1:1 at 30-40 minutes per push. The structural refspec parser
+  # that recognised `+main`/`refs/heads/main` went with the rule it served.
   #
-  # This REPLACES an earlier substring probe (#388 review). That probe was
-  # completely subsumed — deleting it leaves every case green — and keeping it
-  # would have MASKED rather than backstopped a regression here: it recognises
-  # `main` and `HEAD:main` but not `+main` or `refs/heads/main`, so a bug in the
-  # parser below would stay green on the common spellings while the newer ones
-  # failed open. Redundancy that cannot fail is not defence in depth.
-  #
-  # For every word: take the destination half of a refspec (after the last `:`),
-  # drop surrounding quotes, a leading `+` (force) and any `refs/heads/` prefix.
-  # Over-matching costs ONE redundant full round; under-matching would run a
-  # scoped gate on a prod-deploy trigger.
-  #
-  # `local IFS` pins word splitting to whitespace regardless of the caller's IFS,
-  # and `set -f` is asserted rather than assumed — an unguarded `$cmd` expansion
-  # under a caller with globbing on would let a literal `*` in the command line
-  # expand against the cwd (#388 review).
-  local w dst IFS=$' \t\n'
-  local _restore_f=1; case "$-" in *f*) _restore_f=0 ;; esac
-  set -f
-  for w in $cmd; do
-    case "$w" in -*) continue ;; esac          # flags are not refspecs
-    dst="${w//\'/}"; dst="${dst//\"/}"   # `origin 'HEAD:main'` is still main
-    dst="${dst##*:}"
-    dst="${dst#+}"
-    dst="${dst#refs/heads/}"
-    case "$dst" in
-      main|master|release/*)
-        if [ "$_restore_f" = 1 ]; then set +f; fi
-        echo "the push command targets a protected branch"; return 0 ;;
-    esac
-  done
-  if [ "$_restore_f" = 1 ]; then set +f; fi
   # A push that publishes MORE than the current branch: --all / --mirror send
   # every branch (main included) and --tags / --follow-tags publish release
   # tags. The diff of ONE branch says nothing about what those carry.
@@ -279,6 +267,14 @@ prepush_force_full_reason() {
 #     3. merge-base(origin/main, HEAD)..HEAD — a branch not yet on the remote
 #   Anything else (no origin/main, a detached HEAD, not a repo) fails, and the
 #   caller runs everything.
+#
+#   KNOWN LIMIT (#404 review round 1, minor 8): an explicit cross-branch
+#   refspec (`git push origin HEAD:main` from a feature branch with some
+#   commits already on origin/<feature>) measures what the TRACKED ref lacks,
+#   not what the destination receives, so it can under-select. Accepted, not
+#   fixed: the common spelling lands on the empty-diff ⇒ ALL arm, rule 3
+#   forbids pushing feature work to main at all, and CI + branch protection
+#   run every leg on what main actually receives.
 # ---------------------------------------------------------------------------
 prepush_changed_files() {
   local root="$1" range="" base=""

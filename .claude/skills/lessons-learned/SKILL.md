@@ -1658,15 +1658,21 @@ Ask of every mapping: *whose tests can this file break, not whose directory is i
 **Watch the budget you now spend on PROOF.** The mutation contract that makes this narrowing safe
 costs ~100s, and putting it in every round took the FULL round from 704s to **808s** against the
 hook's 900s `PreToolUse` timeout — and a timed-out hook does not deny, so proving the narrowing
-sound would have bought a fail-OPEN. It now runs when the selection NAMES the hook (so a hook really
-did change); a full round runs the plain cases exactly as before, and measured 671s.
+sound would have bought a fail-OPEN. *[Superseded by §63 (v1.14.2): the contracts no longer run
+locally at all — even the diff-names-the-hook round measured ~9 minutes against the owner's
+1-minute push budget. They run unconditionally in CI's parallel `hook-mutation-contracts` job,
+and argv-observed stub cases pin the local call sites against reintroducing the flag.]*
 
-**And keep the slow, total gate reachable.** `main`, `release/*` and `PREPUSH_FULL=1` still run
-everything, and CI was left running every leg on every push. The scoped gate buys iteration speed
-on feature branches; it is explicitly not the last line of defence.
+**And keep the slow, total gate reachable.** *[Superseded by §63 (v1.14.2): `main` and
+`release/*` no longer force the full round — the release cycle's pushes all landed on `main` and
+the forced full round measured 30-40 minutes, which got the gate bypassed via manual web-UI
+merges. What remains true:]* `PREPUSH_FULL=1` still runs everything, CI runs every leg on every
+push, and branch protection on `main` requires the full QA set — depth is enforced at the merge,
+not at the push.
 
 **Measured payoff (#377):** docs-only push 11m44s → 13s, backend-only 11m44s → 1m21s,
-`projects/public/**` 11m44s → 15s, push to a protected branch 11m44s → 11m11s (unchanged, by design). The second-order win matters as much as the first: a gate that
+`projects/public/**` 11m44s → 15s. *(The "protected branch stays 11m11s by design" arm was the
+part §63 revoked.)* The second-order win matters as much as the first: a gate that
 costs twelve minutes gets bypassed, and a bypassed gate protects nothing.
 
 ## 61. A MUTATION needs an assertion that it is the INTENDED mutant — a needle check is not enough (#400)
@@ -1789,6 +1795,52 @@ polarity first and the bugs you have left are the affordable kind.
 
 Related: §59 (narrowing a gate is the change that can silently switch it off), §61 (assert the
 mutant is the intended one), and [[verify-that-gates-actually-gate]].
+
+## 63. A gate's cost must track the DIFF — a gate that duplicates CI on every push gets bypassed, which is worse than scoped (v1.14.2)
+
+**What happened.** The #377 diff scoping delivered 13s docs pushes — and the owner still measured
+30-40 minutes for a one-file text push. Three rules compounded, each individually defensible:
+(a) `main`/`release/*` forced the FULL round regardless of the diff, and the release cycle's manual
+merges meant every push WAS on main; (b) two hook self-tests ran their `--mutations` contracts in
+every round that selected them (the merge gate's alone measured 543s under load) — #388 had fixed
+exactly this for the pre-push contract, and the fix was never propagated to the two sibling call
+sites next to it; (c) the file actually pushed (`sonar-project.properties`) was UNMAPPED, so it
+fail-closed to ALL — the full suite ran precisely for the file it could not exercise. Verification
+weight had also accreted: hook self-tests grew ~60s of deliberate timing-budget cases that ran
+inside every full round.
+
+**The lesson has three prongs.**
+1. **"Fail closed" needs a cost audit per closure path.** Every fail-closed arm is a place where the
+   gate's worst case lands on a user; enumerate the paths people actually push (workflow files,
+   scanner configs, dot-files) instead of letting them ride the unmapped arm forever.
+2. **When a cost fix lands on one call site, sweep its SIBLINGS in the same file.** The #388
+   `leg_exact` fix sat 15 lines above two identical call sites that kept the bug for a full release.
+3. **A local gate that duplicates a green CI layer 1:1 buys no verification — only latency.** The
+   full-round-on-main rule re-ran exactly what CI runs on that same push. The moment a gate's cost
+   stops tracking the size of the change, its owner routes around it (manual web-UI merges — which
+   also bypass the merge gate, rule 13's enforcement point). A cheaper honest gate beats an
+   expensive one that gets skipped. Owner's budget, verbatim: "the push cannot be longer than 1-3
+   minutes — it must be related to the size of the committed code, not a README during 40 minutes."
+
+Mutation contracts still run where they prove something: unconditionally in CI, which has the time
+budget. They never run in the local gate — even a hook-change round measured ~9 minutes against the
+owner's budget, and argv-observed stub cases pin each call site against quietly reintroducing the
+flag.
+
+Related: §59 (the narrowing rule must fail by doing MORE — still true; this lesson is about WHAT
+the fail-closed arms may cost), §18/§46 (a gate nobody proved can fail is not a gate).
+
+## 64. Renaming a SARIF `category` ORPHANS every alert filed under the old name (#379)
+
+GitHub closes a code-scanning alert only when a NEWER analysis **in the same category** stops
+reporting it. Rename the category (as #362 did for Bandit) and the old category never uploads
+again — its alerts sit "open" forever while the live category reports 0, so the Security tab
+misreports the repo. The cleanup cost 237 one-by-one `PATCH .../code-scanning/alerts/{n}`
+dismissals under secondary-rate-limit pacing. **Before renaming any SARIF category, plan the
+migration: dismiss (reversible, auditable) or delete the retired category's analyses (fast, but
+destroys history — owner authorization under rule 9's spirit).** The same trap is charted in
+`.claude/agents/security-triage.md`. Related: §the "normalised red" argument in #372 — a signal
+that always means nothing stops being a signal.
 
 ## Where the rules live (AI-config map)
 
