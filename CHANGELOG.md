@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Placeholder for next release.
+
+## [1.14.3] - 2026-09-14
+
+### Added
 - **v1.14.2 release retrospective (#386)** — `docs/retrospectives/v1.14.2.md`, the fifth in the
   series, with the trend table in `docs/retrospectives/README.md` extended by two columns the
   release's own evidence demanded: **Merged w/o valid APPROVE** and **Class G** (fake-greens).
