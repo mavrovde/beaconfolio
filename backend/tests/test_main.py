@@ -155,3 +155,18 @@ def test_retired_prefix_warning_reads_the_forwarded_channel(monkeypatch, capsys)
     out = capsys.readouterr().out
     assert f"{RETIRED_ENV_PREFIX}TELEGRAM_BOT_TOKEN" in out
     assert "GEMINI_API_KEY," not in out  # pre-#141 names belong to the other warning
+
+
+def test_identity_empty_env_maps_to_defaults_seam():
+    """#335 review round 1: the identity tests above monkeypatch `settings`
+    directly, so nothing HERE pinned the seam the feature rides in a container
+    — compose always sets `SITE_URL=${SITE_URL:-}`, i.e. an EMPTY string, and
+    `_empty_site_field_means_default` maps that back to the class default.
+    Construct Settings the way the container does and assert the mapping, so
+    a change to that validator reddens the identity feature's own test file."""
+    from app.config import Settings
+
+    s = Settings(SITE_URL="", OWNER_NAME="", _env_file=None)
+    cls = type(s)
+    assert s.site_url == cls.model_fields["site_url"].default
+    assert s.owner_name == cls.model_fields["owner_name"].default

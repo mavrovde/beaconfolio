@@ -77,8 +77,6 @@ def _report_identity() -> None:
     untangles PUBLIC_URL from SITE_URL (the 2026-09-10 first deploy set the
     former expecting site identity — PUBLIC_URL only names the freshness/
     health-gate probe target and does nothing for the site)."""
-    from app.config import settings
-
     defaults_in_use = [
         field.upper()
         for field in IDENTITY_DEFAULT_FIELDS
