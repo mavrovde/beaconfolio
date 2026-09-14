@@ -66,6 +66,19 @@ ADMIN_ALLOWED_CIDRS="0.0.0.0/0" run
 check "allow 0.0.0.0/0 emitted"     "$(has "$ALLOW" 'allow 0.0.0.0/0;')"
 check "warned about world-open"     "$(has "$WORK/warn.log" 'THE WORLD')"
 
+echo "7) documentation-range entries (RFC 5737/3849) are emitted but loudly warned (#336)"
+ADMIN_ALLOWED_CIDRS="192.0.2.9 198.51.100.0/24 203.0.113.7 2001:DB8::/32" run
+check "allow 192.0.2.9 still emitted"       "$(has "$ALLOW" 'allow 192.0.2.9;')"
+check "allow 203.0.113.7 still emitted"     "$(has "$ALLOW" 'allow 203.0.113.7;')"
+check "allow 2001:DB8::/32 still emitted"   "$(has "$ALLOW" 'allow 2001:DB8::/32;')"
+check "warned DOCUMENTATION address"        "$(has "$WORK/warn.log" 'DOCUMENTATION')"
+check "all 4 ranges warned individually"    "$([ "$(grep -c 'DOCUMENTATION' "$WORK/warn.log")" -eq 4 ] && echo 0 || echo 1)"
+
+echo "8) a real allowlist entry does NOT trigger the documentation warning"
+ADMIN_ALLOWED_CIDRS="51.15.23.7 2a01:4f8::/32" run
+check "allow 51.15.23.7 emitted"            "$(has "$ALLOW" 'allow 51.15.23.7;')"
+check "no DOCUMENTATION warning"            "$(hasnt "$WORK/warn.log" 'DOCUMENTATION')"
+
 echo ""
 if [ "$fail" -eq 0 ]; then
     echo "ALL ADMIN-CONFIG GENERATOR TESTS PASSED"

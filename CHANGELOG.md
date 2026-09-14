@@ -71,6 +71,16 @@ All notable changes to this project will be documented in this file.
   `BEACONFOLIO_API_URL`; `IMPORT_STATE` still overrides; a legacy global file is ignored with a log
   note, and every run logs `ledger <path> for target <url>` at startup. Five new tests incl. the
   two-target sequence; README documents the semantics.
+- **Admin break-glass docs match measured behaviour + documentation-IP warning (#336)** —
+  `.env.example` and `docs/DEPLOYMENT.md` no longer promise that host-loopback through the
+  proxy works as break-glass: with a non-empty `ADMIN_ALLOWED_CIDRS` the request arrives as
+  the Docker bridge-gateway IP and is denied (measured 2026-09-10, first prod login). The two
+  real lockout paths are documented (backend-direct `docker compose exec backend curl`, and
+  loopback from *inside* the proxy container's network namespace). `generate-admin-config.sh`
+  now WARNs (never fails) when an allowlist entry sits in an RFC 5737/3849 documentation range
+  (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24, 2001:db8::/32) — the `.env.example` sample IP
+  was once pasted verbatim into prod and surfaced only as an opaque 403; self-test +7 checks
+  (warning fires per range, real entries stay silent, allow lines unchanged).
 - **Reverted the premature v1.14.3 version bump (#411)** — the release PR was cut with only
   #381 and the v1.14.2 retrospective delivered while 12 issues planned under `release:v1.14.3`
   were still open; the deploy run was cancelled before rollout, so prod stayed at 1.14.2 and no

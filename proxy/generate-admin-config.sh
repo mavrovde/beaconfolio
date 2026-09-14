@@ -84,6 +84,13 @@ split_list() { printf '%s' "$1" | tr ',' ' '; }
                 0.0.0.0/0 | ::/0)
                     echo "WARN: ADMIN_ALLOWED_CIDRS opens admin to THE WORLD ($cidr) — test only, never prod" >&2
                     ;;
+                # RFC 5737 / RFC 3849 documentation ranges (#336): these are the
+                # sample values in .env.example, and one was pasted verbatim into
+                # production — the only symptom was an opaque 403. Warn loudly,
+                # do NOT fail: CI fixtures legitimately use these ranges.
+                192.0.2.* | 198.51.100.* | 203.0.113.* | 2001:[Dd][Bb]8:*)
+                    echo "WARN: ADMIN_ALLOWED_CIDRS entry '$cidr' is a DOCUMENTATION address (RFC 5737/3849) — it looks copied from .env.example; no real client ever has it, so admin will 403 for everyone (#336)" >&2
+                    ;;
             esac
             echo "allow $cidr;"
         else

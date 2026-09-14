@@ -69,7 +69,18 @@ cp .env.example .env
 #    without BOTH — generate the JWT secret with `openssl rand -hex 32`, #177),
 #    POSTGRES_PASSWORD, LINKEDIN_IMPORT_TOKEN (for the posts importer),
 #    PUBLIC_SERVER_NAME / ADMIN_SERVER_NAME, ADMIN_ALLOWED_CIDRS (keep empty =
-#    loopback-only admin until you add your operator IPs).
+#    loopback-only admin until you add your operator IPs — YOUR real IPs, not the
+#    RFC 5737 sample addresses; the proxy warns at start if a documentation-range
+#    entry slips in, #336).
+#    ADMIN LOCKOUT / BREAK-GLASS (#336): once ADMIN_ALLOWED_CIDRS is non-empty,
+#    host-loopback THROUGH the proxy (https://127.0.0.1:<port>) is DENIED — nginx
+#    sees the Docker bridge-gateway IP, not a loopback or allowlisted client. To
+#    get back in from the box: `docker compose exec backend curl -s
+#    http://127.0.0.1:8000/api/...` (bypasses nginx), or exec INSIDE the proxy
+#    container (`docker compose exec proxy wget -qO- --no-check-certificate
+#    --header 'Host: admin.<your-domain>' https://127.0.0.1/`); then fix the list
+#    and `docker compose restart proxy`. With the list EMPTY the same two paths
+#    apply — the published port is never a break-glass route.
 #    Optional: BEACONFOLIO_GEMINI_API_KEY (+ BEACONFOLIO_GEMINI_ENCRYPTION_KEY) — without it the AI
 #    features fall back to the in-stack Ollama.
 #    Identity (#65/#66 — the committed DEFAULTS are the Jane Doe demo persona):
