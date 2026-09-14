@@ -130,6 +130,12 @@ All notable changes to this project will be documented in this file.
   unmapped-⇒-ALL — no local leg can exercise a workflow or scanner config, so the full round
   validated nothing about exactly the files that triggered it (`sonar-project.properties` was the
   measured 40-minute case). Genuinely unknown paths still fail closed to ALL.
+  (d) **The deep legs left the push path entirely (owner constraint: "push cannot be longer than
+  1 minute. Never ever.")** — backend pytest, the ruff/mypy/bandit lint leg and the three Vitest
+  projects default to CI-and-merge-time (they run there on every push and PR); the selection still
+  names them so the push log states what was deferred, and `PREPUSH_DEEP=1` opts a push into
+  running them locally. Engineering rule 3 rewritten accordingly: the PUSH is fast, the MERGE is
+  deep.
 - **The AI-config drift checker's own blind spots closed (#378)** — two categories that
   **could not fail**, the exact defect class the checker exists to catch. The `| MCP |` row was
   invisible because the kind pattern was `[a-z]+` and the row is uppercase (deleting it passed);

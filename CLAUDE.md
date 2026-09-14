@@ -96,7 +96,7 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
 | skill | `e2e-validation` | the E2E loop + its traps, for agents (#117) |
 | skill | `env-gotchas` | macOS/BSD/gh platform pitfalls (#119) |
 | skill | `ssr-cd-safety` | zoneless repaint + SSR HTTP contract (#118) |
-| hook | `pre-push-tests.sh` | PreToolUse Bash: docs + backend + frontend gates before every real `git push` (command-position aware, #237), SCOPED TO THE DIFF since #377 — and since v1.14.2 on EVERY branch including `main` (owner directive 2026-09-14: push cost tracks the diff; CI runs every leg on every `main` push and is the full backstop); `PREPUSH_FULL=1` forces the full round; since #353 a push of a DIFFERENT repository (the wiki) passes through, but only when that is positively established |
+| hook | `pre-push-tests.sh` | PreToolUse Bash: fast diff-scoped contract checks before every real `git push`, HARD sub-minute budget — deep suites (pytest/lint/Vitest) run in CI + at merge time, `PREPUSH_DEEP=1` opts in locally (command-position aware, #237), SCOPED TO THE DIFF since #377 — and since v1.14.2 on EVERY branch including `main` (owner directive 2026-09-14: push cost tracks the diff; CI runs every leg on every `main` push and is the full backstop); `PREPUSH_FULL=1` forces the full round; since #353 a push of a DIFFERENT repository (the wiki) passes through, but only when that is positively established |
 | hook | `guard-destructive.sh` | PreToolUse Bash: blocks irreversible local/infra destruction (rule 9) |
 | hook | `pre-merge-gate.sh` | PreToolUse Bash: refuses `gh pr merge` without an APPROVE verdict, with an APPROVE that predates the head, or with `Closes #NN` against unticked criteria (rule 13 enforced, not asked); a `PR_MERGE_GATE=0` bypass is allowed but never invisible — it appends to a local audit log and posts a PR comment (#392) |
 | hook | `guard-stack-resources.sh` | PreToolUse Bash: free-disk floor + ONE Docker compose project before any `up`/`build`/`run`/`pull` (v1.14.0 retro — three parallel stacks crashed the daemon) |
@@ -137,9 +137,13 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
   after a release or a painful incident to turn measured agent behavior (review rounds, effort
   telemetry, incidents) into edits to the charters/skills/hooks themselves.
 - **Hooks** (`.claude/hooks/`, via committed `.claude/settings.json`, all `PreToolUse Bash`):
-  `pre-push-tests.sh` runs docs + backend pytest + backend lint/type (ruff check + ruff format --check
-  + mypy + bandit) + frontend tests before every `git push` (env-configurable: `PREPUSH_RUN_LINT`/
-  `PREPUSH_RUN_RUFF`/`PREPUSH_RUN_MYPY`/`PREPUSH_RUN_BANDIT` …, self-gating). Since **#377 it runs only
+  `pre-push-tests.sh` gates every real `git push` under a **HARD sub-minute budget** (owner
+  constraint 2026-09-14: "push cannot be longer than 1 minute. Never ever."): it runs the fast,
+  diff-scoped contract checks (docs/version, PII, repo lints, hook self-tests), while the deep
+  legs — backend pytest, ruff/mypy/bandit, the Vitest projects — run in CI on every push/PR and
+  at merge time instead; `PREPUSH_DEEP=1` opts a push into running them locally (env-configurable:
+  `PREPUSH_RUN_LINT`/`PREPUSH_RUN_RUFF`/`PREPUSH_RUN_MYPY`/`PREPUSH_RUN_BANDIT` …, self-gating).
+  Since **#377 it runs only
   the legs the DIFF can break**, selected by `.claude/hooks/prepush-select-lib.sh` from
   `git diff --name-only @{push}..HEAD` (falling back to `@{upstream}`, then to
   merge-base(`origin/main`)): measured on one machine, a docs-only push went **11m44s → 13s**, a
@@ -228,12 +232,15 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
    arbitrary `setTimeout`, no silently swallowed exceptions, no suppressed type/lint errors.
 2. **Tests with every change.** Keep coverage **≥95%** (the project standard is 100%). Cover error
    paths (400/500/timeouts), not just happy paths. Add a regression test for every bug fixed.
-3. **Deliver via PR; green before push.** **Never push feature work directly to `main`** — always
-   branch → pull request → merge (the merge is the sanctioned prod trigger). Before pushing, run the
-   **full** local suite: backend (ruff/format + mypy + pytest) **and** all frontend project tests
-   **and** the Docker E2E — not just one part. A shared pre-push hook
-   (`.claude/hooks/pre-push-tests.sh`) enforces docs + backend + frontend. Never push code that fails
-   a gate; keep the PR description's checklist current.
+3. **Deliver via PR; the PUSH is fast, the MERGE is deep.** **Never push feature work directly to
+   `main`** — always branch → pull request → merge (the merge is the sanctioned prod trigger).
+   **A push costs under one minute — never ever more** (owner constraint 2026-09-14): the shared
+   pre-push hook (`.claude/hooks/pre-push-tests.sh`) runs only the fast, diff-scoped contract
+   checks; the deep suites — backend (ruff/format + mypy + pytest), all frontend project tests,
+   Docker E2E — run in CI on every push/PR and MUST be green (plus rule 12's local E2E evidence
+   where it applies) **before the merge**, which rule 13's review gate enforces. `PREPUSH_DEEP=1`
+   opts a push into running the deep legs locally. Never merge code that fails a gate; keep the PR
+   description's checklist current.
 4. **Typing is law.** Pydantic models for backend schemas; explicit TypeScript interfaces (no `any`)
    mirroring them. All backend I/O is async.
 5. **Frontend discipline.** State via RxJS Observables rendered with the `async` pipe (components

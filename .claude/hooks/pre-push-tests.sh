@@ -63,11 +63,19 @@ set -uo pipefail
 : "${PREPUSH_LOG:=/tmp/beaconfolio-prepush-tests.log}"
 : "${PREPUSH_CHECK_DOCS:=1}"
 : "${PREPUSH_RUN_GUARDTEST:=1}"
-: "${PREPUSH_RUN_BACKEND:=1}"
-: "${PREPUSH_RUN_LINT:=1}"
+# HARD PUSH BUDGET (owner constraint 2026-09-14, standing): "push cannot be
+# longer than 1 minute. Never ever." The DEEP legs — backend pytest, the lint
+# leg (ruff/mypy/bandit) and the Vitest projects — therefore no longer run at
+# push time by default: CI runs all of them on every push and PR, and the
+# rule-13 merge gate + approval-covers-head is where depth belongs. The
+# selection still NAMES the legs (the log shows what was deferred), and
+# PREPUSH_DEEP=1 opts a push into running them locally.
+: "${PREPUSH_DEEP:=0}"
+: "${PREPUSH_RUN_BACKEND:=$PREPUSH_DEEP}"
+: "${PREPUSH_RUN_LINT:=$PREPUSH_DEEP}"
 : "${PREPUSH_RUN_RUFF:=1}"
 : "${PREPUSH_RUN_MYPY:=1}"
-: "${PREPUSH_RUN_FRONTEND:=1}"
+: "${PREPUSH_RUN_FRONTEND:=$PREPUSH_DEEP}"
 : "${PREPUSH_DRY_RUN:=0}"
 export TEST_DATABASE_URL
 
@@ -540,6 +548,9 @@ fi
 run_checks() {
   echo "== leg selection (#377): $SELECT_REASON =="
   echo "== legs: $LEGS_PRETTY =="
+  if [ "$PREPUSH_DEEP" != "1" ]; then
+    echo "== deep legs (backend/lint/frontend) run in CI, not at push time — PREPUSH_DEEP=1 opts in locally (owner budget: push <= 1 minute) =="
+  fi
   if [ "$PREPUSH_CHECK_DOCS" = "1" ]; then
     if leg docs; then
       echo "== docs check =="
