@@ -114,10 +114,23 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
 | lint | `scripts/check_live_freshness.sh` | the ONE live-vs-released verdict (0 fresh / 1 stale / 2 unreachable, staleness beats outage) shared by the Live Freshness workflow and deploy.yml's post-rollout gate (#169/#254) |
 | lint | `scripts/check_aiconfig_map.sh` | the AI-config map below must describe the tooling that actually EXISTS — every agent/command/skill/hook/lint has a row, every row names a real file, every enabled plugin has a row AND a rationale, prose counts match the table; pre-push + CI + `verify_all.sh` (#246 — the map had no guard and drifted silently) |
 | plugin | `context7`, `pyright-lsp`, `typescript-lsp`, `security-guidance` | per-plugin keep-rationale in "Plugins" below (#122); `frontend-design` and `playwright` were dropped |
-| MCP | `postgres`, `playwright`, `github` | read-only SQL / browser automation / PRs+issues |
+| MCP | `postgres`, `playwright`, `github`, `sonarqube` | read-only SQL / browser automation / PRs+issues / quality-gate + issue lookup without leaving the terminal |
 
 - **MCP servers** (`.mcp.json`): `postgres` (read-only SQL on the pgvector DB), `playwright`
-  (browser automation), `github` (PRs/issues). Approve on first use.
+  (browser automation), `github` (PRs/issues), `sonarqube` (quality gate + issue lookup against
+  SonarCloud, so a Sonar finding can be read and fixed without leaving the terminal). Approve on
+  first use. Three things about the Sonar entry are deliberate and easy to get wrong:
+  - **It needs a SonarCloud USER token.** A project or global analysis token — the kind generated
+    for CI — is rejected by the MCP server. The CI `SONAR_TOKEN` secret and this one may therefore
+    have to be different tokens even though both live under the same name locally.
+  - **No token is committed.** The values expand from the SHELL environment
+    (`SONAR_TOKEN`, `SONAR_ORGANISATION`), reusing the names `.env` already defines rather than
+    introducing `SONARQUBE_*` duplicates. `.env` is not auto-loaded into Claude Code's environment,
+    so they must be exported (shell profile, direnv, or `set -a; . ./.env; set +a`) before the
+    server can start.
+  - **It runs a container with `--pull=always`.** That is a plain `docker run`, not compose, so
+    `guard-stack-resources.sh` is uninvolved (same reasoning as `scripts/sonar_local.sh`) — but it
+    does re-pull on every start, which is a disk cost the one-stack guard will not warn about.
 - **Subagents** (`.claude/agents/`): all eight — `backend-dev`, `frontend-dev`, `devops-pipeline`,
   `pr-reviewer`, `release-manager`, `security-triage`, `issue-author`, `ai-integration` — see the
   AI-config map above for one-line purposes. **`ai-integration` is the improvement loop**: run it

@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **SonarCloud analysis is actually wired up, and Sonar findings are reachable from Claude (#359)**
+  — the workflow had been secrets-gated since #359, but the repository secret store held **neither**
+  `SONAR_TOKEN` nor `SONAR_HOST_URL`, so `check-secrets` reported `enabled=false` and the `Analysis`
+  job had been **skipping on every run since it was added**. Both are now set (plus
+  `SONAR_ORGANIZATION`), in the repository store *and* the Dependabot store — the latter because
+  GitHub withholds repository secrets from Dependabot-authored runs by design, which is the same
+  structural cause that kept the `snyk` job red on dependency PRs.
+  `sonar.organization=mavrovde` lives in `sonar-project.properties`, **not** in the workflow's
+  `args:`, deliberately: the scan step passes no `args` at all, and that is precisely what makes the
+  action's major bumps inert for us — the v6 breaking change was entirely about `args` re-quoting.
+  Adding an `args:` block to carry the organization would have quietly invalidated that reasoning
+  (#401).
+  The `sonarqube` MCP server (`.mcp.json`) is the official SonarSource one, run as a plain
+  `docker run` so the one-stack guard is uninvolved. Its token expands from the shell environment
+  rather than being committed, and it reuses the `SONAR_TOKEN`/`SONAR_ORGANISATION` names `.env`
+  already defines instead of adding `SONARQUBE_*` duplicates. Recorded in the AI-config map along
+  with the trap that costs the most time: the MCP server requires a **user** token and rejects the
+  project/global analysis token CI uses.
 - **The no-verdict merge path is closed at both ends (#392, v1.14.1 retro change B)** — #321 and
   #355 merged with zero verdicts in consecutive releases; mechanism established for the record:
   both merged in the GitHub **web UI** (a Dependabot PR and the security-tab "set up this
