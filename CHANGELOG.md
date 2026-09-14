@@ -34,11 +34,11 @@ All notable changes to this project will be documented in this file.
     `frontend/projects/public/src/app/version.ts`, `docker-compose.prod.yml`) each select the
     version-consistency leg, and `backend/app/config.py` / `README.md` / `docs/DEPLOYMENT.md` /
     `setup.sh` each select the documented-knob contract they feed (#296/#297/#298).
-  - **Proved able to fail.** `pre-push-tests.test.sh` now runs **118 cases** in two layers —
+  - **Proved able to fail.** `pre-push-tests.test.sh` now runs **122 cases** in two layers —
     the mapping driven directly, and the whole hook driven end-to-end against throwaway git
     repositories so the `@{push}`/`@{upstream}`/merge-base resolution is exercised rather than
     mocked — plus a `--mutations` contract that neuters one selection rule at a time, including
-    "the selector returns an empty selection". Result: **23 killed, 0 survived,
+    "the selector returns an empty selection". Result: **24 killed, 0 survived,
     0 invalid**. Without it, a selector that silently selected nothing would pass every
     "X must not be selected" case in the file.
   - **Renames select BOTH endpoints.** `git diff --name-only` with git's default rename

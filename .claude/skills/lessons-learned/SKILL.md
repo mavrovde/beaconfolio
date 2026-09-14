@@ -1525,12 +1525,24 @@ That is §18's "a gate nobody proved can fail is no gate", wearing a performance
    reason about; the unknown goes to the safe side by construction, not by review vigilance.
 2. **Assert the NEGATIVE and the POSITIVE, then mutate.** `must not select admin` is only half a
    test; pair every one with `must still select public`, and then neuter the selector and require
-   the file to go red. Measured here: **107 cases pass / 0 fail** normally; with the selector
-   neutered to return nothing, **70 pass / 37 fail** — and the `--mutations` contract kills **20 of
-   20** rules, 0 survivors. The headline mutation is literally "the selector returns an empty
+   the file to go red. Measured here: **122 cases pass / 0 fail** normally; with the selector
+   neutered to return nothing, **78 pass / 44 fail** — and the `--mutations` contract kills **24 of
+   24** rules, 0 survivors, 0 invalid. The headline mutation is literally "the selector returns an empty
    selection": if that one survives, the whole change is theatre. One earlier candidate DID survive,
    honestly — a guard made redundant by a rule that fired first. The answer was a seam assertion on
    the function itself, not a case dressed up to pass.
+   **A mutation's search string is part of the test, and it rots.** Review round 2 caught the
+   consequence: adding a leg to the lint arms changed the source line a mutation matched on, so it
+   produced NO diff and was reported `INVALID` — the rule stopped being proved able to fail, and
+   because the round runs `--mutations || return 1` when the selection names this hook, the gate
+   denied the next push to that very branch. CI could not see it (the pipeline runs the cases
+   WITHOUT `--mutations`) and the PR was green on all 20 checks. Re-run the contract after ANY edit
+   to the file it mutates, and read its `invalid` count, not only `survived`.
+   **And a seam must OBSERVE the decision, not re-derive it.** Two drafts of the same fix failed
+   this way: one re-implemented the condition in the seam, the next re-evaluated the predicate. Both
+   left a mutation of the CONSUMER passing, because the seam kept telling the truth while the thing
+   it described had changed. Decide once into the value the consumer actually uses, and assert on
+   the real argv — plant a stub in the fixture and record what it was called with.
 3. **Some legs are never selectable.** The PII/de-brand guard runs on every push whatever changed:
    it costs ~1s and its failure mode is public. Put such legs in an always-on set the path map
    cannot reach, and mutate THAT too.

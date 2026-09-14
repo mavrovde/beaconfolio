@@ -399,15 +399,35 @@ merge-base(`origin/main`)). Measured on one machine, same tree, same suites: a d
 | `docs/**`, `*.md`, `CHANGELOG.md`, `README.md` | docs + version consistency |
 | `docker-compose*.yml`, `.env.example` | the documented-knob contract |
 | `CLAUDE.md`, `.claude/agents|commands|skills/**` | the AI-config map drift check |
-| `.claude/hooks/<name>.sh` | that hook's self-test |
-| `.claude/hooks/hook-parse-lib.sh` | **all four** hook self-tests (they share it) |
-| `scripts/<lint>.sh` | that lint + its self-test |
+| `.claude/hooks/<name>.sh` | that hook's self-test + the AI-config map drift check |
+| `.claude/hooks/hook-parse-lib.sh` | **all four** hook self-tests (they share one parsing model) |
+| `.claude/hooks/prepush-select-lib.sh` | this selector's own self-test + the map drift check |
+| `scripts/<lint>.sh` | that lint + its self-test + the map drift check¹ |
+| **version carriers** — `VERSION`, `backend/app/main.py`, `frontend/package.json`, `frontend/package-lock.json`, `frontend/projects/shared/package.json`, `frontend/projects/public/src/app/version.ts`, `docker-compose.prod.yml` | **also** version consistency, wherever else they map² |
+| **documented-knob sources** — `backend/app/config.py`, `.env.example`, `README.md`, `docs/DEPLOYMENT.md`, `setup.sh`, `docker-compose*.yml` | **also** the documented-knob contract² |
 | **anything else** | **everything** |
+
+¹ A lint selects the map check because the selector is pure and cannot tell an EDIT from a
+DELETION — and deleting a lint leaves the AI-config map naming a file that no longer exists, which
+is exactly what `check_aiconfig_map.sh` fails on. A *rename* is already safe: the new path is
+unmapped, so it selects everything.
+² These are ADDITIVE, and they are the subtlest way a scoped gate stops noticing a real breakage —
+the file looks like "just backend code" while a whole-repo invariant hangs off it.
+
+**Renames select BOTH endpoints.** The diff is taken with `--no-renames`, because git's default
+rename detection reports only the *destination*: without it, `git mv frontend/projects/admin/…/x.ts
+frontend/projects/public/…/x.ts` would run the public legs and never `admin` — the project that just
+lost a module its specs import — and the behaviour would vary with each developer's `diff.renames`
+setting.
 
 The safety rules are not conveniences — they are the reason this is allowed to be fast:
 
 - **`main`, any `release/*` branch, `PREPUSH_FULL=1`, and any push whose refspec targets a protected
-  branch run the FULL round**, whatever the diff says.
+  branch run the FULL round**, whatever the diff says. The refspec test is structural, not a
+  substring match: each word is parsed as a refspec (destination half, with a leading `+`,
+  `refs/heads/` and surrounding quotes stripped), so `+main`, `HEAD:refs/heads/main` and
+  `HEAD:refs/heads/release/1.2.3` are all recognised, while a branch merely *named*
+  `feature-main-nav` still scopes.
 - **An unmapped path, an empty diff, a range that cannot be computed, or a branch that cannot be
   named runs the FULL round.** "I could not tell" never means "skip".
 - **The PII/de-brand guard always runs**, whatever changed.

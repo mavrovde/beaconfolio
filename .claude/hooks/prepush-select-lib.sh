@@ -216,18 +216,28 @@ prepush_force_full_reason() {
   # feature branch is still a push to main. Deliberately a substring probe over
   # the whole command — over-matching costs ONE redundant full round;
   # under-matching would run a scoped gate on a prod-deploy trigger.
-  case "$cmd" in
-    *:main|*:main\ *|*\ main|*\ main\ *|*:master|*:master\ *|*\ master|*\ master\ *|*release/*)
-      echo "the push command targets a protected branch"; return 0 ;;
-  esac
-  # ...and the same question asked STRUCTURALLY, because the substring probe
-  # above misses real spellings (#388 review, minor): `git push origin +main`
-  # (the `+` sits where the probe wants a space) and
-  # `git push origin HEAD:refs/heads/main` (ends `/main`, not `:main`). Both are
-  # pushes to the prod-deploy trigger that would otherwise get a SCOPED gate.
+  # Refspec / remote-branch spellings, asked STRUCTURALLY. `git push origin
+  # HEAD:main` from a feature branch is still a push to main.
+  #
+  # This REPLACES an earlier substring probe (#388 review). That probe was
+  # completely subsumed — deleting it leaves every case green — and keeping it
+  # would have MASKED rather than backstopped a regression here: it recognises
+  # `main` and `HEAD:main` but not `+main` or `refs/heads/main`, so a bug in the
+  # parser below would stay green on the common spellings while the newer ones
+  # failed open. Redundancy that cannot fail is not defence in depth.
+  #
   # For every word: take the destination half of a refspec (after the last `:`),
-  # drop a leading `+` (force) and any `refs/heads/` prefix, then compare.
-  local w dst
+  # drop surrounding quotes, a leading `+` (force) and any `refs/heads/` prefix.
+  # Over-matching costs ONE redundant full round; under-matching would run a
+  # scoped gate on a prod-deploy trigger.
+  #
+  # `local IFS` pins word splitting to whitespace regardless of the caller's IFS,
+  # and `set -f` is asserted rather than assumed — an unguarded `$cmd` expansion
+  # under a caller with globbing on would let a literal `*` in the command line
+  # expand against the cwd (#388 review).
+  local w dst IFS=$' \t\n'
+  local _restore_f=1; case "$-" in *f*) _restore_f=0 ;; esac
+  set -f
   for w in $cmd; do
     case "$w" in -*) continue ;; esac          # flags are not refspecs
     dst="${w//\'/}"; dst="${dst//\"/}"   # `origin 'HEAD:main'` is still main
@@ -236,9 +246,11 @@ prepush_force_full_reason() {
     dst="${dst#refs/heads/}"
     case "$dst" in
       main|master|release/*)
+        if [ "$_restore_f" = 1 ]; then set +f; fi
         echo "the push command targets a protected branch"; return 0 ;;
     esac
   done
+  if [ "$_restore_f" = 1 ]; then set +f; fi
   # A push that publishes MORE than the current branch: --all / --mirror send
   # every branch (main included) and --tags / --follow-tags publish release
   # tags. The diff of ONE branch says nothing about what those carry.

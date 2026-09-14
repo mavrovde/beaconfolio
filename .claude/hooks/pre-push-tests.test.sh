@@ -497,6 +497,80 @@ R="$(mkfixture fix/mainpush main docs/guide.md)"
 chk_decision "a push to main (full round) runs the PLAIN cases, not the mutations" \
   "PLAIN" "$R" "$P origin HEAD:main"
 
+# The structural probe expands $cmd, so it must not inherit the caller's IFS or
+# globbing (#388 review round 2). Both are pinned inside the function; these
+# cases fail if either is ever dropped.
+sel_env_ifs() { # run one selection with a hostile IFS and globbing ON
+  ( IFS=:; set +f
+    R2="$(mkfixture fix/ifs main docs/guide.md)"
+    printf '{"tool_input":{"command":%s}}' "$(jq -Rn --arg c "$P origin HEAD:main" '$c')" \
+      | CLAUDE_PROJECT_DIR="$R2" PREPUSH_PRINT_LEGS=1 PREPUSH_FULL=0 bash "$HOOK" )
+}
+got="$(norm "$(sel_env_ifs)")"
+if [ "$got" = "ALL" ]; then
+  printf 'PASS  [%s]  a hostile IFS=: and globbing ON do not break protected-branch detection\n' "$got"
+else
+  printf 'FAIL  got="%s" want="ALL"  hostile IFS/glob broke protected-branch detection\n' "$got"
+  fails=$((fails + 1))
+fi
+
+# --- the call site must actually PASS the flag (#388 review round 2) ---------
+# A decision-only case cannot see this: if the invocation stops expanding
+# MUT_ARGS, the seam still prints MUTATIONS while the round silently runs the
+# plain cases. So OBSERVE the real argv -- plant a stub self-test inside the
+# fixture (the hook resolves it from $ROOT) that records what it was called with.
+mkstubfixture() { # mkstubfixture <branch> <path...>
+  local br="$1"; shift
+  local d; d="$(mkfixture "$br" main "$@")"
+  mkdir -p "$d/.claude/hooks"
+  cat > "$d/.claude/hooks/pre-push-tests.test.sh" <<'EOSTUB'
+#!/usr/bin/env bash
+printf '%s\n' "ARGV:$*" >> "${PREPUSH_STUB_LOG:?}"
+exit 0
+EOSTUB
+  chmod +x "$d/.claude/hooks/pre-push-tests.test.sh"
+  printf '%s\n' "$d"
+}
+observe_argv() { # observe_argv <repo> <cmd> -> prints the recorded argv line
+  local log; log="$(mktemp)"
+  printf '{"tool_input":{"command":%s}}' "$(jq -Rn --arg c "$2" '$c')" \
+    | CLAUDE_PROJECT_DIR="$1" PREPUSH_STUB_LOG="$log" PREPUSH_FULL=0 \
+      PREPUSH_CHECK_DOCS=0 PREPUSH_RUN_BACKEND=0 PREPUSH_RUN_LINT=0 \
+      PREPUSH_RUN_FRONTEND=0 PREPUSH_RUN_GUARDTEST=1 \
+      PREPUSH_LOG=/tmp/prepush-selftest-argv.log bash "$HOOK" >/dev/null 2>&1
+  grep '^ARGV:' "$log" 2>/dev/null | head -1; rm -f "$log"
+}
+
+R="$(mkstubfixture fix/hookargv .claude/hooks/pre-push-tests.sh)"
+got="$(observe_argv "$R" "$P origin HEAD")"
+if [ "$got" = "ARGV:--mutations" ]; then
+  printf 'PASS  [%s]  the call site really passes --mutations when the hook changed\n' "$got"
+else
+  printf 'FAIL  got="%s" want="ARGV:--mutations"  call site did not pass the flag\n' "$got"
+  fails=$((fails + 1))
+fi
+
+R="$(mkstubfixture fix/docsargv docs/guide.md)"
+got="$(observe_argv "$R" "$P origin HEAD")"
+if [ "$got" = "ARGV:" ] || [ -z "$got" ]; then
+  printf 'PASS  [%s]  a docs-only round does not pass --mutations\n' "${got:-not-invoked}"
+else
+  printf 'FAIL  got="%s" want="ARGV:" (or no invocation)  plain round leaked --mutations\n' "$got"
+  fails=$((fails + 1))
+fi
+
+# The discriminating half: a fail-closed ALL round DOES invoke the self-test, and
+# must invoke it WITHOUT the flag. This is the case that catches "just always
+# pass --mutations", which is the change that reintroduces the fail-open risk.
+R="$(mkstubfixture fix/allargv importer/ledger.py)"
+got="$(observe_argv "$R" "$P origin HEAD")"
+if [ "$got" = "ARGV:" ]; then
+  printf 'PASS  [%s]  an ALL round invokes the self-test WITHOUT --mutations\n' "$got"
+else
+  printf 'FAIL  got="%s" want="ARGV:"  ALL round passed the mutation flag (fail-open risk)\n' "$got"
+  fails=$((fails + 1))
+fi
+
 # --- refspec spellings that still target main (#388 review, minor) ----------
 # The substring probe missed `+main` (the `+` sits where it wants a space) and
 # `refs/heads/main` (ends `/main`, not `:main`). Both are pushes to the
@@ -682,7 +756,7 @@ mutate die "$LIBF" "version carriers stop selecting the version-consistency leg"
 mutate die "$LIBF" "documented-knob sources stop selecting the compose contract" \
   'replace::    backend/app/config.py|.env.example|README.md=>    backend/app/config.pyXX|.env.exampleXX|README.mdXX'
 mutate die "$LIBF" "the CHANGELOG rewriter stops selecting its own self-test" \
-  'replace::scripts/dedup_changelog_unreleased.py|scripts/dedup_changelog_unreleased.test.sh) echo dedup ;;=>scripts/dedup_changelog_unreleased.pyXX) echo dedup ;;'
+  'replace::scripts/dedup_changelog_unreleased.py|scripts/dedup_changelog_unreleased.test.sh) printf '"'"'dedup\naiconfig\n'"'"' ;;=>scripts/dedup_changelog_unreleased.pyXX) printf '"'"'dedup\naiconfig\n'"'"' ;;'
 mutate die "$LIBF" "a backend diff stops selecting the backend legs" \
   'replace::  backend/*) prepush_backend_legs ;;=>  backend/*) prepush_always_legs ;;'
 mutate die "$LIBF" "a shared-library diff stops fanning out to all three projects" \
@@ -715,7 +789,12 @@ mutate die "$LIBF" "an unobtainable git range reports success instead of failing
 mutate die "$LIBF" "rename detection hides the SOURCE path of a git mv (#388 blocker 1)" \
   'replace::  git -C "$root" diff --no-renames --name-only "$range" 2>/dev/null || return 1=>  git -C "$root" diff --name-only "$range" 2>/dev/null || return 1'
 mutate die "$HOOKF" "the mutation contract leaks into every full round (fail-open risk, #388 major 2)" \
-  'replace::want_mutation_contract() { leg_exact hook:pre-push-tests; }=>want_mutation_contract() { leg hook:pre-push-tests; }'
+  'replace::if leg_exact hook:pre-push-tests; then MUT_ARGS=(--mutations); fi=>if leg hook:pre-push-tests; then MUT_ARGS=(--mutations); fi'
+# ...and the CONSUMER, which round 2 showed a decision-only mutation misses: if
+# the invocation stops expanding MUT_ARGS, the seam still prints MUTATIONS while
+# the round silently runs the plain cases.
+mutate die "$HOOKF" "the call site stops passing the mutation flag (seam would still claim it did)" \
+  'replace::  bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" ${MUT_ARGS[@]+"${MUT_ARGS[@]}"} || return 1=>  bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" || return 1'
 mutate die "$HOOKF" "the hook ignores the selector and prints a fixed narrow set" \
   'replace::| prepush_select_legs)=>| true; echo " docs ")'
 mutate die "$HOOKF" "the hook no longer fails closed when the range is unobtainable" \

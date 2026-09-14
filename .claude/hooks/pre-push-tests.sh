@@ -356,10 +356,18 @@ fi
 # then reported a false kill, because mutating the call site left this copy
 # still telling the truth. A seam that re-derives what it claims to observe is
 # the same fake-green shape the hooks' self-tests exist to prevent.
-want_mutation_contract() { leg_exact hook:pre-push-tests; }
+# Decided ONCE, into the value the invocation actually uses. Two earlier drafts
+# of this got it wrong in the same way at different levels: the first
+# re-implemented the condition inside the seam, the second had the seam
+# re-EVALUATE the predicate. Both left a mutation of the consumer passing,
+# because the seam re-derived the answer instead of observing the decision.
+# Now there is one array: the seam prints it and the call site expands it, so a
+# mutation anywhere on this path is visible to the self-test.
+MUT_ARGS=()
+if leg_exact hook:pre-push-tests; then MUT_ARGS=(--mutations); fi
 
 if [ "${PREPUSH_PRINT_MUTATION_DECISION:-0}" = "1" ]; then
-  if want_mutation_contract; then printf 'MUTATIONS\n'; else printf 'PLAIN\n'; fi
+  if [ "${#MUT_ARGS[@]}" -gt 0 ]; then printf 'MUTATIONS\n'; else printf 'PLAIN\n'; fi
   exit 0
 fi
 
@@ -492,13 +500,12 @@ run_checks() {
       # `leg_exact` is the distinction: in a full round we do not know what
       # changed, so we run the cases exactly as before #377; when the selection
       # NAMES this hook, we additionally run the mutation contract.
-      if want_mutation_contract; then
+      if [ "${#MUT_ARGS[@]}" -gt 0 ]; then
         echo "== pre-push self-gate + leg-selection self-test + mutation contract (#237/#377) =="
-        bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" --mutations || return 1
       else
         echo "== pre-push self-gate + leg-selection self-test (#237/#377) =="
-        bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" || return 1
       fi
+      bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" ${MUT_ARGS[@]+"${MUT_ARGS[@]}"} || return 1
     fi
     if leg hook:guard-stack-resources && [ -f "$ROOT/.claude/hooks/guard-stack-resources.test.sh" ]; then
       # --mutations for the same reason as the merge gate below: this guard's
