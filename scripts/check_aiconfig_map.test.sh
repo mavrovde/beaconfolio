@@ -26,6 +26,9 @@ skeleton() { # skeleton <dir>
   cat > "$d/.claude/settings.json" <<'JSON'
 { "enabledPlugins": { "context7@claude-plugins-official": true } }
 JSON
+  cat > "$d/.mcp.json" <<'JSON'
+{ "mcpServers": { "postgres": {}, "github": {} } }
+JSON
   cat > "$d/CLAUDE.md" <<'MD'
 # CLAUDE.md — demo
 
@@ -37,6 +40,7 @@ JSON
 | hook | `pre-push-tests.sh` | gates before push |
 | lint | `scripts/check_demo.sh` | a demo lint |
 | plugin | `context7` | live docs |
+| MCP | `postgres`, `github` | demo servers |
 
 - **Subagents** (`.claude/agents/`): all one — `backend-dev`.
 
@@ -190,6 +194,92 @@ if [ "$rc" -ne 0 ] && printf '%s' "$out" | grep -qi "MORE THAN ONCE"; then
   ok "a plugin listed twice FAILS"
 else bad "duplicate plugin" "rc=$rc; $out"; fi
 rm -rf "$d"
+
+
+# --- #378: the MCP category must be able to fail ----------------------------
+D="$(mktemp -d)"; skeleton "$D"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("| MCP | `postgres`, `github` | demo servers |\n", ""))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "NO | MCP | row"; then
+  ok "#378: deleting the | MCP | row FAILS (the category can fail now)"
+else bad "#378: deleting the MCP row must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+D="$(mktemp -d)"; skeleton "$D"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("`postgres`, `github`", "`postgres`"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "MCP server 'github' is in .mcp.json but not"; then
+  ok "#378: a server in .mcp.json with no row entry FAILS"
+else bad "#378: server-without-row must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+D="$(mktemp -d)"; skeleton "$D"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("`postgres`, `github`", "`postgres`, `github`, `ghost`"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "MCP server 'ghost' is in the map's MCP row but not"; then
+  ok "#378: a row entry naming a server absent from .mcp.json FAILS"
+else bad "#378: row-without-server must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# --- #378: a non-.sh tool in scripts/ needs a row ---------------------------
+D="$(mktemp -d)"; skeleton "$D"
+: > "$D/scripts/sneaky_tool.py"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "sneaky_tool.py"; then
+  ok "#378: a rowless scripts/*.py FAILS (the sweep sees every extension)"
+else bad "#378: a rowless .py tool must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# a `tooling` row satisfies the sweep (the real map distinguishes gates from helpers)
+D="$(mktemp -d)"; skeleton "$D"
+: > "$D/scripts/helper_tool.py"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("| plugin | `context7` | live docs |",
+  "| tooling | `scripts/helper_tool.py` | a helper |\n| plugin | `context7` | live docs |"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -eq 0 ]; then ok "#378: a kind-tooling row satisfies the scripts/ sweep"
+else bad "#378: a tooling row must satisfy the sweep" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# --- #378: the two formerly tolerant parses now fail ------------------------
+D="$(mktemp -d)"; skeleton "$D"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("| lint | `scripts/check_demo.sh` |", "| lint | `check_demo.sh` |"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "does not carry the scripts/ prefix"; then
+  ok "#378: a lint row without the scripts/ prefix FAILS"
+else bad "#378: prefixless lint row must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+D="$(mktemp -d)"; skeleton "$D"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("| hook | `pre-push-tests.sh` |", "| hook | `/pre-push-tests.sh` |"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "starts with '/'"; then
+  ok "#378: a hook row with a leading / FAILS"
+else bad "#378: leading-/ hook row must fail" "rc=$rc $out"; fi
+rm -rf "$D"
 
 printf '\ncheck_aiconfig_map self-test: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

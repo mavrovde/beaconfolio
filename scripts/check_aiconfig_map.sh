@@ -30,10 +30,26 @@ fail() { problems=$((problems + 1)); printf '  ✗ %s\n' "$1"; }
 # The map rows look like:  | agent | `backend-dev` | purpose |
 # Collect the NAMES present for one kind, one per line.
 map_names() { # map_names <kind>
+  # [A-Za-z]+ , not [a-z]+ : the `| MCP |` row is uppercase, and the
+  # lowercase-only pattern made the whole MCP category INVISIBLE — deleting
+  # the row passed, which is this checker's own defect class (#378; the #367
+  # reviewer measured 0 problems from wholesale MCP-row deletion while every
+  # other category showed several).
   grep -E "^\| *$1 *\|" "$MAP" \
-    | sed -E 's/^\| *[a-z]+ *\| *//; s/ *\|.*$//' \
+    | sed -E 's/^\| *[A-Za-z]+ *\| *//; s/ *\|.*$//' \
     | tr -d '`' | sed -E 's#^scripts/##; s#^/##' | sed 's/^ *//; s/ *$//'
 }
+
+# The two formerly TOLERANT parses, now checked (#378): a lint row missing its
+# `scripts/` prefix and a hook row with a leading `/` both used to normalise
+# away silently. Tolerance in a drift checker is drift.
+grep -E '^\| *lint *\|' "$MAP" | grep -vE '^\| *lint *\| *`scripts/' \
+  | while IFS= read -r r; do [ -n "$r" ] && echo x; done | grep -q x \
+  && fail "a lint row does not carry the scripts/ prefix — write the path the file actually has"
+# command rows legitimately start with '/' (slash commands); hooks and the
+# rest must not.
+grep -E '^\| *(hook|agent|skill) *\| *`/' "$MAP" >/dev/null \
+  && fail "a hook/agent/skill row name starts with '/' — write the bare filename"
 
 # --- 1. every real tool has a row, and every row names a real file -----------
 # $1 = kind, $2 = dir, $3 = find pattern, $4 = how to turn a path into a name
@@ -107,15 +123,22 @@ done
 # self-test (`*.test.sh` belongs to the tool it tests) and not a build helper.
 # The exclusions are named, not pattern-guessed, so adding a script forces a
 # decision rather than silently slipping into an ignore rule.
-for f in "$ROOT"/scripts/*.sh; do
-  [ -e "$f" ] || continue
+# EVERY file in scripts/, not just *.sh (#378): the old glob meant a .py or
+# .mjs tool needed no row — and scripts/dedup_changelog_unreleased.py was
+# already such a file, invisible to this sweep, one extension away from the
+# original whole-category hole.
+for f in "$ROOT"/scripts/*; do
+  [ -f "$f" ] || continue
   name="$(basename "$f")"
   case "$name" in
     *.test.sh) continue ;;                 # a self-test, not a lint
     make-social-image.sh) continue ;;      # asset generator, not a repo-contract lint
+    __pycache__|*.pyc) continue ;;
   esac
-  map_names lint | grep -qxF "$name" \
-    || fail "lint 'scripts/$name' exists but has NO row in the CLAUDE.md AI-config map"
+  # a row of kind `lint` OR `tooling` satisfies the sweep — the map deliberately
+  # distinguishes gates from helpers, and both are rows that must exist.
+  { map_names lint; map_names tooling; } | grep -qxF "$name" \
+    || fail "'scripts/$name' exists but has NO lint/tooling row in the CLAUDE.md AI-config map"
 done
 
 # The `while | read` subshells above cannot increment `problems`, so re-count the
@@ -128,6 +151,23 @@ missing_files=$( {
   map_names lint    | while IFS= read -r n; do [ -n "$n" ] && [ ! -f "$ROOT/scripts/$n" ] && echo x; done
 } | grep -c x )
 problems=$((problems + missing_files))
+
+# --- 1b. MCP servers: .mcp.json <-> map row (#378) ---------------------------
+MCPJSON="$ROOT/.mcp.json"
+if [ -f "$MCPJSON" ]; then
+  mcp_real="$(jq -r '.mcpServers | keys[]' "$MCPJSON" 2>/dev/null | sort)"
+  [ -n "$mcp_real" ] || fail ".mcp.json exists but no servers could be parsed from it"
+  mcp_row="$(grep -E '^\| *MCP *\|' "$MAP" | head -1 | awk -F'|' '{print $3}')"
+  [ -n "$mcp_row" ] || fail ".mcp.json declares servers but the map has NO | MCP | row"
+  for m in $mcp_real; do
+    printf '%s' "$mcp_row" | grep -qF "\`$m\`" \
+      || fail "MCP server '$m' is in .mcp.json but not in the map's MCP row"
+  done
+  for m in $(printf '%s' "$mcp_row" | grep -oE '\`[a-z0-9_-]+\`' | tr -d '\`'); do
+    printf '%s\n' "$mcp_real" | grep -qxF "$m" \
+      || fail "MCP server '$m' is in the map's MCP row but not in .mcp.json"
+  done
+fi
 
 # --- 2. enabled plugins: settings.json <-> map row <-> rationale prose --------
 if [ -f "$SETTINGS" ]; then
@@ -177,6 +217,13 @@ check_prose_count() { # check_prose_count <regex-prefix> <kind>
   [ "$want" -eq "$have" ] \
     || fail "CLAUDE.md prose says \"$line\" but the map lists $have $2 row(s) — one of them is stale"
 }
+# NO HOOK ENTRY HERE, DELIBERATELY (#384). The prose says "all four hooks" and
+# "all four self-tests", which is TRUE — there are 4 real PreToolUse hooks — but
+# the map carries 6 hook rows, because hook-parse-lib.sh and prepush-select-lib.sh
+# are shared LIBRARIES, not hooks. A count regex here would compare 4 against 6
+# and fail on correct content. If you are tempted to "fix" that by adding one,
+# this is why it is absent: the mismatch is real and intended. A 5th hook would
+# make the prose stale silently — accepted, and written down instead of guarded.
 check_prose_count '\*\*Subagents\*\* \(`\.claude/agents/`\): all' agent
 check_prose_count '\*\*Skills\*\* \(`\.claude/skills/`\): all' skill
 check_prose_count '\*\*Slash commands\*\* \(`\.claude/commands/`\): all' command

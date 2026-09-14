@@ -90,6 +90,31 @@ All notable changes to this project will be documented in this file.
   Discussion #387 opens both for comment.
 
 ### Changed
+- **The AI-config drift checker's own blind spots closed (#378)** — two categories that
+  **could not fail**, the exact defect class the checker exists to catch. The `| MCP |` row was
+  invisible because the kind pattern was `[a-z]+` and the row is uppercase (deleting it passed);
+  MCP is now checked **both ways against `.mcp.json`**. The `scripts/` sweep globbed `*.sh` only,
+  so a `.py` or `.mjs` tool needed no row — `dedup_changelog_unreleased.py` was already such a
+  file; it now sweeps every file, and a `tooling` row satisfies it alongside `lint`. The two
+  tolerant parses (a lint row missing `scripts/`, a leading `/` on a hook row) now fail. Seven new
+  cases, **six of them measured failing against the pre-fix checker** (the seventh is a
+  regression-guard for new behaviour): 24 passed.
+- **Three #373 residuals recorded where the reader stands (#382)** — `cv.component.ts` now names
+  Snyk alert **3136**, its dismissal as a false positive, and *why it can never auto-clear* (Snyk
+  does not model `URL.pathname` as a sanitizer), instead of leaving the argument in a PR comment;
+  `.snyk` states the triage's **shape** with the live feed's measured numbers (2 open / 7
+  dismissed / 313 fixed at 2026-09-14) rather than a count that was wrong three times; and
+  `cv.service.spec.ts`'s escape invariant now also rejects `/\`, which is as protocol-relative as
+  `//` — unreachable today, and stated anyway, because an invariant that leans on the
+  implementation holding is not an invariant.
+- **Four v1.14.1 review residuals cleared (#384)** — `/prep-pr` step 2 now sorts both sides
+  (`diff` is order-sensitive, so the dedup fixer's legitimate re-ordering made it cry wolf) and
+  states **both** meanings of a `<` line with their opposite remedies (behind `main` → rebase;
+  up to date → content was lost → restore), pointing at #391's mechanical check as the real
+  defence; `verify_all.sh` stage labels renumbered `[1/4]`…`[4/4]` after the drift check became a
+  stage; `check_aiconfig_map.sh` records **why hook counts are deliberately unguarded** (4 real
+  hooks vs 6 map rows, because two are shared libraries — a count regex would fail on correct
+  content); and the freshness comment sits with the block it describes again.
 - **The pre-push gate now runs only the legs the DIFF can break (#377)** — it ran the entire round
   on every push regardless of what changed, so a two-file documentation commit paid
   **11m44s** for backend pytest, ruff, mypy, three Vitest projects and ~12 script/hook

@@ -420,9 +420,6 @@ run_checks() {
         return 1
       }
     fi
-    # Freshness-contract self-test (#280): the live-vs-released verdict script is
-    # shared by the Live Freshness workflow AND deploy.yml's post-rollout gate —
-    # if IT breaks, prod verification silently lies. Stubbed curl/jq, no network.
     # The CHANGELOG dedup helper REWRITES release history, so its own self-test
     # is part of the gate (#371 review: it entered the repo with no test and a
     # whitelist that silently deleted unrecognised sections).
@@ -432,6 +429,9 @@ run_checks() {
         return 1
       }
     fi
+    # Freshness-contract self-test (#280): the live-vs-released verdict script is
+    # shared by the Live Freshness workflow AND deploy.yml's post-rollout gate —
+    # if IT breaks, prod verification silently lies. Stubbed curl/jq, no network.
     if leg freshness && [ -f "$ROOT/scripts/check_live_freshness.test.sh" ]; then
       ( cd "$ROOT" && bash scripts/check_live_freshness.test.sh >/dev/null ) || {
         echo "  ✗ check_live_freshness.test.sh failed — the freshness checker itself is broken"

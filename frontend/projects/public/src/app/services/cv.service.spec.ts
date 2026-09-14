@@ -89,7 +89,12 @@ describe('CvService', () => {
         // the table listed the vectors someone had thought of. The invariant
         // below is what actually matters: whatever comes back must be a
         // same-origin path — never protocol-relative, never scheme-bearing.
-        const ESCAPES = (out: string) => /^\/\//.test(out) || /^[a-z][a-z0-9+.-]*:/i.test(out);
+        // `/\` is as protocol-relative as `//` in every browser, so the
+        // invariant states it too. Unreachable today (the collapse guarantees
+        // character 2 is neither), and stated anyway: an invariant that leans
+        // on the implementation holding is not an invariant (#382).
+        const ESCAPES = (out: string) =>
+            /^\/[/\\]/.test(out) || /^[a-z][a-z0-9+.-]*:/i.test(out);
 
         it.each([
             'http://evil.example.com/cv.pdf',
