@@ -1816,8 +1816,10 @@ inside every full round.
    expensive one that gets skipped. Owner's budget, verbatim: "the push cannot be longer than 1-3
    minutes — it must be related to the size of the committed code, not a README during 40 minutes."
 
-Mutation contracts still run where they prove something: locally when the diff names the hook, and
-unconditionally in CI, which has the time budget.
+Mutation contracts still run where they prove something: unconditionally in CI, which has the time
+budget. They never run in the local gate — even a hook-change round measured ~9 minutes against the
+owner's budget, and argv-observed stub cases pin each call site against quietly reintroducing the
+flag.
 
 Related: §59 (the narrowing rule must fail by doing MORE — still true; this lesson is about WHAT
 the fail-closed arms may cost), §18/§46 (a gate nobody proved can fail is not a gate).

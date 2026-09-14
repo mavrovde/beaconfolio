@@ -623,39 +623,14 @@ case "$note" in
 esac
 rm -rf "$FR"
 
-# --- the mutation contract must NOT run in a full round (#388 review, major 2) -
-# `pre-merge-gate.test.sh --mutations` measured 543s alone under load; the hook
-# legs subtotal 646s before pytest/Vitest. Spending that in a fail-closed ALL
-# round would push the round past the 900s PreToolUse timeout -- and a timed-out
-# hook does NOT deny, so it would trade a slow gate for an OPEN one.
-# These cases pin the call site to `leg_exact`; with `leg` the ALL case flips.
-mut_decision() { # mut_decision <repo> <push command>
-  printf '{"tool_input":{"command":%s}}' "$(jq -Rn --arg c "$2" '$c')" \
-    | CLAUDE_PROJECT_DIR="$1" PREPUSH_PRINT_MUTATION_DECISION=1 PREPUSH_FULL=0 bash "$HOOK"
-}
-chk_decision() { # chk_decision <desc> <want> <repo> <cmd>
-  local got; got="$(mut_decision "$3" "$4" | tr -d '\n')"
-  if [ "$got" = "$2" ]; then printf 'PASS  [%s]  %s\n' "$got" "$1"
-  else printf 'FAIL  got="%s" want="%s"  %s\n' "$got" "$2" "$1"; fails=$((fails + 1)); fi
-}
-
-R="$(mkfixture fix/hookchange main .claude/hooks/pre-push-tests.sh)"
-chk_decision "a diff that NAMES this hook runs the mutation contract" \
-  "MUTATIONS" "$R" "$P origin HEAD"
-
-R="$(mkfixture fix/unmapped-full main importer/ledger.py)"
-chk_decision "a fail-closed ALL round runs the PLAIN cases, not the mutations" \
-  "PLAIN" "$R" "$P origin HEAD"
-
-R="$(mkfixture fix/mainpush main docs/guide.md)"
-chk_decision "a scoped push to main runs the PLAIN cases, not the mutations" \
-  "PLAIN" "$R" "$P origin HEAD:main"
-
-# --- the call site must actually PASS the flag (#388 review round 2) ---------
-# A decision-only case cannot see this: if the invocation stops expanding
-# MUT_ARGS, the seam still prints MUTATIONS while the round silently runs the
-# plain cases. So OBSERVE the real argv -- plant a stub self-test inside the
-# fixture (the hook resolves it from $ROOT) that records what it was called with.
+# --- NO mutation contract runs locally, ever (v1.14.2) -----------------------
+# Owner directive 2026-09-14: a push costs 1-3 minutes, proportional to the
+# diff. `--mutations` measured 543s for the merge gate alone and ~9 minutes for
+# this file's own contract — CI runs all three unconditionally (deploy.yml);
+# the local gate must never pass the flag, INCLUDING when the diff names the
+# hook (the pre-v1.14.2 rule). OBSERVE the real argv — plant stub self-tests
+# inside the fixture (the hook resolves them from $ROOT) that record what they
+# were called with, so "quietly reintroduces the flag" has a red case.
 mkstubfixture() { # mkstubfixture <branch> <path...>
   local br="$1"; shift
   local d; d="$(mkfixture "$br" main "$@")"
@@ -686,12 +661,15 @@ observe_argv() { # observe_argv <repo> <cmd> [prefix] -> prints the recorded lin
   grep "^$pref:" "$log" 2>/dev/null | head -1; rm -f "$log"
 }
 
+# The discriminating direction: every round that invokes a self-test invokes
+# it WITHOUT the flag — including the round whose diff NAMES the hook, which
+# under the pre-v1.14.2 rule was exactly the round that ran mutations locally.
 R="$(mkstubfixture fix/hookargv .claude/hooks/pre-push-tests.sh)"
 got="$(observe_argv "$R" "$P origin HEAD")"
-if [ "$got" = "ARGV:--mutations" ]; then
-  printf 'PASS  [%s]  the call site really passes --mutations when the hook changed\n' "$got"
+if [ "$got" = "ARGV:" ]; then
+  printf 'PASS  [%s]  a diff naming this hook still runs the PLAIN cases only\n' "$got"
 else
-  printf 'FAIL  got="%s" want="ARGV:--mutations"  call site did not pass the flag\n' "$got"
+  printf 'FAIL  got="%s" want="ARGV:"  a hook-change round passed the mutation flag (budget breach)\n' "$got"
   fails=$((fails + 1))
 fi
 
@@ -704,9 +682,6 @@ else
   fails=$((fails + 1))
 fi
 
-# The discriminating half: a fail-closed ALL round DOES invoke the self-test, and
-# must invoke it WITHOUT the flag. This is the case that catches "just always
-# pass --mutations", which is the change that reintroduces the fail-open risk.
 R="$(mkstubfixture fix/allargv importer/ledger.py)"
 got="$(observe_argv "$R" "$P origin HEAD")"
 if [ "$got" = "ARGV:" ]; then
@@ -717,15 +692,12 @@ else
 fi
 
 # --- the merge-gate/stack-guard call sites follow the same rule (v1.14.2) ----
-# Their contracts used to run in EVERY round that selected the leg — which,
-# while main forced a full round, meant every push to main paid 543s (measured,
-# merge gate alone) re-proving contracts its diff never touched.
 R="$(mkstubfixture fix/gateargv .claude/hooks/pre-merge-gate.sh)"
 got="$(observe_argv "$R" "$P origin HEAD" GATE)"
-if [ "$got" = "GATE:--mutations" ]; then
-  printf 'PASS  [%s]  a diff naming the merge gate runs ITS mutation contract\n' "$got"
+if [ "$got" = "GATE:" ]; then
+  printf 'PASS  [%s]  a diff naming the merge gate still runs its PLAIN cases only\n' "$got"
 else
-  printf 'FAIL  got="%s" want="GATE:--mutations"  merge-gate call site lost the flag\n' "$got"
+  printf 'FAIL  got="%s" want="GATE:"  merge-gate call site passed the mutation flag\n' "$got"
   fails=$((fails + 1))
 fi
 
@@ -967,22 +939,15 @@ mutate die "$LIBF" "an unobtainable git range reports success instead of failing
   'replace::  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 1=>  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo docs/fake.md; return 0; }'
 mutate die "$LIBF" "rename detection hides the SOURCE path of a git mv (#388 blocker 1)" \
   'replace::  git -C "$root" diff --no-renames --name-only "$range" 2>/dev/null || return 1=>  git -C "$root" diff --name-only "$range" 2>/dev/null || return 1'
-mutate die "$HOOKF" "the mutation contract leaks into every full round (fail-open risk, #388 major 2)" \
-  'replace::if leg_exact hook:pre-push-tests; then MUT_ARGS=(--mutations); fi=>if leg hook:pre-push-tests; then MUT_ARGS=(--mutations); fi'
-# ...and the CONSUMER, which round 2 showed a decision-only mutation misses: if
-# the invocation stops expanding MUT_ARGS, the seam still prints MUTATIONS while
-# the round silently runs the plain cases.
-mutate die "$HOOKF" "the call site stops passing the mutation flag (seam would still claim it did)" \
-  'replace::  bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" ${MUT_ARGS[@]+"${MUT_ARGS[@]}"} || return 1=>  bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" || return 1'
-# The merge-gate/stack-guard call sites carry the SAME leg_exact rule and the
-# same two failure directions: leaking the contract into every full round
-# (the 543s fail-open shape) and silently never passing the flag at all.
-mutate die "$HOOKF" "the merge-gate mutation contract leaks into every full round" \
-  'replace::if leg_exact hook:pre-merge-gate; then GATE_MUT_ARGS=(--mutations); fi=>if leg hook:pre-merge-gate; then GATE_MUT_ARGS=(--mutations); fi'
-mutate die "$HOOKF" "the merge-gate call site stops passing its mutation flag" \
-  'replace::      bash "$ROOT/.claude/hooks/pre-merge-gate.test.sh" ${GATE_MUT_ARGS[@]+"${GATE_MUT_ARGS[@]}"} || return 1=>      bash "$ROOT/.claude/hooks/pre-merge-gate.test.sh" || return 1'
-mutate die "$HOOKF" "the stack-guard mutation contract leaks into every full round" \
-  'replace::if leg_exact hook:guard-stack-resources; then STACK_MUT_ARGS=(--mutations); fi=>if leg hook:guard-stack-resources; then STACK_MUT_ARGS=(--mutations); fi'
+# Mutation contracts are CI-only (v1.14.2, owner budget). The one direction a
+# call site can now fail is REINTRODUCING the flag locally — pin each of the
+# three call sites against it (killed by the argv-observed stub cases).
+mutate die "$HOOKF" "the pre-push call site starts running --mutations locally again" \
+  'replace::      bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" || return 1=>      bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" --mutations || return 1'
+mutate die "$HOOKF" "the merge-gate call site starts running --mutations locally again" \
+  'replace::      bash "$ROOT/.claude/hooks/pre-merge-gate.test.sh" || return 1=>      bash "$ROOT/.claude/hooks/pre-merge-gate.test.sh" --mutations || return 1'
+mutate die "$HOOKF" "the stack-guard call site starts running --mutations locally again" \
+  'replace::      bash "$ROOT/.claude/hooks/guard-stack-resources.test.sh" || return 1=>      bash "$ROOT/.claude/hooks/guard-stack-resources.test.sh" --mutations || return 1'
 mutate die "$HOOKF" "the hook ignores the selector and prints a fixed narrow set" \
   'replace::| prepush_select_legs)=>| true; echo " docs ")'
 mutate die "$HOOKF" "the hook no longer fails closed when the range is unobtainable" \

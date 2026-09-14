@@ -526,22 +526,16 @@ fi
 # because the seam re-derived the answer instead of observing the decision.
 # Now there is one array: the seam prints it and the call site expands it, so a
 # mutation anywhere on this path is visible to the self-test.
-MUT_ARGS=()
-if leg_exact hook:pre-push-tests; then MUT_ARGS=(--mutations); fi
-# The SAME rule for the other two self-tests that carry a mutation contract
-# (v1.14.2, owner directive 2026-09-14): `pre-merge-gate.test.sh --mutations`
-# measured 543s alone under load, and both used to run their contracts in
-# EVERY round that selected them — which, while `main` forced a full round,
-# meant every push to main. A mutation contract proves the self-test's power;
-# it belongs to the diff that CHANGES the hook, not to every push.
-STACK_MUT_ARGS=(); GATE_MUT_ARGS=()
-if leg_exact hook:guard-stack-resources; then STACK_MUT_ARGS=(--mutations); fi
-if leg_exact hook:pre-merge-gate; then GATE_MUT_ARGS=(--mutations); fi
-
-if [ "${PREPUSH_PRINT_MUTATION_DECISION:-0}" = "1" ]; then
-  if [ "${#MUT_ARGS[@]}" -gt 0 ]; then printf 'MUTATIONS\n'; else printf 'PLAIN\n'; fi
-  exit 0
-fi
+# MUTATION CONTRACTS ARE CI-ONLY (v1.14.2, owner directive 2026-09-14: a push
+# must cost 1-3 minutes, proportional to the diff). The gate used to run
+# `--mutations` locally — first in every round that selected a hook leg
+# (543s measured for the merge gate's alone), then, after #388, when the diff
+# named the hook (still ~9 minutes for any edit to this gate). Both violate
+# the budget. deploy.yml now runs all three hook contracts with `--mutations`
+# unconditionally on every push, so the contracts stay proven at the layer
+# with the time budget; the local rounds run the plain cases only, always.
+# The argv-observed stub cases in pre-push-tests.test.sh pin that no call
+# site below quietly reintroduces the flag.
 
 run_checks() {
   echo "== leg selection (#377): $SELECT_REASON =="
@@ -687,38 +681,26 @@ run_checks() {
       bash "$ROOT/.claude/hooks/guard-destructive.test.sh" || return 1
     fi
     if leg hook:pre-push-tests && [ -f "$ROOT/.claude/hooks/pre-push-tests.test.sh" ]; then
-      # --mutations ONLY when a hook actually changed. That contract is what
-      # proves this gate's own selector can go red — a selector that quietly
-      # selects NOTHING is the same anti-pattern as a check that cannot fail
-      # (lessons §18/§46) — but it costs ~100s, and MEASURED the full round went
-      # 704s -> 808s against the 900s PreToolUse timeout in .claude/settings.json.
-      # A timed-out hook does not deny, so spending that headroom in every
-      # fail-closed full round would trade a speed problem for a fail-OPEN one.
-      # `leg_exact` is the distinction: in a full round we do not know what
-      # changed, so we run the cases exactly as before #377; when the selection
-      # NAMES this hook, we additionally run the mutation contract.
-      if [ "${#MUT_ARGS[@]}" -gt 0 ]; then
-        echo "== pre-push self-gate + leg-selection self-test + mutation contract (#237/#377) =="
-      else
-        echo "== pre-push self-gate + leg-selection self-test (#237/#377) =="
-      fi
-      bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" ${MUT_ARGS[@]+"${MUT_ARGS[@]}"} || return 1
+      # Plain cases only — the mutation contract that proves this selector can
+      # go red (lessons §18/§46) runs in CI on every push, never here (see the
+      # CI-only comment above; measured ~9 minutes against the owner's
+      # 1-3-minute push budget, and against the 900s PreToolUse timeout a
+      # timed-out hook does not DENY, so overspending here risks fail-OPEN).
+      echo "== pre-push self-gate + leg-selection self-test (#237/#377) =="
+      bash "$ROOT/.claude/hooks/pre-push-tests.test.sh" || return 1
     fi
     if leg hook:guard-stack-resources && [ -f "$ROOT/.claude/hooks/guard-stack-resources.test.sh" ]; then
-      # Plain cases every selected round; --mutations only when the DIFF names
-      # this guard (STACK_MUT_ARGS above). The contract still runs where it
-      # proves something — a change to the guard — and in CI on every push.
+      # Plain cases only; the mutation contract is CI's (see above).
       echo "== stack-resource guard self-test =="
-      bash "$ROOT/.claude/hooks/guard-stack-resources.test.sh" ${STACK_MUT_ARGS[@]+"${STACK_MUT_ARGS[@]}"} || return 1
+      bash "$ROOT/.claude/hooks/guard-stack-resources.test.sh" || return 1
     fi
     if leg hook:pre-merge-gate && [ -f "$ROOT/.claude/hooks/pre-merge-gate.test.sh" ]; then
       # The FIRST version of this self-test passed 14/14 against a gate whose
       # blocking had been removed — the mutation contract is what proves the
-      # cases can go red. It runs when the DIFF names the gate (GATE_MUT_ARGS
-      # above) and in CI; not in every round that merely selects the leg
-      # (543s measured under load — see the MUT_ARGS comment).
+      # cases can go red, and CI runs it with --mutations on every push
+      # (543s measured under load — far past the local push budget).
       echo "== merge-gate self-test =="
-      bash "$ROOT/.claude/hooks/pre-merge-gate.test.sh" ${GATE_MUT_ARGS[@]+"${GATE_MUT_ARGS[@]}"} || return 1
+      bash "$ROOT/.claude/hooks/pre-merge-gate.test.sh" || return 1
     fi
   fi
 

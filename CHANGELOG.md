@@ -118,13 +118,13 @@ All notable changes to this project will be documented in this file.
   full round duplicated CI 1:1. The structural refspec parser that recognised `+main`/
   `refs/heads/main` went with the rule it served; `--all`/`--mirror`/`--tags`/`--follow-tags`,
   an unnameable branch, an empty/unobtainable diff and unmapped paths still run everything.
-  (b) **A hook's mutation contract runs locally only when the DIFF names that hook** — the
-  merge-gate contract (measured 543s alone under load) and the stack-guard contract ran in every
-  round that selected their legs, which under (a) meant every push to `main`; both call sites now
-  follow the same `leg_exact` rule the pre-push contract already had (#388 major 2), argv-observed
-  through planted stubs so "stops passing the flag" and "leaks into every full round" both have
-  killing mutations. **CI now runs all three hook contracts with `--mutations` unconditionally**,
-  so the contracts stay proven on every push at the layer that has the time budget.
+  (b) **No `--mutations` contract runs locally, ever** — the merge-gate contract (measured 543s
+  alone under load) and the stack-guard contract ran in every round that selected their legs,
+  which under (a) meant every push to `main`; even the #388 compromise (mutations when the diff
+  names the hook) costs ~9 minutes for any edit to the gate itself, past the budget. **CI now runs
+  all three hook contracts with `--mutations` unconditionally on every push**, the layer with the
+  time budget; the local call sites are argv-observed through planted stubs, with a killing
+  mutation per call site for "starts running `--mutations` locally again".
   (c) **`.github/**`, `sonar-project.properties`, `.gitignore` and `.mcp.json` are enumerated as
   no-local-leg paths** (docs + pii, or the AI-config drift check for `.mcp.json`) instead of
   unmapped-⇒-ALL — no local leg can exercise a workflow or scanner config, so the full round
