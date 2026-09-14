@@ -1506,6 +1506,35 @@ prevent* — proof the author had never run it on their own branch.
   pre-push gate in the SAME PR, or it is unexamined by anything.
 - **Run your own tool on your own branch before asking for review.** The reviewer proved it had
   not been, in one command.
+### 58b. A VERIFIER fails open by default — the same bug recurs at each level you add (#383/#390)
+
+Fixing §58's tool needed a test asserting "the released tail is byte-identical". That assertion
+was wrong **three times in one PR**, each time in the same shape: *the check passed when it had
+verified nothing.*
+
+1. `tail="$(sed -n '/^## \[1\./,$p' "$f")"` then `[ "$a" = "$b" ]` — command substitution strips
+   trailing newlines and `sed` is line-oriented, so trailing whitespace, a missing final newline
+   and CR bytes were **structurally invisible**. Two mutants survived at a green 26/0.
+2. Replaced with a byte extractor + `cmp`. The extractor hardcoded the fixture's heading and wrote
+   a `<MISSING>` sentinel on miss — so a renamed heading gave **both** snapshots the same sentinel
+   and `cmp` compared nothing. Measured: rename the heading, reintroduce the bug, get
+   **28 passed / 0 failed with a green tick on the case meant to catch it**.
+3. Made the extractor `exit 1` on miss. But the call sites ignore the return and the file has no
+   `set -e`, so a failed extraction left **two empty snapshots — and `cmp -s` calls two empty files
+   equal**. Loud (stderr) but still a pass.
+
+**The rule:** a verifier's failure mode is to pass, so every layer you add to one needs its own
+proof. Concretely — compare BYTES not strings when you claim bytes; never let "could not extract"
+produce a comparable value (a sentinel, an empty file, a default); assert the input to the compare
+is non-empty, because `cmp`, `diff` and `==` all say "equal" about two nothings; and derive the
+fixture from what the mutant must change — the `rstrip` mutant survived partly because the fixture
+had **no trailing whitespace to strip**, so the assertion *and* the fixture were each independently
+too weak.
+
+**And the fixture is part of the test.** Round 2's reviewer proved which half mattered by rebuilding
+the suite with the NEW assertion and the OLD fixture and watching the case go green again. Do that
+decomposition rather than fixing both and assuming either worked.
+
 ## 59. NARROWING a gate is the one change that can silently switch it off — so the narrowing rule must fail by doing MORE (#377)
 
 The pre-push gate ran every leg on every push. Scoping it to the diff is the right fix (a two-file

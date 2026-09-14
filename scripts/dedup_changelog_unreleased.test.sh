@@ -387,7 +387,11 @@ tb="$(mktemp)"; ta="$(mktemp)"
 cut_tail "$f" "$tb"
 run "$f"; out="$RUN_OUT"
 cut_tail "$f" "$ta"
-if cmp -s "$tb" "$ta"; then
+# `[ -s ]` on both: cut_tail's non-zero exit does NOT propagate (the call sites
+# ignore it and the file runs without `set -e`), so a failed extraction leaves
+# two EMPTY snapshots -- and `cmp -s` calls two empty files equal (#390 review,
+# round 3). An empty snapshot is never legitimate here.
+if [ -s "$tb" ] && [ -s "$ta" ] && cmp -s "$tb" "$ta"; then
   ok "#383: released tail is BYTE-identical (blank lines, fence, trailing space, final newline)"
 else
   bad "#383: released tail was rewritten" "$(cmp "$tb" "$ta" 2>&1 | head -3)"
@@ -420,7 +424,7 @@ open(sys.argv[1], "w", encoding="utf-8", newline="").write(data)' "$f" "$_mode"
   cut_tail "$f" "$tb"
   run "$f"; out="$RUN_OUT"
   cut_tail "$f" "$ta"
-  if cmp -s "$tb" "$ta"; then
+  if [ -s "$tb" ] && [ -s "$ta" ] && cmp -s "$tb" "$ta"; then
     ok "#390: released tail byte-identical with $_mode line endings"
   else
     bad "#390: $_mode line endings were rewritten" "$(cmp "$tb" "$ta" 2>&1 | head -3)"
