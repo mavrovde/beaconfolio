@@ -367,11 +367,21 @@ EOSNIP
 # all structurally invisible to a string compare. Two mutants survived that
 # assertion at a green 26/0 — an rstrip over the tail, and dropping the final
 # newline. Extract the tail as raw bytes and `cmp`.
-cut_tail() { # cut_tail <file> <out> — raw bytes from the first released heading
-  python3 -c 'import sys
+cut_tail() { # cut_tail <file> <out> — raw bytes from the FIRST released heading
+  # Finds the heading by pattern, and EXITS NON-ZERO if there is none. The first
+  # draft hardcoded `## [1.2.0]` and wrote a `<MISSING>` sentinel on miss — so if
+  # a fixture heading ever changed, both snapshots became the same sentinel and
+  # `cmp` compared nothing while printing a green tick. Measured: renaming the
+  # fixture heading and reintroducing the #383 bug gave 28 passed / 0 failed with
+  # a ✓ on the very case meant to catch it (#390 review). A helper that silently
+  # passes is the exact defect class this file exists to detect.
+  python3 -c 'import re, sys
 b = open(sys.argv[1], "rb").read()
-i = b.find(b"## [1.2.0]")
-open(sys.argv[2], "wb").write(b[i:] if i >= 0 else b"<MISSING>")' "$1" "$2"
+m = re.search(rb"^## \[[0-9]", b, re.M)
+if not m:
+    sys.stderr.write("cut_tail: no released heading in %s\n" % sys.argv[1])
+    sys.exit(1)
+open(sys.argv[2], "wb").write(b[m.start():])' "$1" "$2" || return 1
 }
 tb="$(mktemp)"; ta="$(mktemp)"
 cut_tail "$f" "$tb"

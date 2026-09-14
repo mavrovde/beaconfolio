@@ -93,6 +93,12 @@ All notable changes to this project will be documented in this file.
     newlines and is line-oriented, so trailing whitespace, a missing final newline and CR bytes were
     structurally invisible; two mutants survived it at a green 26/0. The case now extracts the tail
     as raw bytes and uses `cmp`.
+  - **The byte-extraction helper itself had a silent-pass path** (#390 review, round 2): it
+    hardcoded the fixture's release heading and wrote a `<MISSING>` sentinel when it found none, so
+    a renamed heading made both snapshots the same sentinel and `cmp` compared nothing while
+    printing a green tick — measured at 28/0 with the #383 bug reintroduced. It now finds the first
+    released heading by pattern and exits non-zero if there is none. A helper that silently passes
+    is the exact defect class this file exists to detect.
   - Proven, not asserted: self-test **28 passed / 0 failed**, and **four** mutants each make it go
     red — whole-file collapse (27/1), `rstrip` over the tail (26/2), dropping the final newline
     (25/3), and reverting `newline=""` (26/2). Against the repo's real `CHANGELOG.md`, `diff` of
