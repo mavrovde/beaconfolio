@@ -5,16 +5,19 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- **`LICENSE` (MIT) + complete env samples — the #61 onboarding close-out** — the README has
-  promised `[MIT](LICENSE)` since the template rewrite while no `LICENSE` file existed, so a
-  forker had no actual license grant; the file now exists at root. `backend/.env.example` gains
-  the 17 `Settings` knobs it still omitted (DB pool, messenger channels #263, translation #248,
-  engagement analytics #249/#326, owner language, tailored-link rate limits #250, proxy trust
-  #273, AI crawler policy) — every `app/config.py` field is now represented, measured by
-  diffing the two. A tiny `frontend/.env.example` documents the only env the SSR server reads
-  (`NG_ALLOWED_HOSTS`, `PORT`, `NODE_ENV`) and why nothing else exists: frontend rebranding is
-  runtime backend config (#65), never a rebuild. The other #61 items (one-command `setup.sh`,
-  template-first README, comprehensive root sample) had already shipped in earlier work.
+- **Complete env samples + a guard that keeps them complete — the #61 onboarding close-out** —
+  `backend/.env.example` gains the 17 `Settings` knobs it still omitted (DB pool, messenger
+  channels #263, translation #248, engagement analytics #249/#326, owner language,
+  tailored-link rate limits #250, proxy trust #273, AI crawler policy) — every `app/config.py`
+  field is now represented (74/74, measured). New `scripts/check_env_example_complete.sh`
+  pins that state in CI (Version Consistency job): missing AND orphan keys both red,
+  `validation_alias`-aware, stdlib-`ast` parsed so it needs no venv; mutation-checked
+  self-test beside it. `frontend/.env.example` documents the SSR server env
+  (`NG_ALLOWED_HOSTS`, `PORT`, `NODE_ENV`) plus the five `BRAND_*` knobs the one-shot
+  social-image generator reads (`scripts/make-social-image.mjs`, #311) — build-time only;
+  served-app rebranding stays runtime backend config (#65), never a rebuild. The other #61
+  items (root MIT `LICENSE` via #256, one-command `setup.sh`, template-first README,
+  comprehensive root sample) had already shipped in earlier work.
 - **Certificate-expiry alarm in the Live Freshness workflow (#310)** — a daily "Certificate
   expiry" step measures `notAfter` for every hostname in the `TLS_HOSTNAMES` repository variable
   (default: the maintainer's three) and goes red under 21 days remaining — Caddy renews at ~30

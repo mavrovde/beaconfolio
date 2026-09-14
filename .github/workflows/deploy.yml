@@ -402,6 +402,16 @@ jobs:
         run: bash scripts/check_compose_env.sh
       - name: Self-test the compose-env checker itself
         run: bash scripts/check_compose_env.test.sh
+      # Env-sample contract (#61, PR #418 review): backend/.env.example documents
+      # EXACTLY the Settings knobs config.py consumes — the 74/74 state was
+      # hand-verified once and would decay silently on the next field without
+      # this. Companion leg to the compose-env contract above (docs→container
+      # there, config→sample here). CI-only: the pre-push gate's sub-minute
+      # budget stays untouched and CI runs on every push/PR anyway.
+      - name: Env-sample contract (config.py knobs all documented)
+        run: bash scripts/check_env_example_complete.sh
+      - name: Self-test the env-sample checker itself
+        run: bash scripts/check_env_example_complete.test.sh
       # Freshness contract (#280): one verdict script feeds the Live Freshness
       # workflow and the post-rollout gate — its self-test proves the 3-way
       # verdict (fresh/stale/down) and the staleness-beats-outage precedence.
