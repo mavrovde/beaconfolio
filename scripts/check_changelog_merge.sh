@@ -28,6 +28,21 @@
 #      a lost line means the rebase dropped someone else's entry. Set semantics,
 #      so reordering sections (which the dedup fixer legitimately does) passes.
 #
+# STATED LIMITS (#398 review — documented, not hidden):
+#   * check 3 guards released HEADINGS, not released section bodies — a merge
+#     that mangles a released section's content without touching its heading
+#     passes here; the dedup self-test's byte-identity contract is the layer
+#     that owns released-content integrity.
+#   * check 4's set semantics cannot see MULTIPLICITY loss (two identical lines
+#     collapsing to one) — accepted, because the dedup fixer legitimately
+#     collapses exact duplicates.
+#   * checks 1 and 3 are not fence-aware (check 2 is): a fenced `## [x.y.z]`
+#     line would be miscounted. This repo's CHANGELOG has never carried a
+#     fenced release heading; revisit if one ever appears.
+#   * the pre-push run measures against the LOCAL origin/main, which is as
+#     fresh as the last fetch — a collision landed on main seconds ago is
+#     caught by the CI run and the merge gate's approval-covers-head check.
+#
 # A CONFLICTED merge is reported as its own failure (rebase first) — that is the
 # same signal the merge gate denies on, surfaced at push time instead.
 #
@@ -113,10 +128,13 @@ for name, count in seen.items():
     if count > 1:
         failures.append(f"check 2: duplicate heading in [Unreleased]: `{name}` x{count}")
 
-# 3. every released heading on the base must survive the merge (#365)
-merged_released = {l for l in merged if RELEASED.match(l)}
+# 3. every released heading on the base must survive the merge (#365).
+# Compared RSTRIPPED on both sides, like check 4 — the first draft compared raw
+# lines, so a CRLF base against an LF merge false-FAILED here while check 4
+# shrugged (#398 review): a lint that cries wolf on line endings gets bypassed.
+merged_released = {l.rstrip() for l in merged if RELEASED.match(l)}
 for l in base:
-    if RELEASED.match(l) and l not in merged_released:
+    if RELEASED.match(l) and l.rstrip() not in merged_released:
         failures.append(f"check 3: released heading on base is ABSENT from the merge: `{l.strip()}`")
 
 # 4. no [Unreleased] content line lost (set semantics: reorder and dedup pass)

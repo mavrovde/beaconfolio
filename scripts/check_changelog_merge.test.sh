@@ -89,7 +89,10 @@ mkbase
 python3 - "$T/base" "$T/merged" <<'PY'
 import sys
 t = open(sys.argv[1]).read()
-t = t.replace("- base fix B", "- base fix B\n  ```\n  ### Added\n  ```")
+# COLUMN-0 fenced heading — indented two spaces, `startswith("### ")` is False
+# with or without the fence branch, and the case pins nothing (#398 review,
+# major 2: neutering FENCE left the suite green).
+t = t.replace("- base fix B", "- base fix B\n```\n### Added\n```")
 open(sys.argv[2], "w").write(t)
 cp = open(sys.argv[1], "w")  # base must contain the same lines or check 4 fires
 cp.write(t)
@@ -236,9 +239,20 @@ PY
   mutate "check 2 removed (duplicate ### heading passes)" \
     'if count > 1:' 'if False:' assert_check2
   mutate "check 3 removed (deleted released heading passes — the #365 case)" \
-    'if RELEASED.match(l) and l not in merged_released:' 'if False:' assert_check3
+    'if RELEASED.match(l) and l.rstrip() not in merged_released:' 'if False:' assert_check3
   mutate "check 4 removed (lost [Unreleased] line passes)" \
     'if l.strip() and l.rstrip() not in merged_set:' 'if False:' assert_check4
+  assert_fence() { mkbase
+    python3 - "$T/base" "$T/merged" <<'PY'
+import sys
+t = open(sys.argv[1]).read()
+t = t.replace("- base fix B", "- base fix B\n```\n### Added\n```")
+open(sys.argv[2], "w").write(t)
+open(sys.argv[1], "w").write(t)
+PY
+    [ "$(run "$1")" = 0 ]; }
+  mutate "fence awareness removed (a fenced ### line counts as a heading)" \
+    'if FENCE.match(line):' 'if False:' assert_fence
   mutate "conflict deny removed (a CONFLICTING merge passes)" \
     'exit 1
 elif [ "$MT_RC" -ne 0 ]; then' 'exit 0
