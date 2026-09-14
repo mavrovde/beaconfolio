@@ -162,7 +162,7 @@ CHANGELOG section"* is **not** on it. The repository owns a tool —
 *entries* are doubled — but it is a **fixer invoked by a command someone must remember to run**,
 not a gate. Its self-test runs in the pre-push gate and tests *the script*, never the
 repository's own `CHANGELOG.md`. In the v1.14.1 cycle that rule was broken at blocker level on
-**5 of 16 reviewed PRs**, more than any other class, *after* the tool shipped. Knowledge was
+**7 of 16 reviewed PRs**, more than any other class, *after* the tool shipped. Knowledge was
 never the gap; enforcement level was. Promoting it to a lint is filed as issue **#391**, and the
 next retrospective checks whether that happened.
 
@@ -217,7 +217,7 @@ analysed.
 
 ### What review actually catches
 
-The case for spending 80% of a cycle's agent budget on review is empirical. In v1.14.1
+The case for spending 81% of a cycle's agent budget on review is empirical. In v1.14.1
 the reviews caught, among other things:
 
 - a **live open redirect** that survived three separate fixes and three green CI boards;

@@ -107,9 +107,9 @@ belongs to the previous release (#327 ↔ `v1.14.0`'s `a3de0f5`).
 **v1.14.0's standing prediction — early read at v1.14.1 (formal check still due at v1.15).** Stale
 approvals **0 of 16** ✅ (from 4 of 10 — `pre-merge-gate.sh` working); class-F blocker+major **5** ❌
 (target ≤2 — the draft scored this **2 ✅** and review re-derived it at 5); PRs merged with **no
-verdict at all: 1** ❌ (#355, second release running after #321); **merged-result findings: 6** ❌ —
-classes B ∪ C, stale base and `[Unreleased]` collision, hit **6 of 16 reviewed PRs**, and **4 of
-the 5 class-C PRs are also class B**, because the collision *is* the stale base landing in
+verdict at all: 1** ❌ (#355, second release running after #321); **merged-result findings: 8** ❌ —
+classes B ∪ C, stale base and `[Unreleased]` collision, hit **8 of 16 reviewed PRs — half of
+everything reviewed**, and **4 of the 7 class-C PRs are also class B**, because the collision *is* the stale base landing in
 `CHANGELOG.md`. #365 is the worst variant: the merge **deleted the released `## [1.14.0]` heading**
 rather than duplicating one. Project 3 `Review rounds` ⚠️ filled for 6 of 14 rail issues,
 retroactively.

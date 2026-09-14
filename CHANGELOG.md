@@ -12,8 +12,9 @@ All notable changes to this project will be documented in this file.
   - **Merges on a stale approval fell 4-of-10 → 0-of-16** — `pre-merge-gate.sh` working. Reported
     with its limit: merge provenance is *unmeasurable* here (all 17 merges share one identity), so
     the defensible claim is "no merge that reached the gate carried an uncovered commit".
-  - **The dominant defect is the merged result nothing validates — classes B ∪ C, 6 of 16 reviewed
-    PRs**, and **4 of the 5 `[Unreleased]`-collision PRs are also stale-base PRs**: the collision is
+  - **The dominant defect is the merged result nothing validates — classes B ∪ C, 8 of 16 reviewed
+    PRs, half of everything reviewed**, and **4 of the 7 `[Unreleased]`-collision PRs are also
+    stale-base PRs**: the collision is
     the stale base landing in `CHANGELOG.md`. #365 is the worst variant — the merge **deleted the
     released `## [1.14.0]` heading**. The tool and the `/prep-pr` step already existed; the gap is
     enforcement level, so the retro's main action moves the check from a command to a lint measured

@@ -90,8 +90,8 @@ are not equally flattering.
 release. Its reviews caught a **live open redirect that survived three separate fixes
 and three green CI boards**, a **new security bypass introduced by an optimisation to
 the destructive-command guard** (a helper assumed to be identity on quote-free input
-also de-escaped `\X` and blanked `#`, flipping two guarded commands from deny to
-allow), a drift checker whose entire `lint` category **could not fail**, and a CHANGELOG
+also de-escaped `\X` and blanked `#`, flipping **seven** guarded commands from deny to
+allow — one of them the exact command from the incident the guard was written for), a drift checker whose entire `lint` category **could not fail**, and a CHANGELOG
 tool that **silently deleted** unrecognised sections — 66 commits in this repository's
 history carry one. Rounds spent finding those are not waste.
 
@@ -207,7 +207,7 @@ Targets for v1.14.2 (issue **#386**), restated against the corrected baseline.
 
 | Dimension | v1.14.1 (corrected) | v1.14.2 target |
 |---|---|---|
-| Mean review rounds / PR | **2.41** | ≤ 1.8 |
+| Mean review rounds / PR | **2.41** | ≤ 1.6 |
 | Round-1 approvals | **29%** | ≥ 50% |
 | PRs merged with no verdict | **1** | **0** |
 | Merges on a stale approval | **0** | **0** (hold) |
@@ -227,8 +227,8 @@ shipped or in flight.
 1.93, the work is preventing the #373-shaped PR. The mechanism is `/prep-pr` step 7:
 list every number and claim in the PR body, commit message and CHANGELOG entry, then
 *run the thing that produces it at this head*. Three of #373's rounds were unverified
-claims — a fix for the wrong vulnerability, a guard that never ran in production, and
-coverage quoted from the wrong stack.
+claims — a fix for the wrong vulnerability, a guard that never ran in production, and a
+published remediation count that was wrong twice running.
 
 **Zero no-verdict merges.** The recurrence of #321 and #355 is a gate-coverage question
 before it is a discipline question: establish whether the gate was bypassed or never
