@@ -1658,15 +1658,21 @@ Ask of every mapping: *whose tests can this file break, not whose directory is i
 **Watch the budget you now spend on PROOF.** The mutation contract that makes this narrowing safe
 costs ~100s, and putting it in every round took the FULL round from 704s to **808s** against the
 hook's 900s `PreToolUse` timeout — and a timed-out hook does not deny, so proving the narrowing
-sound would have bought a fail-OPEN. It now runs when the selection NAMES the hook (so a hook really
-did change); a full round runs the plain cases exactly as before, and measured 671s.
+sound would have bought a fail-OPEN. *[Superseded by §63 (v1.14.2): the contracts no longer run
+locally at all — even the diff-names-the-hook round measured ~9 minutes against the owner's
+1-minute push budget. They run unconditionally in CI's parallel `hook-mutation-contracts` job,
+and argv-observed stub cases pin the local call sites against reintroducing the flag.]*
 
-**And keep the slow, total gate reachable.** `main`, `release/*` and `PREPUSH_FULL=1` still run
-everything, and CI was left running every leg on every push. The scoped gate buys iteration speed
-on feature branches; it is explicitly not the last line of defence.
+**And keep the slow, total gate reachable.** *[Superseded by §63 (v1.14.2): `main` and
+`release/*` no longer force the full round — the release cycle's pushes all landed on `main` and
+the forced full round measured 30-40 minutes, which got the gate bypassed via manual web-UI
+merges. What remains true:]* `PREPUSH_FULL=1` still runs everything, CI runs every leg on every
+push, and branch protection on `main` requires the full QA set — depth is enforced at the merge,
+not at the push.
 
 **Measured payoff (#377):** docs-only push 11m44s → 13s, backend-only 11m44s → 1m21s,
-`projects/public/**` 11m44s → 15s, push to a protected branch 11m44s → 11m11s (unchanged, by design). The second-order win matters as much as the first: a gate that
+`projects/public/**` 11m44s → 15s. *(The "protected branch stays 11m11s by design" arm was the
+part §63 revoked.)* The second-order win matters as much as the first: a gate that
 costs twelve minutes gets bypassed, and a bypassed gate protects nothing.
 
 ## 61. A MUTATION needs an assertion that it is the INTENDED mutant — a needle check is not enough (#400)
@@ -1823,6 +1829,18 @@ flag.
 
 Related: §59 (the narrowing rule must fail by doing MORE — still true; this lesson is about WHAT
 the fail-closed arms may cost), §18/§46 (a gate nobody proved can fail is not a gate).
+
+## 64. Renaming a SARIF `category` ORPHANS every alert filed under the old name (#379)
+
+GitHub closes a code-scanning alert only when a NEWER analysis **in the same category** stops
+reporting it. Rename the category (as #362 did for Bandit) and the old category never uploads
+again — its alerts sit "open" forever while the live category reports 0, so the Security tab
+misreports the repo. The cleanup cost 237 one-by-one `PATCH .../code-scanning/alerts/{n}`
+dismissals under secondary-rate-limit pacing. **Before renaming any SARIF category, plan the
+migration: dismiss (reversible, auditable) or delete the retired category's analyses (fast, but
+destroys history — owner authorization under rule 9's spirit).** The same trap is charted in
+`.claude/agents/security-triage.md`. Related: §the "normalised red" argument in #372 — a signal
+that always means nothing stops being a signal.
 
 ## Where the rules live (AI-config map)
 

@@ -285,6 +285,24 @@ activated: **SonarCloud** (free for public repos, PR decoration included).
 - Check logs: `docker-compose logs ollama`
 - Test endpoint: `curl http://localhost:11434/api/tags`
 
+### "Code scanning AI findings" is red on a PR (known-benign, #372)
+
+GitHub's **Copilot Autofix** check (`github-advanced-security / Processing Request`) fails on
+every PR with `CAPIError: 400 The requested model is not supported` — a fault in GitHub's own
+Copilot entitlement, not in this repository. **Decision (2026-09-14): accept-and-wait.** Model
+switching is unsupported by GitHub's own docs, no repo-side toggle or API exists (disabling is
+an owner Settings-UI action), and the check is not a required merge gate. Do not re-debug it:
+
+- The `ENOENT ... autofind-cca-setup-error.txt` line above the 400 is a **red herring** — it is
+  the Autofix action failing to read *its own* error log under `/home/runner/work/_temp/`.
+  Nothing in this repo is missing.
+- Do not go looking for an "appropriate model" — there is no model field anywhere
+  (`repos/.../code-scanning/default-setup` exposes none), and org model settings do not reach it.
+- CodeQL analysis is unaffected; every enforced gate is separate from this check.
+- **Revisit trigger:** if the check still 400s at the next release's security triage (rule 8),
+  ask the owner to disable it via *Settings → Code security → Copilot Autofix* — a red that
+  always means nothing trains everyone to ignore reds that mean something.
+
 ## Best Practices
 
 1. **Run tests before committing**: Ensure all tests pass

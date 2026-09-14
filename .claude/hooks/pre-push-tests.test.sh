@@ -346,6 +346,53 @@ sel "ONE unmapped path in an otherwise docs-only diff still selects ALL" \
     "ALL" docs/a.md importer/ledger.py
 sel "an EMPTY changed-file list selects ALL" "ALL" ""
 
+# --- deep/fast defaults (#404 review round 1, blocker 1) --------------------
+# Observe the CONSUMED leg values through the PREPUSH_PRINT_DEEP seam (which,
+# like PREPUSH_PRINT_LEGS, exits without a permission decision). The default
+# flip — deep legs OFF at push time unless PREPUSH_DEEP=1 — is a polarity
+# inversion, lessons §59's exact shape, and it survived the entire mutation
+# contract until these cases existed: reverting all three defaults to `:=1`
+# left the suite green. The fast halves (ruff, tsc) must stay ON by default:
+# a simple push confirms formatting + compilation (owner directive 2026-09-14).
+deep() { # deep <desc> <expected line> [VAR=VAL ...]
+  local desc="$1" want="$2"; shift 2
+  local got
+  got="$(env -u PREPUSH_DEEP -u PREPUSH_RUN_BACKEND -u PREPUSH_RUN_LINT \
+             -u PREPUSH_RUN_FRONTEND -u PREPUSH_RUN_RUFF -u PREPUSH_RUN_TSC \
+             "$@" PREPUSH_PRINT_DEEP=1 bash "$HOOK" </dev/null 2>/dev/null)"
+  if [ "$got" = "$want" ]; then
+    printf 'PASS  [%s]  %s\n' "$got" "$desc"
+  else
+    printf 'FAIL  got="%s" want="%s"  %s\n' "$got" "$want" "$desc"
+    fails=$((fails + 1))
+  fi
+}
+deep "deep legs default OFF at push time; fast halves (ruff/tsc) default ON" \
+     "BACKEND=0 LINT=0 FRONTEND=0 RUFF=1 TSC=1"
+deep "PREPUSH_DEEP=1 opts the push into every deep leg" \
+     "BACKEND=1 LINT=1 FRONTEND=1 RUFF=1 TSC=1" PREPUSH_DEEP=1
+# The exact-match on the seam's single output line doubles as the no-decision
+# proof: any emitted hook JSON would land in stdout and fail the comparison.
+
+# --- CI carries the mutation contracts (#404 review round 1, major 4) -------
+# The three `--mutations` flags live in deploy.yml, where no shell self-test
+# used to see them — deleting one left every check green (a `.github/**` edit
+# selects docs+pii by design). This case is their executable guard: the
+# hook-mutation-contracts job must name all three hooks AND pass --mutations.
+DEPLOY_YML="$HERE/../../.github/workflows/deploy.yml"
+ci_block="$(awk '/^  hook-mutation-contracts:/{f=1;print;next} f&&/^  [a-z][a-z-]*:$/{exit} f{print}' "$DEPLOY_YML")"
+ci_ok=1
+for h in pre-push-tests pre-merge-gate guard-stack-resources; do
+  printf '%s\n' "$ci_block" | grep -q "$h" || ci_ok=0
+done
+printf '%s\n' "$ci_block" | grep -q -- '--mutations' || ci_ok=0
+if [ "$ci_ok" = "1" ]; then
+  printf 'PASS  [CI]  deploy.yml hook-mutation-contracts job covers all three hooks with --mutations\n'
+else
+  printf 'FAIL  deploy.yml no longer runs all three hook mutation contracts with --mutations\n'
+  fails=$((fails + 1))
+fi
+
 # --- (b) end to end, through the hook, against REAL git repositories --------
 FIXTURES=()
 cleanup_fixtures() { local d; for d in ${FIXTURES+"${FIXTURES[@]}"}; do [ -n "$d" ] && rm -rf "$d"; done; }
@@ -948,6 +995,15 @@ mutate die "$HOOKF" "the merge-gate call site starts running --mutations locally
   'replace::      bash "$ROOT/.claude/hooks/pre-merge-gate.test.sh" || return 1=>      bash "$ROOT/.claude/hooks/pre-merge-gate.test.sh" --mutations || return 1'
 mutate die "$HOOKF" "the stack-guard call site starts running --mutations locally again" \
   'replace::      bash "$ROOT/.claude/hooks/guard-stack-resources.test.sh" || return 1=>      bash "$ROOT/.claude/hooks/guard-stack-resources.test.sh" --mutations || return 1'
+# The deep-defaults flip (#404 review round 1, blocker 1): the single line
+# that decides whether pytest/mypy/Vitest run at push time. Killed by the
+# PREPUSH_PRINT_DEEP cases, which observe the CONSUMED values.
+mutate die "$HOOKF" "the deep legs start running at push time again (defaults revert to always-on)" \
+  'replace:::=$PREPUSH_DEEP}=>:=1}'
+mutate die "$HOOKF" "the backend fast half (ruff) silently defaults OFF" \
+  'replace::PREPUSH_RUN_RUFF:=1}=>PREPUSH_RUN_RUFF:=0}'
+mutate die "$HOOKF" "the frontend fast compile (tsc) silently defaults OFF" \
+  'replace::PREPUSH_RUN_TSC:=1}=>PREPUSH_RUN_TSC:=0}'
 mutate die "$HOOKF" "the hook ignores the selector and prints a fixed narrow set" \
   'replace::| prepush_select_legs)=>| true; echo " docs ")'
 mutate die "$HOOKF" "the hook no longer fails closed when the range is unobtainable" \

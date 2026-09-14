@@ -267,6 +267,14 @@ prepush_force_full_reason() {
 #     3. merge-base(origin/main, HEAD)..HEAD — a branch not yet on the remote
 #   Anything else (no origin/main, a detached HEAD, not a repo) fails, and the
 #   caller runs everything.
+#
+#   KNOWN LIMIT (#404 review round 1, minor 8): an explicit cross-branch
+#   refspec (`git push origin HEAD:main` from a feature branch with some
+#   commits already on origin/<feature>) measures what the TRACKED ref lacks,
+#   not what the destination receives, so it can under-select. Accepted, not
+#   fixed: the common spelling lands on the empty-diff ⇒ ALL arm, rule 3
+#   forbids pushing feature work to main at all, and CI + branch protection
+#   run every leg on what main actually receives.
 # ---------------------------------------------------------------------------
 prepush_changed_files() {
   local root="$1" range="" base=""

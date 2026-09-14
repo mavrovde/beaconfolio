@@ -96,7 +96,7 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
 | skill | `e2e-validation` | the E2E loop + its traps, for agents (#117) |
 | skill | `env-gotchas` | macOS/BSD/gh platform pitfalls (#119) |
 | skill | `ssr-cd-safety` | zoneless repaint + SSR HTTP contract (#118) |
-| hook | `pre-push-tests.sh` | PreToolUse Bash: fast diff-scoped contract checks before every real `git push`, HARD sub-minute budget — deep suites (pytest/lint/Vitest) run in CI + at merge time, `PREPUSH_DEEP=1` opts in locally (command-position aware, #237), SCOPED TO THE DIFF since #377 — and since v1.14.2 on EVERY branch including `main` (owner directive 2026-09-14: push cost tracks the diff; CI runs every leg on every `main` push and is the full backstop); `PREPUSH_FULL=1` forces the full round; since #353 a push of a DIFFERENT repository (the wiki) passes through, but only when that is positively established |
+| hook | `pre-push-tests.sh` | PreToolUse Bash: fast diff-scoped contract checks + formatting/compilation confirmation (ruff, per-project `tsc --noEmit`) before every real `git push`, HARD sub-minute budget — deep suites (pytest/mypy/bandit/Vitest) run in CI + at merge time, `PREPUSH_DEEP=1` opts in locally (command-position aware, #237), SCOPED TO THE DIFF since #377 — and since v1.14.2 on EVERY branch including `main` (owner directive 2026-09-14: push cost tracks the diff; CI runs every leg on every `main` push and is the full backstop); `PREPUSH_FULL=1` forces the full round; since #353 a push of a DIFFERENT repository (the wiki) passes through, but only when that is positively established |
 | hook | `guard-destructive.sh` | PreToolUse Bash: blocks irreversible local/infra destruction (rule 9) |
 | hook | `pre-merge-gate.sh` | PreToolUse Bash: refuses `gh pr merge` without an APPROVE verdict, with an APPROVE that predates the head, or with `Closes #NN` against unticked criteria (rule 13 enforced, not asked); a `PR_MERGE_GATE=0` bypass is allowed but never invisible — it appends to a local audit log and posts a PR comment (#392) |
 | hook | `guard-stack-resources.sh` | PreToolUse Bash: free-disk floor + ONE Docker compose project before any `up`/`build`/`run`/`pull` (v1.14.0 retro — three parallel stacks crashed the daemon) |
@@ -139,10 +139,14 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
 - **Hooks** (`.claude/hooks/`, via committed `.claude/settings.json`, all `PreToolUse Bash`):
   `pre-push-tests.sh` gates every real `git push` under a **HARD sub-minute budget** (owner
   constraint 2026-09-14: "push cannot be longer than 1 minute. Never ever."): it runs the fast,
-  diff-scoped contract checks (docs/version, PII, repo lints, hook self-tests), while the deep
-  legs — backend pytest, ruff/mypy/bandit, the Vitest projects — run in CI on every push/PR and
-  at merge time instead; `PREPUSH_DEEP=1` opts a push into running them locally (env-configurable:
-  `PREPUSH_RUN_LINT`/`PREPUSH_RUN_RUFF`/`PREPUSH_RUN_MYPY`/`PREPUSH_RUN_BANDIT` …, self-gating).
+  diff-scoped contract checks (docs/version, PII, repo lints, hook self-tests) **plus a
+  formatting/compilation confirmation on the code the diff touches** (owner directive
+  2026-09-14: "for simple push … formatting, compilation, something easy"): ruff check/format
+  on backend Python (~0.1s) and per-selected-project `tsc --noEmit` on frontend TS (~1s each),
+  while the deep legs — backend pytest, mypy/bandit, the Vitest projects — run in CI on every
+  push/PR and at merge time instead; `PREPUSH_DEEP=1` opts a push into running them locally
+  (env-configurable: `PREPUSH_RUN_LINT`/`PREPUSH_RUN_RUFF`/`PREPUSH_RUN_TSC`/`PREPUSH_RUN_MYPY`/
+  `PREPUSH_RUN_BANDIT` …, self-gating).
   Since **#377 it runs only
   the legs the DIFF can break**, selected by `.claude/hooks/prepush-select-lib.sh` from
   `git diff --name-only @{push}..HEAD` (falling back to `@{upstream}`, then to
@@ -236,7 +240,9 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
    `main`** — always branch → pull request → merge (the merge is the sanctioned prod trigger).
    **A push costs under one minute — never ever more** (owner constraint 2026-09-14): the shared
    pre-push hook (`.claude/hooks/pre-push-tests.sh`) runs only the fast, diff-scoped contract
-   checks; the deep suites — backend (ruff/format + mypy + pytest), all frontend project tests,
+   checks plus a formatting/compilation confirmation of the changed code (ruff on backend,
+   `tsc --noEmit` per frontend project — seconds); the deep suites — backend (mypy + pytest),
+   all frontend project tests,
    Docker E2E — run in CI on every push/PR and MUST be green (plus rule 12's local E2E evidence
    where it applies) **before the merge**, which rule 13's review gate enforces. `PREPUSH_DEEP=1`
    opts a push into running the deep legs locally. Never merge code that fails a gate; keep the PR
@@ -382,9 +388,12 @@ for issue-driven work — humans and AI agents both follow it.
    - area: `backend` / `frontend` / `infra` / `ci-cd` / `performance` / `tech-debt` /
      `architecture` / `content` / `i18n`
    - priority: `P0-critical` / `P1-high` / `P2-medium` / `P3-low`
-6. **PRs link issues.** Use `Closes #NN` / `Fixes #NN` for issues a merge resolves, `Refs #NN` for
-   partial/related work. State how the PR satisfies each of the issue's **acceptance criteria**; keep
-   the PR checklist current.
+6. **PRs link issues — and carry the SAME labels + milestone, AT CREATION.** Use `Closes #NN` /
+   `Fixes #NN` for issues a merge resolves, `Refs #NN` for partial/related work. State how the PR
+   satisfies each of the issue's **acceptance criteria**; keep the PR checklist current. Every PR
+   gets its issue's milestone, type/area/priority labels, **and the `release:vX.Y.Z` label of the
+   release it targets** when it is opened — not retro-fitted (owner, 2026-09-14: two unlabeled
+   PRs in one day; the release label is how the cycle's work is queried at retro time).
 7. **Close-the-loop (verify before closing).** When work lands, comment on the issue with what was
    done + links, **verify against its acceptance criteria / test steps**, then close it (or note the
    remaining status if partial). Never close on assumption. **A `Closes #NN` auto-close is NOT

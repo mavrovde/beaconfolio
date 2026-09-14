@@ -380,32 +380,40 @@ bash scripts/check_no_pii.test.sh              # that checker's own 60 cases, bo
 Live Freshness workflow and answers `0 fresh / 1 stale / 2 unreachable`, so a green pipeline can
 never be mistaken for a live site (#169). A self-test for it is tracked in #280.
 
-### 6. What the pre-push gate actually runs (#377)
+### 6. What the pre-push gate actually runs (#377, #404)
 
 The `pre-push-tests.sh` hook no longer runs the whole suite on every push — it runs **the legs the
 diff can break**, selected by `.claude/hooks/prepush-select-lib.sh` from
 `git diff --name-only @{push}..HEAD` (falling back to `@{upstream}`, then to
-merge-base(`origin/main`)). Measured on one machine, same tree, same suites: a docs-only push
-**11m44s → 13s**, a backend-only push **11m44s → 1m21s**, a `projects/public/**` push
-**11m44s → 15s**; a push to a protected branch stays the full round (**11m11s**).
+merge-base(`origin/main`)), **on every branch, `main` and `release/*` included** (#404, owner
+constraint 2026-09-14: a push costs under one minute — CI runs every leg on every push anyway, so
+a local full round on `main` duplicated CI 1:1 and measured 30-40 minutes). The push runs the
+fast, diff-scoped contract checks plus a **formatting/compilation confirmation** of the changed
+code — `ruff check` + `ruff format --check` for backend Python (~0.1s), a per-selected-project
+`tsc --noEmit` for frontend TS (~1s each). The **deep** suites — pytest, mypy, bandit, the Vitest
+projects — run in CI on every push/PR and at merge time; `PREPUSH_DEEP=1` opts a push into
+running them locally. Measured on one machine: a docs-only push **11m44s → ~3s**, a backend-only
+push **11m44s → seconds** (ruff + PII + selection), a `projects/public/**` push **11m44s → ~15s**.
 
-| changed paths | legs |
+| changed paths | legs at push time (deep legs in CI, or locally with `PREPUSH_DEEP=1`) |
 |---|---|
-| `backend/**` | pytest (`-n auto`, 100% coverage) + ruff + mypy + bandit |
+| `backend/**` | ruff check + format (fast); pytest + mypy + bandit (deep) |
 | `backend/migrations/**`, `backend/alembic.ini` | the above + the single-Alembic-head lint |
-| `frontend/projects/public/**` | cd-safety + the **public** Vitest project only |
-| `frontend/projects/admin/**` | cd-safety + the **admin** Vitest project only |
-| `frontend/projects/shared/**`, any other `frontend/**` | cd-safety + **all three** projects (both apps consume `shared`) |
+| `frontend/projects/public/**` | `tsc --noEmit` public (fast); cd-safety + the **public** Vitest project (deep) |
+| `frontend/projects/admin/**` | `tsc --noEmit` admin (fast); cd-safety + the **admin** Vitest project (deep) |
+| `frontend/projects/shared/**`, any other `frontend/**` | `tsc --noEmit` ×3 (fast); cd-safety + **all three** Vitest projects (deep — both apps consume `shared`) |
 | `docs/**`, `*.md`, `CHANGELOG.md`, `README.md` | docs + version consistency |
 | `docker-compose*.yml`, `.env.example` | the documented-knob contract |
 | `CLAUDE.md`, `.claude/agents|commands|skills/**` | the AI-config map drift check |
-| `.claude/hooks/<name>.sh` | that hook's self-test + the AI-config map drift check |
+| `.claude/hooks/<name>.sh` | that hook's self-test (plain cases — the mutation contracts are CI-only) + the AI-config map drift check |
 | `.claude/hooks/hook-parse-lib.sh` | **all four** hook self-tests (they share one parsing model) |
 | `.claude/hooks/prepush-select-lib.sh` | this selector's own self-test + the map drift check |
 | `scripts/<lint>.sh` | that lint + its self-test + the map drift check¹ |
+| `.github/**`, `sonar-project.properties`, `.gitignore` | docs only — CI is the only surface that can test a workflow or scanner config |
+| `.mcp.json` | the AI-config map drift check |
 | **version carriers** — `VERSION`, `backend/app/main.py`, `frontend/package.json`, `frontend/package-lock.json`, `frontend/projects/shared/package.json`, `frontend/projects/public/src/app/version.ts`, `docker-compose.prod.yml` | **also** version consistency, wherever else they map² |
 | **documented-knob sources** — `backend/app/config.py`, `.env.example`, `README.md`, `docs/DEPLOYMENT.md`, `setup.sh`, `docker-compose*.yml` | **also** the documented-knob contract² |
-| **anything else** | **everything** |
+| **anything else** (genuinely unmapped paths) | **everything** |
 
 ¹ A lint selects the map check because the selector is pure and cannot tell an EDIT from a
 DELETION — and deleting a lint leaves the AI-config map naming a file that no longer exists, which
@@ -422,16 +430,15 @@ setting.
 
 The safety rules are not conveniences — they are the reason this is allowed to be fast:
 
-- **`main`, any `release/*` branch, `PREPUSH_FULL=1`, and any push whose refspec targets a protected
-  branch run the FULL round**, whatever the diff says. The refspec test is structural, not a
-  substring match: each word is parsed as a refspec (destination half, with a leading `+`,
-  `refs/heads/` and surrounding quotes stripped), so `+main`, `HEAD:refs/heads/main` and
-  `HEAD:refs/heads/release/1.2.3` are all recognised, while a branch merely *named*
-  `feature-main-nav` still scopes.
+- **`PREPUSH_FULL=1`, and any push that publishes more than one branch
+  (`--all`/`--mirror`/`--tags`/`--follow-tags`), runs the FULL round**, whatever the diff says.
 - **An unmapped path, an empty diff, a range that cannot be computed, or a branch that cannot be
   named runs the FULL round.** "I could not tell" never means "skip".
 - **The PII/de-brand guard always runs**, whatever changed.
-- **CI (`deploy.yml`) is unchanged** and still runs every leg on every push.
+- **CI (`deploy.yml`) still runs every leg on every push** — including the three hook
+  `--mutations` contracts, which are CI-only (the merge gate's alone measures ~9 minutes) and run
+  in a parallel job off the build path. Branch protection on `main` requires the full QA set, so
+  depth is enforced where the merge happens, not on every keystroke's push.
 
 `bash .claude/hooks/pre-push-tests.test.sh --mutations` neuters one selection rule at a time —
 including "select nothing at all" — and requires the selection cases to go red; a selector that
