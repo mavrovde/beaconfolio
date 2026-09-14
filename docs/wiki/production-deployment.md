@@ -817,14 +817,20 @@ A renewed file on disk changes nothing until the serving process reloads;
 reloading every tenant instead is unnecessary churn that turns a certificate
 renewal into a fleet-wide restart.
 
-**Expiry monitoring that alarms BEFORE the lapse.** This is not optional and it is
-not covered by anything the repo has today: the scheduled **Live Freshness**
-workflow probes whether the site is *already* broken, which is too late. Note
-also that **Let's Encrypt stopped sending expiration notification emails on
-2025-06-04** — there is no safety net from the CA.
+**Expiry monitoring that alarms BEFORE the lapse.** This is not optional, and note
+that **Let's Encrypt stopped sending expiration notification emails on
+2025-06-04** — there is no safety net from the CA. **Implemented (#310):** the
+scheduled **Live Freshness** workflow
+(`.github/workflows/live-freshness.yml`, "Certificate expiry" step) measures
+`notAfter` for every hostname in the `TLS_HOSTNAMES` repository variable
+(default: the maintainer's three) and **goes red under 21 days remaining** —
+Caddy renews at ~30 days left, so red at 21 means renewal has already been
+failing for about nine days. The step runs daily and independently of the
+staleness probe; a forker points `TLS_HOSTNAMES` at their own names. The
+equivalent hand-run check, for a box not covered by the workflow:
 
 ```bash
-# Days remaining for every hostname the box serves — run from cron, alarm under 21
+# Days remaining for every hostname the box serves — alarm under 21
 for host in <your-domain> admin.<your-domain> other-project.example; do
   end=$(echo | openssl s_client -servername "$host" -connect "$host:443" 2>/dev/null \
         | openssl x509 -noout -enddate | cut -d= -f2)
@@ -834,9 +840,7 @@ for host in <your-domain> admin.<your-domain> other-project.example; do
 done
 ```
 
-Route the alarm somewhere a human reads — the notification channels this project
-already has (`BEACONFOLIO_TELEGRAM_*`, `BEACONFOLIO_NOTIFY_WEBHOOK_URL`, #263) are a
-reasonable target. Verify names and expiry by hand at any time:
+Verify names and expiry by hand at any time:
 
 ```bash
 echo | openssl s_client -servername <your-domain> -connect <your-domain>:443 2>/dev/null \
@@ -1151,6 +1155,7 @@ ssh-keygen -t ed25519 -f ./beaconfolio_deploy -C 'github-actions rollout' -N ''
 | `DEPLOY_DIR` | no | Compose project dir (default `/opt/beaconfolio`; set it if your host uses another path) |
 | `DEPLOY_SSH_PORT` | no | Default 22 |
 | `PUBLIC_URL` (**variable**) | forks: yes | Health-gate + Live Freshness URL |
+| `TLS_HOSTNAMES` (**variable**) | no | Space-separated hostnames the certificate-expiry alarm probes (#310). Canonical repo defaults to the maintainer's three; a fork without it probes only its `PUBLIC_URL` hostname — set it to cover `admin.` and `www.` too |
 
 What each stage does, and what it means for neighbours:
 
@@ -1323,6 +1328,12 @@ pg_restore --list /var/backups/beaconfolio/db-<stamp>.dump | head
 
 Keep a nightly cron with retention, and store at least one copy **off the host** —
 a backup that only exists on the machine you are protecting protects nothing.
+**Installed on the maintainer's host (#310, 2026-09-15):**
+`/usr/local/bin/beaconfolio-backup.sh` (dump → verify `PGDMP` header → commit →
+14-day retention) run by `/etc/cron.d/beaconfolio-backup` at 03:15 daily; the
+first run was executed by hand and its dump verified with `pg_restore --list`
+(80 TOC entries). The off-host copy is **still open** — it needs a destination
+only the owner can provide (object storage or a second box).
 
 ```bash
 # Restore into a SCRATCH database first, always

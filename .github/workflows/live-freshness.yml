@@ -76,3 +76,62 @@ jobs:
             echo "::error title=Site unreachable::$PUBLIC_URL did not answer — outage, not staleness."
           fi
           exit "$rc"
+
+      # Certificate expiry alarm (#310) — must fire BEFORE the lapse, which the
+      # freshness probe above cannot do: it detects a site that is ALREADY
+      # broken. Let's Encrypt stopped sending expiration emails on 2025-06-04,
+      # and Caddy's self-renewal failing (ACME outage, port 80 stolen, account
+      # problem) is exactly the silent state this red run makes loud. Runs even
+      # when the freshness step failed — staleness and expiry alarm
+      # independently. 21 days = Caddy renews at ~1/3 of a 90-day lifetime
+      # remaining (30d), so an alarm at 21d means renewal has already been
+      # failing for ~9 days.
+      - name: Certificate expiry (alarms before lapse)
+        if: always()
+        env:
+          # A forker overrides with their own hostnames via a repo variable.
+          # The maintainer's three are the default ONLY on the canonical repo:
+          # on a fork they would probe someone else's certificates and print a
+          # vacuous green while monitoring none of the fork's own (#413 review,
+          # major 2). A fork without TLS_HOSTNAMES falls back to the hostname
+          # of its PUBLIC_URL below — the same variable the job gate documents.
+          TLS_HOSTNAMES: ${{ vars.TLS_HOSTNAMES || (github.repository == 'mavrovde/beaconfolio' && 'beaconfolio.com www.beaconfolio.com admin.beaconfolio.com' || '') }}
+          MIN_DAYS: 21
+        run: |
+          set -u
+          if [ -z "$TLS_HOSTNAMES" ]; then
+            TLS_HOSTNAMES="$(printf '%s' "$PUBLIC_URL" | sed -E 's#^https?://##; s#[/:].*##')"
+            echo "TLS_HOSTNAMES unset — derived from PUBLIC_URL: $TLS_HOSTNAMES"
+          fi
+          rc=0
+          {
+            echo "## Certificate expiry (minimum ${MIN_DAYS}d)"
+            echo ""
+            echo "| Hostname | notAfter | Days left | Verdict |"
+            echo "|---|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          now=$(date +%s)
+          for host in $TLS_HOSTNAMES; do
+            # timeout: an unreachable host must fail THIS hostname's row, not
+            # hang the step until the job timeout. The empty-$end guard below
+            # is what actually catches a failed probe — GH steps run bash -e
+            # WITHOUT pipefail, so the pipeline's exit status is cut's (0).
+            end=$(echo | timeout 15 openssl s_client -servername "$host" -connect "$host:443" 2>/dev/null \
+                  | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)
+            if [ -z "$end" ]; then
+              echo "| $host | (no certificate readable) | — | 🚨 unreachable |" >> "$GITHUB_STEP_SUMMARY"
+              echo "::error title=TLS probe failed::$host presented no readable certificate."
+              rc=1
+              continue
+            fi
+            endsec=$(date -d "$end" +%s)
+            days=$(( (endsec - now) / 86400 ))
+            if [ "$days" -lt "$MIN_DAYS" ]; then
+              echo "| $host | $end | $days | ❌ **renew NOW** |" >> "$GITHUB_STEP_SUMMARY"
+              echo "::error title=Certificate expiring::$host has $days days left (< $MIN_DAYS) — Caddy's renewal is failing; see the wiki's certificate-renewal section."
+              rc=1
+            else
+              echo "| $host | $end | $days | ✅ |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+          exit "$rc"

@@ -151,6 +151,12 @@ Exactly **one** ACME client on the box, at the **edge**. Tenants never request
 certificates — two clients renewing one name is a renewal race and a fast route to
 a rate limit.
 
+**The standing alarm is automated (#310):** the scheduled **Live Freshness**
+workflow's "Certificate expiry" step probes every hostname in the
+`TLS_HOSTNAMES` repo variable daily and goes **red under 21 days** remaining.
+A red run there means Caddy's renewal has already been failing ~9 days — start
+with the journal commands below. The hand-run checks are for ad-hoc diagnosis:
+
 ```bash
 # Is it healthy, and did it renew?
 systemctl status caddy
