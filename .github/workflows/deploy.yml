@@ -531,6 +531,8 @@ jobs:
             exit 1
           fi
           echo "Proxy config is clean of legacy terms."
+      - name: Admin config generator self-test (#336)
+        run: sh proxy/test-generate-admin-config.sh
 
   # ============================================
   # BUILD ARTIFACTS (Parallel Builds)
