@@ -290,6 +290,8 @@ sel "the CHANGELOG history-rewriter selects its own self-test, plus the map chec
     "aiconfig dedup pii" scripts/dedup_changelog_unreleased.py
 sel "the merged-changelog lint selects its own leg, plus the map check (#391)" \
     "aiconfig changelog pii" scripts/check_changelog_merge.sh
+sel "the no-verdict auditor selects its own leg, plus the map check (#392)" \
+    "aiconfig pii vaudit" scripts/audit_no_verdict_merges.sh
 sel "one hook selects ONLY that hook's self-test" \
     "aiconfig hook:pre-merge-gate pii" .claude/hooks/pre-merge-gate.sh
 sel "a hook's self-test selects the same hook" \
@@ -762,6 +764,8 @@ mutate die "$LIBF" "version carriers stop selecting the version-consistency leg"
     backend/app/config.py'
 mutate die "$LIBF" "documented-knob sources stop selecting the compose contract" \
   'replace::    backend/app/config.py|.env.example|README.md=>    backend/app/config.pyXX|.env.exampleXX|README.mdXX'
+mutate die "$LIBF" "the no-verdict auditor stops selecting its own leg (#392)" \
+  'replace::scripts/audit_no_verdict_merges.sh|scripts/audit_no_verdict_merges.test.sh) printf '"'"'vaudit\naiconfig\n'"'"' ;;=>scripts/audit_no_verdict_merges.shXX) printf '"'"'vaudit\naiconfig\n'"'"' ;;'
 mutate die "$LIBF" "the merged-changelog lint stops selecting its own leg (#391)" \
   'replace::scripts/check_changelog_merge.sh|scripts/check_changelog_merge.test.sh) printf '"'"'changelog\naiconfig\n'"'"' ;;=>scripts/check_changelog_merge.shXX) printf '"'"'changelog\naiconfig\n'"'"' ;;'
 mutate die "$LIBF" "CHANGELOG.md stops selecting the merged-changelog leg (#391)" \

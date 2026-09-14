@@ -1,0 +1,47 @@
+# Verdict Audit (#392, v1.14.1 retrospective change B) — goes RED whenever a PR
+# merged after the cutover carries no canonical review verdict (rule 13).
+#
+# Same alarm shape as Live Freshness: a scheduled workflow that is red while the
+# invariant is broken, because a red workflow gets looked at and a log line does
+# not. The invariant: every merged PR carries a posted body whose FIRST
+# NON-EMPTY LINE states APPROVE or REQUEST CHANGES (the repository's canonical
+# verdict definition, docs/retrospectives/README.md).
+#
+# Why detection and not prevention: #321 (Dependabot) and #355 (the security-tab
+# "set up this workflow" flow) both merged in the GitHub WEB UI, where the
+# pre-merge-gate PreToolUse hook does not exist, and merge provenance is
+# unmeasurable here (owner and agents share one identity). The CLI half is
+# guarded by the hook — whose PR_MERGE_GATE=0 bypass now leaves a log line and a
+# PR comment — so this workflow owns the half no hook can reach.
+#
+# SINCE is pinned to the control's landing date so the two historical
+# no-verdict merges (#321, #355 — already documented in the v1.14.1
+# retrospective) do not keep the alarm permanently red. Moving it BACKWARD is a
+# decision for a retro, not a quick fix for a red run — and so is moving it
+# FORWARD, which would amnesty a red run instead of fixing it (#399 review).
+#
+# "Mechanism established" means established FROM THE FLOW SHAPE (a Dependabot
+# PR and a security-tab PR, neither of which passes through this CLI), not
+# from provenance, which stays unmeasurable — the two statements coexist.
+name: Verdict Audit
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"   # Mondays 06:17 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Self-test the auditor first (a broken detector must not report clean)
+        run: bash scripts/audit_no_verdict_merges.test.sh --mutations
+      - name: Every merged PR since the cutover carries a canonical verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/audit_no_verdict_merges.sh --since 2026-09-14T00:00:00Z --limit 100

@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **The no-verdict merge path is closed at both ends (#392, v1.14.1 retro change B)** — #321 and
+  #355 merged with zero verdicts in consecutive releases; mechanism established for the record:
+  both merged in the GitHub **web UI** (a Dependabot PR and the security-tab "set up this
+  workflow" flow), where a `PreToolUse` hook does not exist. The CLI half: `pre-merge-gate.sh`'s
+  `PR_MERGE_GATE=0` bypass is still allowed but **never invisible** — it appends a line to a local
+  audit log (`PR_MERGE_GATE_LOG`) and best-effort posts a `## ⚠️ MERGE-GATE BYPASS` comment on the
+  PR, fire-and-forget so an offline `gh` cannot block an authorized merge. The trace is emitted
+  **only from `allow()`** — a denied command must not publish "was used for this merge" on a PR
+  that never merged — and the PR number comes from the hook's **own** operand parser (flags
+  before the operand, URLs), not a second sed; both properties plus the hermetic-log default are
+  pinned by seven self-test cases (including the comment BODY carrying the literal token —
+  round 2 measured bash eating it via an unescaped backtick while only the call was asserted)
+  and a 23rd gate mutation. The web-UI half:
+  `scripts/audit_no_verdict_merges.sh` + the scheduled **Verdict Audit** workflow, red-when-dirty
+  (the Live-Freshness alarm shape) for merges after the 2026-09-14 cutover, self-testing its own
+  detector first. The verdict filter **mirrors the gate's exactly** — trusted
+  `authorAssociation`, case-insensitive `APPROVE|APPROVED|REQUEST CHANGES`, first non-empty line
+  — and the live path is strict: a Bad-Credentials object, empty output, a truncated window or a
+  malformed fetch are each `cannot measure` (exit 2), never a quiet green (16 cases, mutations
+  **7/0/0**, including "the first-line filter widens to the whole body", "the trust filter is
+  dropped" and "the --since date guard is dropped"). Listing queries by **merge date** (`--search "merged:>="`) — creation order was
+  measured non-monotonic. First live run named exactly #321 and #355 and nothing else. Measurement convention recorded in
+  `docs/retrospectives/README.md`.
 - **`scripts/check_changelog_merge.sh` — the `[Unreleased]` collision becomes a lint (#391,
   v1.14.1 retro change A)** — validates the **merged result** of HEAD with `origin/main`, formed
   with `git merge-tree` (the machinery `gh pr merge` actually runs — measured: replaying #357's

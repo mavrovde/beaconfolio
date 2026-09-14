@@ -44,7 +44,65 @@ DEADLINE_SECONDS="${PR_MERGE_GATE_DEADLINE:-25}"
 PARSE_DEADLINE_SECONDS="${PR_MERGE_GATE_PARSE_DEADLINE:-$DEADLINE_SECONDS}"
 START=$SECONDS
 
-allow() { exit 0; }
+allow() { flush_bypass_traces; exit 0; }
+
+# A bypass is AUTHORIZED but must never be INVISIBLE (#392): #321 and #355 each
+# merged with zero verdicts across two consecutive releases, and afterwards
+# nobody could establish whether the gate was bypassed or never reached. This
+# makes the CLI half countable: every PR_MERGE_GATE=0 use appends to a local
+# audit log (countable even offline; override the path with PR_MERGE_GATE_LOG)
+# and best-effort posts a PR comment — the public trace — fire-and-forget, so
+# an offline `gh` can never block a merge the human already authorized. The
+# web-UI half (how #321/#355 actually merged: Dependabot + the security-tab
+# flow, where no PreToolUse hook exists) is covered by the scheduled
+# verdict-audit workflow, not by this hook.
+BYPASS_SEGS=()
+gate_bypass_trace() { # gate_bypass_trace <pr-or-unknown> <segment>
+  local n="$1" seg="$2" ts logf
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown-time)"
+  logf="${PR_MERGE_GATE_LOG:-$HOME/.claude/merge-gate-bypass.log}"
+  # The log line is unconditional — PR=unknown still counts as one bypass.
+  # mkdir -p first: with no ~/.claude the append failed silently and the trace
+  # vanished entirely (#399 review, minor 7 — measured).
+  { mkdir -p "$(dirname "$logf")" && printf '%s bypass PR=%s cmd=%s\n' "$ts" "$n" "$seg" >> "$logf"; } 2>/dev/null || :
+  if [ "$n" != "unknown" ] && [ "${PR_MERGE_GATE_TRACE_COMMENT:-1}" = "1" ]; then
+    # NO BACKTICKS in this string (#399 round 2, major 1): the first version
+    # wrote \` inside double quotes, bash opened a command substitution, and
+    # the PR_MERGE_GATE=0 token VANISHED from the posted audit artifact — and
+    # survived because the test asserted only the CALL, never the body. The
+    # body assertion now exists; keep this plain text.
+    ( gh pr comment "$n" --body "## ⚠️ MERGE-GATE BYPASS — PR_MERGE_GATE=0 was used for this merge at $ts (recorded by pre-merge-gate.sh; rule 13 audit, #392)" >/dev/null 2>&1 & ) || :
+  fi
+}
+flush_bypass_traces() {
+  # Runs ONLY from allow(): a denied command must not publish "was used for
+  # this merge" on a PR that was never merged (#399 review, major 3).
+  local seg n
+  for seg in ${BYPASS_SEGS[@]+"${BYPASS_SEGS[@]}"}; do
+    # Strip the leading env assignments (incl. PR_MERGE_GATE=0) and re-run the
+    # hook's OWN merge parser — not a second sed (#399 review, major 4): it
+    # already consumes wrappers, value-taking flags and finds the first bare
+    # operand, so `--squash 284`, `--repo X 284`, URLs and branches all land
+    # in MERGE_OPERAND. The cleaned segment no longer matches the bypass
+    # regex, so this cannot re-stash.
+    while [[ "$seg" =~ ^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+ ]]; do seg="${seg#* }"; done
+    n=unknown
+    if segment_invokes_pr_merge "$seg"; then
+      case "$MERGE_OPERAND" in
+        ''|*[!0-9]*)
+          # URL operand: take a trailing /NN. Anything else (branch, empty)
+          # stays unknown — the log still records it; only the comment needs N.
+          case "$MERGE_OPERAND" in
+            *[0-9]) n="${MERGE_OPERAND##*/}"; case "$n" in ''|*[!0-9]*) n=unknown ;; esac ;;
+          esac ;;
+        *) n="$MERGE_OPERAND" ;;
+      esac
+      gate_bypass_trace "$n" "$seg"
+    fi
+    # a bypassed NON-merge segment (PR_MERGE_GATE=0 git merge 42) is not a
+    # merge-gate event at all: no log, no comment.
+  done
+}
 deny() {
   # Same JSON contract as the sibling hooks: a structured deny, exit 0.
   printf '%s\n' "{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"permissionDecision\":\"deny\",\"permissionDecisionReason\":\"MERGE GATE: $1 | Bypass one authorized command with PR_MERGE_GATE=0\"}}"
@@ -55,7 +113,10 @@ deny() {
 # writes `PR_MERGE_GATE=0 gh pr merge …`, which is a prefix on the COMMAND TEXT
 # and never reaches this process — the check below (on each segment) is the one
 # that actually implements the documented hatch. Keeping both costs nothing.
-[ "${PR_MERGE_GATE:-1}" = "0" ] && allow
+if [ "${PR_MERGE_GATE:-1}" = "0" ]; then
+  gate_bypass_trace unknown "env:PR_MERGE_GATE=0 (hook launched with the bypass in its own environment)"
+  exit 0
+fi
 
 # Extract the command with jq, like both siblings. A hand-rolled sed
 # over-captured on multi-line payloads and was the root of several bypasses.
@@ -142,6 +203,11 @@ segment_invokes_pr_merge() {
     # the command text and the strip below would eat it unread. Same regex and
     # same position as guard-destructive.sh:242 — one model, two hooks (#237).
     if printf '%s' "$seg" | grep -Eq '^([A-Za-z_][A-Za-z0-9_]*=[^ ]* )*PR_MERGE_GATE=0( |$)'; then
+      # STASH, don't trace: the emit happens in allow(), never on a deny path,
+      # and only for segments that really are `gh pr merge` (#399 review,
+      # major 3 — the inline call here traced DENIED commands and commented
+      # on PR numbers from non-merge segments like `git merge 42`).
+      BYPASS_SEGS+=("$seg")
       return 1   # authorized: this segment is not gated
     fi
     while [[ "$seg" =~ ^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+ ]]; do
