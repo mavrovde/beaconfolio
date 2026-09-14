@@ -281,5 +281,88 @@ if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "starts with '/'"; then
 else bad "#378: leading-/ hook row must fail" "rc=$rc $out"; fi
 rm -rf "$D"
 
+# --- #400 review round 1: the fix's own holes -------------------------------
+# The blocker: `\`` inside a single-quoted ERE is a LITERAL backtick to BSD grep
+# and the START-OF-BUFFER ANCHOR to GNU grep, so the reverse-MCP loop matched
+# nothing on the Linux runner and that category could not fail there. The case
+# below cannot see the platform difference (it runs on one grep), so pin the
+# cause instead: no single-quoted ERE in the checker may contain `\``.
+if python3 - "$SCRIPT" <<'PY2'
+import re, sys
+src = open(sys.argv[1]).read()
+sys.exit(1 if re.search(r"-oE\s+'[^']*\\`", src) else 0)
+PY2
+then ok "#400: no backslash-backtick in a single-quoted ERE (GNU grep would read it as an anchor)"
+else bad "#400: a single-quoted ERE contains \\\` — it matches nothing under GNU grep" "see grep -n -- \"-oE\" $SCRIPT"; fi
+
+# The lint promises bash+coreutils in four committed places; a broken or absent
+# jq must therefore change nothing. A stub that always fails stands in for
+# "jq is not installed here".
+D="$(mktemp -d)"; skeleton "$D"
+mkdir -p "$D/fakebin"
+printf '#!/bin/sh\nexit 127\n' > "$D/fakebin/jq"; chmod +x "$D/fakebin/jq"
+out="$(PATH="$D/fakebin:$PATH" CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -eq 0 ]; then ok "#400: a broken/absent jq changes nothing (the lint is dependency-free)"
+else bad "#400: the lint must not need jq" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# `tooling` satisfies the scripts/ sweep, so it is load-bearing and needs the
+# map->real direction too.
+D="$(mktemp -d)"; skeleton "$D"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("| plugin | `context7` | live docs |",
+  "| tooling | `scripts/ghost_helper.py` | a helper nobody wrote |\n| plugin | `context7` | live docs |"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "ghost_helper.py"; then
+  ok "#400: a tooling row naming a nonexistent file FAILS"
+else bad "#400: tooling row -> real file must be checked" "rc=$rc $out"; fi
+rm -rf "$D"
+
+D="$(mktemp -d)"; skeleton "$D"
+: > "$D/scripts/helper_tool.py"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("| plugin | `context7` | live docs |",
+  "| tooling | `helper_tool.py` | a helper |\n| plugin | `context7` | live docs |"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "does not carry the scripts/ prefix"; then
+  ok "#400: a tooling row without the scripts/ prefix FAILS"
+else bad "#400: prefixless tooling row must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+D="$(mktemp -d)"; skeleton "$D"
+python3 - "$D/CLAUDE.md" <<'PY2'
+import sys
+p = sys.argv[1]; t = open(p).read()
+open(p, "w").write(t.replace("`postgres`, `github`", "`postgres`, `github`, `postgres`"))
+PY2
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "listed MORE THAN ONCE in the map's MCP row"; then
+  ok "#400: a server listed twice in the MCP row FAILS"
+else bad "#400: duplicate MCP entry must fail" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# The awk .mcp.json walk must not depend on indentation — same servers, minified.
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":{"postgres":{"command":"npx","args":["-y","x"]},"github":{"env":{"T":"${T}"}}}}\n' > "$D/.mcp.json"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -eq 0 ]; then ok "#400: the .mcp.json walk is indentation-independent (minified JSON parses)"
+else bad "#400: minified .mcp.json must parse the same" "rc=$rc $out"; fi
+rm -rf "$D"
+
+# …and a NESTED object must not be mistaken for a server (github's "env" here).
+D="$(mktemp -d)"; skeleton "$D"
+printf '{"mcpServers":{"postgres":{},"github":{"env":{"TOKEN":"x"}}}}\n' > "$D/.mcp.json"
+out="$(CLAUDE_PROJECT_DIR="$D" bash "$SCRIPT" 2>&1)"; rc=$?
+if [ $rc -eq 0 ] && ! printf '%s' "$out" | grep -q "'env'"; then
+  ok "#400: a nested object inside a server is not read as a server"
+else bad "#400: nested objects must not become servers" "rc=$rc $out"; fi
+rm -rf "$D"
+
 printf '\ncheck_aiconfig_map self-test: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

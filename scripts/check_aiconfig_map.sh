@@ -43,9 +43,9 @@ map_names() { # map_names <kind>
 # The two formerly TOLERANT parses, now checked (#378): a lint row missing its
 # `scripts/` prefix and a hook row with a leading `/` both used to normalise
 # away silently. Tolerance in a drift checker is drift.
-grep -E '^\| *lint *\|' "$MAP" | grep -vE '^\| *lint *\| *`scripts/' \
+grep -E '^\| *(lint|tooling) *\|' "$MAP" | grep -vE '^\| *(lint|tooling) *\| *`scripts/' \
   | while IFS= read -r r; do [ -n "$r" ] && echo x; done | grep -q x \
-  && fail "a lint row does not carry the scripts/ prefix — write the path the file actually has"
+  && fail "a lint/tooling row does not carry the scripts/ prefix — write the path the file actually has"
 # command rows legitimately start with '/' (slash commands); hooks and the
 # rest must not.
 grep -E '^\| *(hook|agent|skill) *\| *`/' "$MAP" >/dev/null \
@@ -112,6 +112,14 @@ map_names lint | while IFS= read -r name; do
   [ -f "$ROOT/scripts/$name" ] \
     || printf '  ✗ lint row `%s` names a file that does not exist (scripts/%s)\n' "$name" "$name"
 done
+# `tooling` rows satisfy the scripts/ sweep below, which makes them LOAD-BEARING
+# — so they need the same map->real check, or a `| tooling | scripts/ghost.py |`
+# row for a file nobody wrote passes clean (#400 review, round 1).
+map_names tooling | while IFS= read -r name; do
+  [ -n "$name" ] || continue
+  [ -f "$ROOT/scripts/$name" ] \
+    || printf '  ✗ tooling row `%s` names a file that does not exist (scripts/%s)\n' "$name" "$name"
+done
 # …and the REAL -> MAP direction for lints, which the first version omitted.
 # Without it the whole lint category could not fail: a new `scripts/` lint with
 # no row passed, and deleting ALL five lint rows still printed "✓ … 0 lints".
@@ -119,10 +127,14 @@ done
 # pre-push gate and in deploy.yml and had no row at all. A check that cannot
 # fail is worse than no check, because it reports success.
 #
-# What counts as a lint here: an executable `scripts/*.sh` that is not itself a
-# self-test (`*.test.sh` belongs to the tool it tests) and not a build helper.
-# The exclusions are named, not pattern-guessed, so adding a script forces a
-# decision rather than silently slipping into an ignore rule.
+# What needs a row here: EVERY regular file in scripts/ that is not itself a
+# self-test (`*.test.sh` belongs to the tool it tests) and not a named build
+# helper — any extension, not just `*.sh`. The exclusions are named, not
+# pattern-guessed, so adding a file to scripts/ forces a decision (give it a
+# `lint` or `tooling` row, or add it here with a reason) rather than silently
+# slipping into an ignore rule. That is deliberate and it does mean a data file
+# dropped into scripts/ reds the gate until someone accounts for it: scripts/ is
+# the repo-contract toolbox, not a scratch directory.
 # EVERY file in scripts/, not just *.sh (#378): the old glob meant a .py or
 # .mjs tool needed no row — and scripts/dedup_changelog_unreleased.py was
 # already such a file, invisible to this sweep, one extension away from the
@@ -133,7 +145,7 @@ for f in "$ROOT"/scripts/*; do
   case "$name" in
     *.test.sh) continue ;;                 # a self-test, not a lint
     make-social-image.sh) continue ;;      # asset generator, not a repo-contract lint
-    __pycache__|*.pyc) continue ;;
+    *.pyc) continue ;;                     # build output; __pycache__ is a dir, filtered by -f
   esac
   # a row of kind `lint` OR `tooling` satisfies the sweep — the map deliberately
   # distinguishes gates from helpers, and both are rows that must exist.
@@ -149,13 +161,44 @@ missing_files=$( {
   map_names hook    | while IFS= read -r n; do [ -n "$n" ] && [ ! -e "$ROOT/.claude/hooks/$n" ] && echo x; done
   map_names skill   | while IFS= read -r n; do [ -n "$n" ] && { [ ! -d "$ROOT/.claude/skills/$n" ] || [ ! -f "$ROOT/.claude/skills/$n/SKILL.md" ]; } && echo x; done
   map_names lint    | while IFS= read -r n; do [ -n "$n" ] && [ ! -f "$ROOT/scripts/$n" ] && echo x; done
+  map_names tooling | while IFS= read -r n; do [ -n "$n" ] && [ ! -f "$ROOT/scripts/$n" ] && echo x; done
 } | grep -c x )
 problems=$((problems + missing_files))
 
 # --- 1b. MCP servers: .mcp.json <-> map row (#378) ---------------------------
 MCPJSON="$ROOT/.mcp.json"
 if [ -f "$MCPJSON" ]; then
-  mcp_real="$(jq -r '.mcpServers | keys[]' "$MCPJSON" 2>/dev/null | sort)"
+  # Dependency-free on purpose (the header, verify_all.sh, the pre-push hook and
+  # deploy.yml all promise bash+coreutils): walk the JSON with awk rather than
+  # reaching for jq. Measured jq-less, the jq version failed CLOSED and printed
+  # three bogus "map drift" errors — a lint that cries wolf gets ignored.
+  # Depth-tracking, string-aware, so it does not depend on indentation: emit the
+  # keys that open an object exactly one level inside "mcpServers".
+  mcp_real="$(awk '
+    BEGIN { depth = 0; instr = 0; inservers = 0; lastkey = "" }
+    {
+      n = length($0)
+      for (i = 1; i <= n; i++) {
+        c = substr($0, i, 1)
+        if (instr) {
+          if (c == "\\") { i++; continue }
+          if (c == "\"") { instr = 0; lastkey = buf; continue }
+          buf = buf c; continue
+        }
+        if (c == "\"") { instr = 1; buf = ""; continue }
+        if (c == "{" || c == "[") {
+          depth++
+          if (!inservers && lastkey == "mcpServers") { inservers = 1; sdepth = depth }
+          else if (inservers && depth == sdepth + 1) print lastkey
+          continue
+        }
+        if (c == "}" || c == "]") {
+          if (inservers && depth == sdepth) inservers = 0
+          depth--; continue
+        }
+      }
+    }
+  ' "$MCPJSON" | sort)"
   [ -n "$mcp_real" ] || fail ".mcp.json exists but no servers could be parsed from it"
   mcp_row="$(grep -E '^\| *MCP *\|' "$MAP" | head -1 | awk -F'|' '{print $3}')"
   [ -n "$mcp_row" ] || fail ".mcp.json declares servers but the map has NO | MCP | row"
@@ -163,9 +206,22 @@ if [ -f "$MCPJSON" ]; then
     printf '%s' "$mcp_row" | grep -qF "\`$m\`" \
       || fail "MCP server '$m' is in .mcp.json but not in the map's MCP row"
   done
-  for m in $(printf '%s' "$mcp_row" | grep -oE '\`[a-z0-9_-]+\`' | tr -d '\`'); do
+  # NOTE the bare backtick in the ERE. `\`` inside single quotes is
+  # backslash+backtick, which BSD grep reads as a literal backtick (green on
+  # macOS) while GNU grep reads it as its start-of-buffer ANCHOR — the pattern
+  # then matches nothing, this loop never runs, and the reverse MCP check
+  # becomes a category that CANNOT FAIL on the Linux runner. That is precisely
+  # the defect class #378 exists to close, so it is spelled out here rather
+  # than left to the next reader to rediscover (#400 review, round 1).
+  for m in $(printf '%s' "$mcp_row" | grep -oE '`[A-Za-z0-9_-]+`' | tr -d '`'); do
     printf '%s\n' "$mcp_real" | grep -qxF "$m" \
       || fail "MCP server '$m' is in the map's MCP row but not in .mcp.json"
+  done
+  # A server named twice in the row is drift too — same rule the plugin row
+  # already carries below.
+  mcp_dupes="$(printf '%s' "$mcp_row" | grep -oE '`[A-Za-z0-9_-]+`' | tr -d '`' | sort | uniq -d)"
+  for m in $mcp_dupes; do
+    fail "MCP server '$m' is listed MORE THAN ONCE in the map's MCP row"
   done
 fi
 

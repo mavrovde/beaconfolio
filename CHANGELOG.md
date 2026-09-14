@@ -98,7 +98,19 @@ All notable changes to this project will be documented in this file.
   file; it now sweeps every file, and a `tooling` row satisfies it alongside `lint`. The two
   tolerant parses (a lint row missing `scripts/`, a leading `/` on a hook row) now fail. Seven new
   cases, **six of them measured failing against the pre-fix checker** (the seventh is a
-  regression-guard for new behaviour): 24 passed.
+  regression-guard for new behaviour). Round 1 of the review then found the fix reproducing its
+  own defect class **on the platform CI runs**: `` grep -oE '\`…\`' `` is a literal backtick to BSD
+  grep and the **start-of-buffer anchor** to GNU grep, so the reverse-MCP loop matched nothing on
+  Linux, its body never ran and that category could not fail there — green on macOS, red in CI.
+  Measured on one input: BSD prints `` `postgres` ``, GNU prints nothing. The pattern is now bare,
+  a self-test case forbids `` \` `` in any single-quoted ERE, and **the whole suite is run in a
+  Debian container** as well as on macOS: **31 passed / 0 failed on both**. Same round: the `jq`
+  dependency is gone (four committed places promise bash+coreutils, and jq-less it failed closed
+  with three bogus drift errors) — `.mcp.json` is now walked by a depth-tracking `awk` that is
+  indentation-independent and does not mistake a nested `env` object for a server; `tooling` rows,
+  load-bearing since they satisfy the sweep, gained the map→real and `scripts/`-prefix checks that
+  `lint` already had; and a server listed twice in the MCP row now fails, as it already did for
+  plugins.
 - **Three #373 residuals recorded where the reader stands (#382)** — `cv.component.ts` now names
   Snyk alert **3136**, its dismissal as a false positive, and *why it can never auto-clear* (Snyk
   does not model `URL.pathname` as a sanitizer), instead of leaving the argument in a PR comment;

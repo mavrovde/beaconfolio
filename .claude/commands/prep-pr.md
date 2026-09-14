@@ -41,6 +41,9 @@ E2E assertion). Consult the `env-gotchas` skill for platform pitfalls while runn
      `git rev-list --count HEAD..origin/main` — non-zero means you are behind.
    - **The rebase LOST it**: you are already up to date (`0` behind) and the entry is still
      missing. Remedy: **restore** the line, and look for others — a resolution dropped content.
+   - **You REWORDED an existing entry**: a `<` for the old text paired with a `>` for the new one,
+     same subject. Nothing is lost and nothing needs rebasing — but say so in the PR, because a
+     reviewer reading the diff cannot tell a deliberate rewording from a dropped line (#400).
 
    Since #391 this is also enforced mechanically: `scripts/check_changelog_merge.sh` runs in the
    pre-push gate and CI and measures the real merged result, so this step is the human-readable

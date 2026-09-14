@@ -44,7 +44,10 @@ exclude:
     # exact figure moved as the triage landed (9 claimed, then 8, then 5
     # measured — see the v1.14.1 retrospective's class F), so this comment
     # states the SHAPE and the live feed states the number: at 2026-09-14 the
-    # Snyk Code feed is 2 open, 7 dismissed, 313 fixed (#382).
+    # Snyk Code feed is 2 open, 7 dismissed, 313 fixed (#382). That triple is a
+    # dated SNAPSHOT, not a contract — nothing checks it and it will drift. Read
+    # the Security tab for the current number; do not "fix" this comment to
+    # match, and do not cite it as evidence in a later PR (#400 review).
     - '**/tests/**'
     - '**/test_*.py'
     - '**/*_test.py'
