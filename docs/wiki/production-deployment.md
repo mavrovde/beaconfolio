@@ -637,14 +637,17 @@ bug to be explained or closed.
 | 80 | edge (Caddy) | ACME HTTP-01 + redirect to HTTPS |
 | 443 | edge (Caddy) | TLS termination for every hostname on the box |
 
-**Assignable to tenants — `127.0.0.1` only, block `18000-18999`,** 10 ports per
-tenant so a project can grow without renegotiating:
-
-| Range | Tenant |
-|---|---|
-| `18000-18099` | beaconfolio |
-| `18100-18199` | (next tenant) |
-| … | assign in order, record here |
+**Assignable to tenants — `127.0.0.1` only, block `18000-18999`.** The
+authoritative registry lives IN THE REPO since #338:
+[`infra/edge/ports.md`](../../infra/edge/ports.md) — claim a range there via PR,
+never by editing this article (a wiki table nobody diffs is how the pre-#338
+edge drifted). The committed edge config is
+[`infra/edge/Caddyfile`](../../infra/edge/Caddyfile); the only sanctioned way to
+change the running edge is `bash infra/edge/apply.sh` (validate → install →
+graceful reload; `--check` diffs committed vs running with no changes). The
+edge deliberately does NOT roll on tenant deploys — apply is a manual, reviewed
+step (#310 option-A rationale). Second-tenant onboarding = PR touching
+`ports.md` + `Caddyfile` (template block at its bottom) + one apply.
 
 **beaconfolio's prod bindings — a verdict for each:**
 

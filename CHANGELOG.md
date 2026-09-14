@@ -38,6 +38,16 @@ All notable changes to this project will be documented in this file.
   shipped an assertion that had run nowhere). The option weighing — auto-integration +
   labeled-E2E over unconditional PR E2E — is recorded in the workflow header; rule 12's wording
   updated to match what CI actually does.
+- **The shared Caddy edge is committed as code (#338)** — `infra/edge/Caddyfile` (the real
+  running config: hostnames + loopback upstreams, no secrets), `infra/edge/ports.md` (the
+  tenant port registry as the single source of truth — the wiki table is now a pointer), and
+  `infra/edge/apply.sh` (`--check` diffs committed vs running; apply = `caddy validate` →
+  install with backup → graceful `systemctl reload`, refusing on invalid config with the
+  running edge untouched). Deliberately NOT in the rollout job: the edge serves every tenant
+  and must not roll on one tenant's cadence (#310 option A). Verified on the live host:
+  drift detected → broken copy refused (running config untouched, measured) → apply →
+  byte-identical → live probe HTTP 200. Second-tenant onboarding is now a PR (template block
+  committed) plus one apply.
 - **Certificate-expiry alarm in the Live Freshness workflow (#310)** — a daily "Certificate
   expiry" step measures `notAfter` for every hostname in the `TLS_HOSTNAMES` repository variable
   (default: the maintainer's three) and goes red under 21 days remaining — Caddy renews at ~30
