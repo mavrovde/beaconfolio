@@ -322,11 +322,15 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
     browser** for any user-facing surface, the **WireMock integration tier** for any composed
     API/AI path, and plain mocks/stubs for boundaries the others cannot reach. "The units are
     green" is not validation — v1.12.0 shipped three screens at 100% unit coverage that had never
-    rendered in a browser (lessons §29). **CI runs E2E and the integration tier on PUSH only**
-    (`deploy.yml`), so a PR cannot carry CI-run evidence for them: run them LOCALLY against a real
-    stack and state the measured result in the PR — that is what satisfies this rule. If a layer
-    genuinely does not apply, say WHICH and WHY; if it applies and is missing, the PR is not
-    ready.
+    rendered in a browser (lessons §29). **PR CI carries this evidence itself since #380**
+    (`.github/workflows/pr-evidence.yml`): the **WireMock integration tier runs automatically**
+    on every PR that touches `backend/**`, `frontend/**`, `proxy/**` or a compose file (docs-only
+    PRs pay nothing), and the **full browser E2E runs on demand via the `run-e2e` PR label** —
+    apply the label when the change's failure mode needs a real browser. A measured LOCAL run
+    against a real stack, stated in the PR, remains valid evidence where the label path isn't
+    used. (`deploy.yml` still runs both tiers on every push to `main` as the backstop.) If a
+    layer genuinely does not apply, say WHICH and WHY; if it applies and is missing, the PR is
+    not ready.
 
 13. **Independent review gate — EVERY PR requires a `pr-reviewer` verdict before merge. NO
     EXCEPTIONS.** No pull request is merged until an **independent** `pr-reviewer` review (an APPROVE

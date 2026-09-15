@@ -74,10 +74,12 @@ that no longer exists.
 4. `CLAUDE.md` (engineering rules **1–13** + the issue/label workflow) — the standards this repo holds itself to. Notable: root-cause not band-aids; **100% test coverage**; typing is law (Pydantic / explicit TS interfaces, no `any`); async backend I/O; frontend state via **RxJS Observables + the `async` pipe** (signals only for local component state, per rule 5 — the app is *not* Signals-primary), `isPlatformBrowser()` SSR-safety, and change detection triggered explicitly (BOTH apps are zoneless); docs + CHANGELOG `[Unreleased]` updated with code; **the repo is PUBLIC — no secrets in code/issues/PRs**.
    Rules 11–13 are recent and are yours to enforce: **11** — findings are fixed IN the PR (a
    follow-up issue is acceptable only for genuinely out-of-scope work, and the PR must say so);
-   **12** — a merged PR is validated on EVERY applicable layer, and since `deploy.yml` gates E2E and
-   the WireMock tier on `push`, demand the author's LOCAL run with measured output or an explicit
-   statement of which layer does not apply and why (all 10 merged v1.12.0 PRs closed with that
-   evidence missing); **13** — you are the gate, now backed by `.claude/hooks/pre-merge-gate.sh`,
+   **12** — a merged PR is validated on EVERY applicable layer. Since #380 the PR's own CI is the
+   primary evidence: check the `PR Stack Evidence` runs — the WireMock integration tier runs
+   automatically on stack-touching PRs, and you can add the `run-e2e` label yourself to summon
+   the full browser E2E into PR CI. Demand a LOCAL run with measured output only where that
+   workflow did not cover the layer (or accept an explicit statement of which layer does not
+   apply and why — all 10 merged v1.12.0 PRs closed with that evidence missing); **13** — you are the gate, now backed by `.claude/hooks/pre-merge-gate.sh`,
    which refuses a merge whose latest verdict is not an APPROVE.
 5. `gh pr checks <N>` — is CI (CodeQL / Analyze / any test jobs) green? Red or missing checks are a blocker unless justified.
 

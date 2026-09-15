@@ -27,6 +27,17 @@ All notable changes to this project will be documented in this file.
   the warning can see it). Docs answer "WHICH .env IS LIVE?" in `.env.example`,
   `docs/DEPLOYMENT.md` and the deployment wiki: production reads only the deploy dir's file.
   Four new unit tests (loud + silent paths for both warnings).
+- **PR CI now carries E2E/integration evidence itself (#380)** — a new `PR Stack Evidence`
+  workflow (`.github/workflows/pr-evidence.yml`): the WireMock integration tier runs
+  AUTOMATICALLY on every PR touching `backend/**`, `frontend/**`, `proxy/**` or a compose file
+  (path-filtered, so a docs-only PR pays nothing), and the full browser E2E runs ON DEMAND via
+  the new `run-e2e` PR label. Images build locally from `deploy.yml`'s shared buildx layer
+  cache (`cache-from: type=gha`, never pushed, no registry login, no secrets — rule 10 posture
+  identical to the push jobs). Previously both tiers were push-to-`main` only, so rule 12's
+  evidence depended on hand-run numbers pasted into PRs (#365 lost a review round to it; #373
+  shipped an assertion that had run nowhere). The option weighing — auto-integration +
+  labeled-E2E over unconditional PR E2E — is recorded in the workflow header; rule 12's wording
+  updated to match what CI actually does.
 - **Certificate-expiry alarm in the Live Freshness workflow (#310)** — a daily "Certificate
   expiry" step measures `notAfter` for every hostname in the `TLS_HOSTNAMES` repository variable
   (default: the maintainer's three) and goes red under 21 days remaining — Caddy renews at ~30

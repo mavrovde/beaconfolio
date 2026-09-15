@@ -250,8 +250,11 @@ anything cheap belongs in the PR. A growing backlog is not progress.
 Before asking for a merge, exercise the change wherever its failure mode can appear: backend unit
 (pytest at 100%), frontend unit (Vitest, three projects at 100%), **E2E in a real browser** for any
 user-facing surface, the **WireMock integration tier** for any composed API/AI path, plus mocks for
-what nothing else reaches. CI runs E2E and the integration tier on PUSH only, so run them LOCALLY
-and state the measured result — that is what satisfies the rule. Green units are not validation:
+what nothing else reaches. Since #380 the PR's own CI carries this evidence: the `PR Stack
+Evidence` workflow runs the WireMock integration tier automatically on every stack-touching PR,
+and the `run-e2e` label summons the full browser E2E into PR CI. A local run with measured output
+remains valid evidence where the label isn't used; `deploy.yml`'s push-time tiers stay the
+backstop. Green units are not validation:
 v1.12.0 shipped three screens at 100% unit coverage that had never rendered in a browser. If a
 layer does not apply, name it and say why.
 
