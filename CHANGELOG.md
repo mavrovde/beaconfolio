@@ -43,6 +43,13 @@ All notable changes to this project will be documented in this file.
   already serves them), and CPaaS SMS is declined because it buys **zero capability** over the
   free gateway in exchange for a metered credential. Scope is outbound owner notification only;
   two-way recruiter conversation is tracked separately (#432).
+- **A correctly-labelled PR stopped losing its integration evidence (#431, found while opening
+  #433)** — `pr-evidence.yml`'s `concurrency` cancelled in-progress runs unconditionally, and
+  `concurrency` is evaluated *before* a job's `if`, so each `labeled` event killed the `opened`
+  run and then skipped itself. Measured on #433: four runs, one **cancelled** + three
+  **skipped**, i.e. zero integration evidence on a PR created with `gh pr create --label` — the
+  labels-at-creation flow the issue policy requires. The cancellation is now gated on the same
+  condition as the jobs, so a non-`run-e2e` label queues instead of killing the run.
 - **The wiki statistics articles stop competing with the canonical record** — `docs/wiki/`'s
   `team-and-process.md` replaces its trend-table and KPI-baseline copies (and its restated
   cost figures) with links to `docs/retrospectives/`; `delivery-statistics.md` is banner-dated
