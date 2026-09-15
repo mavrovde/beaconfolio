@@ -67,6 +67,35 @@ class Settings(BaseSettings):
     notify_webhook_url: str = Field(
         default="", validation_alias="BEACONFOLIO_NOTIFY_WEBHOOK_URL"
     )
+    # Matrix (#431): self-hosted/federated chat. Free, self-serve — a bot
+    # account on the owner's OWN homeserver (or matrix.org) and an access token
+    # from `POST /_matrix/client/v3/login`. ALL THREE parts are required: a
+    # half-configured channel must not exist (see `configured_channels()`).
+    matrix_homeserver: str = Field(
+        default="", validation_alias="BEACONFOLIO_MATRIX_HOMESERVER"
+    )
+    matrix_access_token: str = Field(
+        default="", validation_alias="BEACONFOLIO_MATRIX_ACCESS_TOKEN"
+    )
+    matrix_room_id: str = Field(
+        default="", validation_alias="BEACONFOLIO_MATRIX_ROOM_ID"
+    )
+    # Self-hosted SMS gateway (#431): a REST endpoint on the owner's OWN
+    # Android phone + SIM (SMSGate / httpSMS / textbee). Free beyond the
+    # existing SIM plan and — the rule-10 point — there is no metered API
+    # credential to hold. NOT a CPaaS URL: see the SmsGatewayChannel docstring.
+    sms_gateway_url: str = Field(
+        default="", validation_alias="BEACONFOLIO_SMS_GATEWAY_URL"
+    )
+    sms_gateway_user: str = Field(
+        default="", validation_alias="BEACONFOLIO_SMS_GATEWAY_USER"
+    )
+    sms_gateway_password: str = Field(
+        default="", validation_alias="BEACONFOLIO_SMS_GATEWAY_PASSWORD"
+    )
+    sms_gateway_to: str = Field(
+        default="", validation_alias="BEACONFOLIO_SMS_GATEWAY_TO"
+    )
     notify_timeout_seconds: int = 10
     # STARTTLS + auth are ON by default (external providers). A local catch-all
     # like Mailpit (#262) speaks plain SMTP with no credentials — set

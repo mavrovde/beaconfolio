@@ -1986,6 +1986,34 @@ panicking: a red on a SINGLE SHA with no error text in the logs, while the runs 
 after on the same branch are green, is an **upload fault, not a code regression** — measured on
 #428, where the legitimate next commit came back green on all three languages.
 
+## 72. A "zero requests" test is only as wide as the HTTP VERBS it patches (#431)
+
+`test_empty_config_means_empty_registry_and_zero_requests` was the rule-10 contract for the
+notification registry — and it patched `httpx.post` only. The Matrix channel added in #431 calls
+`httpx.put`, so the day that channel landed the assertion would have kept passing while saying
+nothing about it: a zero-requests test is not "no requests", it is "no requests through the
+functions I happened to patch". Generalise: **any "nothing happened" assertion is scoped to the
+instrument, and adding a code path with a new instrument silently narrows it** — the same shape
+as §49 (assert at the seam, not the output). The fix that generalises is a second test that
+reads the module source, collects every `httpx.<verb>(` call site, and asserts the set equals
+the set the zero-requests case patches, so a third verb turns the suite red instead of turning
+the contract partial.
+
+## 73. A documented rationale that cites a third party's pricing DECAYS — date it or it lies (#431)
+
+#263 deferred WhatsApp for a written, sensible reason: the Cloud API "bills per conversation".
+Meta replaced conversation-based pricing with per-message pricing on **2025-07-01**, so the
+repo's public design rationale — README *and* the module docstring — asserted a false fact for
+over a year, and a forker pricing their own decision on it would have been wrong. Two habits
+come out of it: (a) **stamp every external fact with the date it was checked**, so a reader can
+see its age instead of trusting it, and mark second-hand facts (BSP/industry reporting) as
+distinct from the vendor's own page; (b) prefer a **structural** reason over a **price** reason
+when both exist, because structure decays slower — WhatsApp's real blocker is that an owner
+notification has no open 24-hour window, so it can only be a pre-approved template, which no
+pricing change repairs. Practical note for verification: `developers.facebook.com` serves an
+error page to `curl`, so "re-confirm at build time" needs a real browser or an explicit
+"cited as of <date>, not re-measured" admission.
+
 ## Where the rules live (AI-config map)
 
 - **`CLAUDE.md`** — the authoritative numbered rules (engineering rules 1–13, issue-tracking flow,
