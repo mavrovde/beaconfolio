@@ -106,6 +106,48 @@ def _mock_translation_llm(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _forbid_real_whisper_model(monkeypatch):
+    """RULE 10 / CI cost, suite-wide (#264): `_load_model()` DOWNLOADS Whisper
+    weights from Hugging Face on its first call — ~150 MB, on every CI job, on
+    every run, triggered from a test. Nothing here is billable, but an
+    automated test that reaches out to the network for a model is the same
+    class of mistake as one that reaches out to a paid API, and it is exactly
+    the mistake `.env`-scrubbing had to fix twice (#297/#298).
+
+    So the loader is replaced with one that FAILS LOUDLY. Tests that need a
+    transcriber patch `_load_model` themselves (layering over this); the two
+    that pin the loader ITSELF take the `real_whisper_loader` fixture below
+    and run it against a fake `faster_whisper` in `sys.modules`.
+    """
+    from app.services import transcription
+
+    original = transcription._load_model
+    # A cached model from an earlier test would sail straight past the guard.
+    original.cache_clear()
+
+    def _refuse() -> object:
+        raise AssertionError(
+            "a test tried to load a REAL Whisper model (network download) — "
+            "patch app.services.transcription._load_model instead"
+        )
+
+    monkeypatch.setattr(transcription, "_load_model", _refuse)
+    yield original
+    original.cache_clear()
+
+
+@pytest.fixture
+def real_whisper_loader(_forbid_real_whisper_model):
+    """The UNPATCHED `_load_model`, for the tests that pin the loader itself.
+
+    Reaching past the guard is deliberate and must stay EXPLICIT: those tests
+    inject a fake `faster_whisper` module, so nothing is downloaded — and
+    naming this fixture is how a reader can tell which tests do that.
+    """
+    return _forbid_real_whisper_model
+
+
+@pytest.fixture(autouse=True)
 def _redirect_background_sessions(monkeypatch):
     """Background tasks open their OWN session via app.database.async_session
     (#248's translation task is the first). The get_db override cannot reach
@@ -121,8 +163,18 @@ def _redirect_background_sessions(monkeypatch):
     # suite would land in the DEV database.
     monkeypatch.setattr(app.database, "analytics_session", get_test_async_session())
     # Modules that imported the name directly get the same redirect.
+    import app.api.interactions
+    import app.services.transcription
     import app.services.translation
 
     monkeypatch.setattr(
         app.services.translation, "async_session", get_test_async_session()
     )
+    # #264's two new background tasks open their own sessions the same way:
+    # the transcriber writes the transcript, and `_notify_voice` reads it back
+    # to put it in the owner's ping. Without these two lines they would both
+    # hit the DEV database (#298 found this class of bug the hard way).
+    monkeypatch.setattr(
+        app.services.transcription, "async_session", get_test_async_session()
+    )
+    monkeypatch.setattr(app.api.interactions, "async_session", get_test_async_session())

@@ -48,6 +48,7 @@ COMPOSE_FILES="docker-compose.yml docker-compose.prod.yml"
 # (lessons §21/§32). Six entries on day one, each measured, not assumed.
 EXEMPT_LIST="
 LINKEDIN_COOKIES_DIR:the path is the TARGET of the linkedin_cookies: named-volume mount in both compose files; forwarding it alone would let an owner point the app at an UNMOUNTED path and silently stop persisting the session. Found by this check on the v1.13.0 tag and resolved in .env.example instead
+WHISPER_MODEL_DIR:identical case to LINKEDIN_COOKIES_DIR above — the path is the TARGET of the whisper_models: named-volume mount in both compose files (#264), so forwarding it would let an owner point the app at an UNMOUNTED path and silently re-download the Whisper model on every container start. Documented in .env.example as bare-metal-only instead
 EMBEDDING_MODEL:documented only inside README.md's explicitly-labelled BARE-METAL backend/.env block, which is not a compose surface
 GEMINI_API_KEY:pre-#141 legacy name, documented only as IGNORED; the compose files pass the legacy NAMES (never values) via LEGACY_GEMINI_ENV so the backend can warn about them
 GEMINI_ENCRYPTION_KEY:same — pre-#141 legacy name, documented only as ignored

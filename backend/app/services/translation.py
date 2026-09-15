@@ -105,6 +105,15 @@ async def translate_interaction(interaction_id: uuid.UUID) -> None:
             interaction = await db.get(Interaction, interaction_id)
             if interaction is None:  # deleted before we ran — nothing to do
                 return
+            if not (interaction.message or "").strip():
+                # Nothing to translate. Reachable since #264: a voice message
+                # starts with an empty `message` and only gains one if its
+                # transcription succeeds, so a failed transcription would
+                # otherwise send an empty prompt to the LLM and record
+                # `translation_status="failed"` — blaming translation for a
+                # transcription problem. Leaving the status NULL reads
+                # correctly: there is no text, so translation never applied.
+                return
             target = _target_language()
             try:
                 raw = await _generate(

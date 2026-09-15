@@ -113,6 +113,41 @@ class Settings(BaseSettings):
     # background task is ever scheduled and the UI shows no remnants.
     translation_enabled: bool = True
 
+    # Voice channel (#264) — browser voice messages transcribed by a LOCAL
+    # Whisper. DEFAULT OFF, unlike the two flags above, for two reasons: the
+    # recording widget is a separate, later change (so the endpoint has no
+    # caller yet), and the first accepted message triggers a one-time model
+    # download — an owner opts into that, they do not discover it. Off means
+    # the endpoints 404 and no model is ever fetched.
+    voice_messages_enabled: bool = False
+    # HARD size cap on the upload, enforced server-side by a bounded read.
+    # MEASURED: 15 s of speech encodes to ~172 KB of WebM/Opus (~96 kbit/s),
+    # so 2 MB is roughly 3 MINUTES of audio — comfortably generous for a
+    # 90-second note, and small enough to keep the bytes in the database next
+    # to the row that references them. It is a memory/storage bound, NOT the
+    # duration cap: that is the knob below, checked separately.
+    voice_message_max_bytes: int = 2 * 1024 * 1024
+    # Duration cap. Checked TWICE on purpose: against the browser's claim at
+    # the endpoint (cheap, rejects honest oversize before storing anything)
+    # and against the DECODED length in the transcriber, because the first
+    # check trusts the client and the second does not.
+    voice_message_max_duration_seconds: int = 90
+    # A voice message costs a DB row, ~1 MB of storage and seconds of CPU, so
+    # its budget is tighter than the contact form's 5/60s (one deliberate
+    # human action each, but this one is far more expensive to serve).
+    voice_rate_limit_requests: int = 3
+    voice_rate_limit_window_seconds: int = 60
+    # faster-whisper model size: tiny | base | small | medium | large-v3.
+    # `base` is the small-VPS default — see README's measured latency table.
+    whisper_model: str = "base"
+    # CTranslate2 quantization. int8 is ~4x smaller and ~2-3x faster than
+    # float32 on a CPU with no measurable accuracy loss at this task size.
+    whisper_compute_type: str = "int8"
+    # Where the weights are cached. MUST be a mounted volume (both compose
+    # files mount `whisper_models` here): the same no-re-download-on-restart
+    # pattern `ollama_data` gives Ollama's models.
+    whisper_model_dir: str = "/data/whisper"
+
     # Engagement analytics (#249): first-party, owner-only counting of
     # meaningful events (CV request/download, contact submission). OFF means
     # exactly that — no event row is ever written and the admin endpoints 404,
