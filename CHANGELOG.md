@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Placeholder for next release.
+
+## [1.14.3] - 2026-09-15
+
+> Versioning note: by the committed SemVer-by-content rules this window is a MINOR (#333 ships
+> three new HTTP endpoints, one public, plus a migration). The number 1.14.3 is the owner's
+> explicit, repeated naming for this release (goal statement, board bucket, the window's
+> `release:v1.14.3` labels) and is recorded here as an owner override, per #428's review.
+
+### Added
 - **A mutation contract on EVERY repo-contract check (#393)** — the nine self-test harnesses
   that had none now neuter one enforcement arm at a time in a copy and require their pinned
   case to go red: `check_env_example_complete` (4 mutants), `check_live_freshness` (5),
