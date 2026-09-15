@@ -1,11 +1,12 @@
 """Unified recruiter-interaction record (#69).
 
-Every inbound recruiter touch — contact-form submissions, CV requests,
-(later) bookings and platform-pulled messages — lands here as ONE indexable
-row, so the admin inbox is the single source of truth for "who reached out,
-through what, and where does it stand". Source-specific detail stays in the
-source's own domain record (e.g. ``CvRequest``); ``payload`` carries the
-lightweight extras, and ``source``/``source_ref`` link back.
+Every inbound recruiter touch — contact-form submissions, CV requests, voice
+messages (#264), (later) bookings and platform-pulled messages — lands here as
+ONE indexable row, so the admin inbox is the single source of truth for "who
+reached out, through what, and where does it stand". Source-specific detail
+stays in the source's own domain record (e.g. ``CvRequest``, ``VoiceMessage``);
+``payload`` carries the lightweight extras, and ``source``/``source_ref`` link
+back.
 """
 
 import uuid
@@ -20,7 +21,7 @@ from app.database import Base
 # Extensible by design (#69): platform channels (linkedin/xing/email) join
 # later without a schema change — the column is a plain string validated at
 # the API layer, NOT a DB enum, exactly so new sources are additive.
-INTERACTION_SOURCES = ("contact_form", "cv_request", "booking")
+INTERACTION_SOURCES = ("contact_form", "cv_request", "booking", "voice_message")
 INTERACTION_STATUSES = ("new", "contacted", "in_progress", "closed")
 
 

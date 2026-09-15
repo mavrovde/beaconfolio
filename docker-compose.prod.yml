@@ -95,6 +95,10 @@ services:
       # Persist the saved LinkedIn login session across deploys/restarts
       # (see LINKEDIN_COOKIES_DIR / app.services.linkedin.COOKIES_DIR).
       - linkedin_cookies:/data/linkedin_cookies
+      # Whisper weights (#264) — same no-re-download-on-restart pattern the
+      # ollama_data volume gives Ollama's models. Target must equal
+      # WHISPER_MODEL_DIR (app/config.py).
+      - whisper_models:/data/whisper
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:${POSTGRES_PORT:-5433}/${POSTGRES_DB:-beaconfolio}
       - OLLAMA_URL=http://ollama:11434
@@ -114,6 +118,21 @@ services:
       - OWNER_LANGUAGE=${OWNER_LANGUAGE:-en}
       - ENGAGEMENT_ANALYTICS_ENABLED=${ENGAGEMENT_ANALYTICS_ENABLED:-true}
       - ENGAGEMENT_RETENTION_DAYS=${ENGAGEMENT_RETENTION_DAYS:-365}
+      # Voice channel (#264): browser voice messages transcribed LOCALLY by
+      # faster-whisper in this container. ON in the dev stack so the feature is
+      # exercised end to end; OFF here, because enabling it is also what
+      # authorizes the one-time Whisper model download onto the host.
+      - VOICE_MESSAGES_ENABLED=${VOICE_MESSAGES_ENABLED:-false}
+      - VOICE_MESSAGE_MAX_BYTES=${VOICE_MESSAGE_MAX_BYTES:-2097152}
+      - VOICE_MESSAGE_MAX_DURATION_SECONDS=${VOICE_MESSAGE_MAX_DURATION_SECONDS:-90}
+      - VOICE_RATE_LIMIT_REQUESTS=${VOICE_RATE_LIMIT_REQUESTS:-3}
+      - VOICE_RATE_LIMIT_WINDOW_SECONDS=${VOICE_RATE_LIMIT_WINDOW_SECONDS:-60}
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8}
+      # WHISPER_MODEL_DIR is deliberately NOT forwarded: it is the mount target
+      # of the whisper_models volume below, and an owner pointing it at an
+      # unmounted path would re-download the model on every container start
+      # (same reasoning as LINKEDIN_COOKIES_DIR above).
       # Same value the proxy service gets below (#273): the backend believes
       # X-Real-IP / X-Forwarded-For only from these peers when keying its
       # per-client-IP rate limiters, so a spoofed header cannot mint a fresh
@@ -342,3 +361,4 @@ volumes:
   ollama_data:
   open-webui_data:
   linkedin_cookies:
+  whisper_models:

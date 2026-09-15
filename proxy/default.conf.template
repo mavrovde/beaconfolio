@@ -62,6 +62,15 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # The APPLICATION owns the upload limit, not this hop (#264). nginx's
+        # default client_max_body_size is 1m, which is BELOW the voice-message
+        # cap (VOICE_MESSAGE_MAX_BYTES, 2 MB): a ~90s Opus recording is ~1.1 MB,
+        # so the default silently turned the endpoint's structured
+        # `413 {"detail": "..."}` into nginx's opaque HTML 413 and the app's cap
+        # became unreachable through the proxy. Keep this strictly ABOVE the
+        # largest public app cap so the app is the one that answers; the app
+        # still bounds memory itself with a `read(max + 1)`.
+        client_max_body_size 3m;
         # The AI endpoints stream NDJSON incrementally and the UI renders tokens
         # as they arrive. MEASURED (#198): nginx already forwarded incrementally
         # here without these directives — 365 chunks, first at 1.6s, spread over
@@ -115,6 +124,13 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_buffering off;
+        # Same reasoning as the public block, with the admin uploads' own caps:
+        # MAX_PROFILE_JSON_BYTES and MAX_PROFILE_PHOTO_BYTES are both 5 MB
+        # (app/api/admin_profile.py) and a CV is a PDF — all above nginx's 1m
+        # default, which would have rejected them here before the app ever saw
+        # the request. Found while fixing the public case; one line, same class
+        # of bug, so it is fixed rather than left as a trap for the next upload.
+        client_max_body_size 6m;
     }
 
     # Admin SPA (static nginx container)
