@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Placeholder for next release.
+
+## [1.14.3] - 2026-09-15
+
+### Added
 - **A mutation contract on EVERY repo-contract check (#393)** — the nine self-test harnesses
   that had none now neuter one enforcement arm at a time in a copy and require their pinned
   case to go red: `check_env_example_complete` (4 mutants), `check_live_freshness` (5),
