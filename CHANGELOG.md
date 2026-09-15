@@ -5,7 +5,15 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- Placeholder for next release.
+- **v1.14.3 release retrospective (rule 8)** — `docs/retrospectives/v1.14.3.md`, sixth in the
+  series; trend table extended. Headlines: mean rounds 2.00 (best since v1.14.0) at a RISING
+  median PR size; zero post-merge verdict back-fills for the first time; one rule-13 violation
+  (#412, the P0 revert — retrospective review posted, evidence added to #409). Config changes:
+  the release-manager charter forbids premature release cuts and unreviewed reverts and switches
+  tagging to the API path; the PLAYBOOK mutation-check rule broadened to every new control
+  (nine class-G findings this window); lessons §70 (bump_version rotates the CHANGELOG itself;
+  rotated entries are unrewordable in the rotation PR) and §71 (CodeQL default-setup runs
+  cannot be re-run; single-SHA red with no error text is an upload fault).
 
 ## [1.14.3] - 2026-09-15
 

@@ -89,6 +89,13 @@ and `backend/docker-entrypoint.sh` (`set -e`, `db_probe.py`) crash-loops — a f
 ## Workflow
 1. **Scope.** Confirm which issues/PRs are in this release (given to you, or infer
    from merged PRs since the last tag: `gh pr list --state merged`, `git log <lastTag>..main`).
+   **Never cut the release PR while issues planned under `release:vX.Y.Z` are still open**
+   unless the owner explicitly de-scopes them, named one by one. At v1.14.3 the release PR
+   (#411) was cut with 12 planned issues open; the owner-ordered revert (#412) cost two PRs,
+   a cancelled deploy, and — merged in the P0 scramble — the window's only rule-13 violation.
+   **A revert or emergency PR is still a PR: it gets an expedited verdict BEFORE merge**
+   (rule 13: "expedited, not skipped" — #428's expedited round measured 21 minutes; #412's
+   skipped one produced the violation).
 1b. **Clear the dependency tranche BEFORE assembly starts — it carries no rule-13 carve-out.**
    (v1.14.2 retro §1.) **This is where rule 13 breaks, twice now.** #321 merged with zero
    verdicts at v1.14.0; at v1.14.2 **six PRs merged in an 18-minute window during assembly** —
@@ -133,8 +140,12 @@ and `backend/docker-entrypoint.sh` (`set -e`, `db_probe.py`) crash-loops — a f
    On red, pull the failed job logs, pinpoint the cause, and hand a precise fix brief
    to `backend-dev`/`frontend-dev` (or use `devops-pipeline`); re-watch until green.
    Fix-forward — never leave prod half-deployed.
-9. **Tag & release.** `git tag vX.Y.Z <full-sha> && git push origin vX.Y.Z`;
-   `gh release create vX.Y.Z --title ... --notes <changelog section>`.
+9. **Tag & release.** Create the tag ref **via the API on the already-pushed merge SHA** —
+   `gh api repos/{owner}/{repo}/git/refs -f ref=refs/tags/vX.Y.Z -f sha=<full-sha>` — then
+   `gh release create vX.Y.Z --title ... --notes <changelog section>`. Two measured failures
+   of the old path (v1.14.3): `gh release create --target <sha>` without a pre-existing tag
+   returns HTTP 422, and a local `git push origin vX.Y.Z` presents the pre-push gate with an
+   empty diff, which deliberately selects the FULL round.
 10. **Security check (rule 8).** Review CodeQL + Dependabot for new/resolved alerts;
     triage (or hand to `security-triage`). Confirm alerts the release fixed show `fixed`.
     Alongside it, run the **plugin curation re-review** (#122): re-check the CLAUDE.md

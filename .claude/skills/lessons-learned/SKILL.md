@@ -1966,6 +1966,26 @@ three neutered checks look killed — measured while writing `check_changelog_me
 Locally the pre-push gate runs plain cases only (§63's budget); CI runs the contracts
 unconditionally — that split is deliberate, keep it.
 
+## 70. `bump_version.sh` rotates the CHANGELOG ITSELF — and a rotated entry cannot be reworded inside the rotation PR (v1.14.3)
+
+Measured during the v1.14.3 release PR (#428): `./bump_version.sh --patch` bumps every version
+carrier AND rotates `[Unreleased]` into the new `## [X.Y.Z]` heading. Hand-rotating the
+CHANGELOG on top produced TWO `[1.14.3]` headings and two stubs — run the script, then verify,
+never both. Second half, by design rather than accident: `check_changelog_merge.sh` check 4
+fails the merge if any base-`[Unreleased]` line is LOST, so **rewording a rotated entry inside
+the rotation PR is impossible** (the reword "loses" the base line). Reword before rotating, or
+in a follow-up after the release; the pre-push gate blocked the in-rotation attempt and the
+reviewer independently reproduced the impossibility (#428 nit 4, deferral accepted).
+
+## 71. CodeQL default-setup runs cannot be re-run — only a new commit triggers fresh analysis (v1.14.3)
+
+CodeQL "default setup" is a dynamic workflow: a failed run answers `gh run rerun` with "cannot
+be retried", `rerun --failed` with 403, and a check-suite `rerequest` with 404. The only lever
+is pushing a new commit, which schedules a fresh analysis. Diagnostic that matters before
+panicking: a red on a SINGLE SHA with no error text in the logs, while the runs before and
+after on the same branch are green, is an **upload fault, not a code regression** — measured on
+#428, where the legitimate next commit came back green on all three languages.
+
 ## Where the rules live (AI-config map)
 
 - **`CLAUDE.md`** — the authoritative numbered rules (engineering rules 1–13, issue-tracking flow,
