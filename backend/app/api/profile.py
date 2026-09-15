@@ -1,5 +1,6 @@
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +9,7 @@ from app.api.site_settings import read_availability_or_default
 from app.config import settings
 from app.database import get_db
 from app.logger import logger
+from app.models.profile_photo import ProfilePhoto
 from app.models.profile_snapshot import ProfileSnapshot
 from app.services.json_resume import JsonResume, ResumeContext, build_json_resume
 from app.services.rate_limit import SlidingWindowRateLimiter, rate_limit_dependency
@@ -118,6 +120,33 @@ async def get_active_profile(
     # Never serve the raw uploaded blob — project to the public allowlist so an
     # uploaded scraper JSON cannot leak non-public PII.
     return public_profile_view(profile.data)
+
+
+@router.get("/photo", dependencies=[Depends(_enforce_rate_limit)])
+async def get_profile_photo(db: AsyncSession = Depends(get_db)):
+    """The uploaded portrait (#333); 404 when none has been uploaded.
+
+    The hero renders this URL directly in an ``<img>`` and falls back to its
+    baked placeholder on error, so a fresh fork looks exactly as before the
+    first upload. Short public cache: the photo changes rarely, but a
+    replacement should show up without a hard refresh ritual.
+    """
+    result = await db.execute(
+        select(ProfilePhoto).order_by(ProfilePhoto.updated_at.desc()).limit(1)
+    )
+    photo = result.scalar_one_or_none()
+    if photo is None:
+        # no-store: a cached 404 would hide a first upload for max-age.
+        raise HTTPException(
+            status_code=404,
+            detail="No profile photo uploaded.",
+            headers={"Cache-Control": "no-store"},
+        )
+    return Response(
+        content=photo.data,
+        media_type=photo.content_type,
+        headers={"Cache-Control": "public, max-age=300"},
+    )
 
 
 async def _bundled_profile(language: str) -> dict | None:

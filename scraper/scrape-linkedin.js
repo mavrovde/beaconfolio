@@ -3,11 +3,15 @@ import { config } from 'dotenv';
 import { writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { extractPhotoUrl } from './extract-photo.js';
 
 config();
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUTPUT_FILE = join(__dirname, 'profile_data.json');
+// #333: the avatar lands in a GITIGNORED file — a real face must never enter
+// this PUBLIC repo (#66); it reaches the site only via the admin photo upload.
+const PHOTO_FILE = join(__dirname, 'profile_photo.jpg');
 const USER_DATA_DIR = join(__dirname, '.chrome-profile');
 
 const LINKEDIN_EMAIL = process.env.LINKEDIN_EMAIL;
@@ -281,6 +285,7 @@ async function main() {
 
     const profile = buildProfile(included);
     writeFileSync(OUTPUT_FILE, JSON.stringify(profile, null, 2), 'utf-8');
+    await downloadPhoto(page, included);
 
     console.log('\n========== RESULT ==========');
     console.log(`Name:            ${profile.name}`);
@@ -297,6 +302,33 @@ async function main() {
     console.error('Error:', e.message);
   } finally {
     await context.close();
+  }
+}
+
+// ─────────────────────────── Avatar (#333) ───────────────────────────
+// LinkedIn is the designated portrait source when no other exists (owner
+// directive 2026-09-14). Extraction lives in extract-photo.js so it is
+// unit-tested (extract-photo.test.js) without a live session.
+
+async function downloadPhoto(page, included) {
+  // Everything — extraction included — stays inside the try: this leg must
+  // never abort main() after profile_data.json is written (#422 round 1,
+  // finding 3: an extraction throw used to suppress the RESULT block).
+  try {
+    const url = extractPhotoUrl(included);
+    if (!url) {
+      console.log('Photo:           — (no avatar in the profile payload)');
+      return;
+    }
+    // page.request rides the authenticated session's cookies.
+    const res = await page.request.get(url);
+    if (!res.ok()) throw new Error(`HTTP ${res.status()}`);
+    const body = await res.body();
+    writeFileSync(PHOTO_FILE, body);
+    console.log(`Photo:           ${body.length} bytes -> ${PHOTO_FILE} (gitignored; upload via /linkedin-sync step 3)`);
+  } catch (err) {
+    // The photo is a nice-to-have leg of the scrape — never fail the profile run over it.
+    console.log(`Photo:           download failed (${err.message}) — continuing without`);
   }
 }
 

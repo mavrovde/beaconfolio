@@ -7,7 +7,8 @@
   <div class="container mx-auto px-6 text-center z-10">
     <div *ngIf="profile; else loading">
       <div class="relative w-32 h-32 md:w-40 md:h-40 mx-auto mb-8">
-        <img src="assets/images/profile.png" alt="Profile Photo"
+        <img [src]="photoFailed ? placeholderUrl : photoUrl" (error)="onPhotoError()" alt="Profile Photo"
+          data-testid="profile-photo"
           class="relative w-full h-full object-cover rounded-none border-2 border-primary grayscale hover:grayscale-0 transition-all duration-500" />
       </div>
 

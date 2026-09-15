@@ -95,7 +95,11 @@ cp .env.example .env
 #    ⚠️ WHICH .env: production reads ONLY the deploy dir's .env (this file,
 #    /opt/beaconfolio/.env) — not your laptop's checkout, not a server
 #    debug workspace. Edit here, then `docker compose restart <service>`.
-#    Then upload the real Profile Data JSON + CV via the admin panel.
+#    Then upload the real Profile Data JSON + CV via the admin panel — and the
+#    portrait (#333), which has NO panel button yet (one authenticated API
+#    call): POST /api/app/admin/profile/photo (JPEG/PNG <= 5 MB); it is
+#    stored in the DB, so it survives every rollout, and until uploaded the
+#    hero shows the bundled placeholder. /linkedin-sync step 3 automates it.
 #    Image coordinates: IMAGE_REPO defaults to ghcr.io/mavrovde/beaconfolio;
 #    set IMAGE_TAG to the release you are deploying (e.g. 1.12.0).
 

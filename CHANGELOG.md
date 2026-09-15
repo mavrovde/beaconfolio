@@ -59,6 +59,18 @@ All notable changes to this project will be documented in this file.
   committed) plus one apply. The wiki's planning-phase edge sketch is replaced by a pointer
   to the committed file with its three deltas reconciled, and the port registry gains
   beaconfolio's `127.0.0.1:5433` Postgres binding.
+- **Runtime profile photo — the last baked-in identity element goes runtime (#333)** — the
+  hero no longer hardcodes the bundled placeholder: an admin uploads a portrait
+  (`POST {api}/admin/profile/photo`, JPEG/PNG ≤ 5 MB validated by MAGIC BYTES, not filename;
+  `DELETE` removes it) stored in the DB (`profile_photos`, migration `photo0011`) so it
+  survives every rollout; the public `GET {api}/profile/photo` serves it (404 before the first
+  upload) and the hero renders that URL with a browser-side error→placeholder fallback — a
+  fresh fork looks exactly as before, no rebuild, no restart (#65/#66 completed). The LinkedIn
+  scraper now also saves the profile avatar to a GITIGNORED `scraper/profile_photo.jpg`
+  (largest vectorImage artifact, authenticated session) and `/linkedin-sync` step 3 uploads it
+  through the admin endpoint — a face never enters the public repo. Backend suite +7/-0 at
+  100%; hero Vitest cases for both src states; new Playwright spec covers the fork-default
+  fallback AND the real upload→render flow with finally-restore.
 - **Certificate-expiry alarm in the Live Freshness workflow (#310)** — a daily "Certificate
   expiry" step measures `notAfter` for every hostname in the `TLS_HOSTNAMES` repository variable
   (default: the maintainer's three) and goes red under 21 days remaining — Caddy renews at ~30
