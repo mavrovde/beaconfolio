@@ -5,14 +5,21 @@ export default defineConfig({
   timeout: 120000,
   fullyParallel: false, // Run tests sequentially to avoid shared state conflicts
   forbidOnly: !!process.env.CI,
-  retries: 2, // Always retry to handle flakiness
+  // No blanket retries (#337 AC 2): "always retry" masked the three
+  // load-contention flakes for months — a red must mean something. Any future
+  // per-spec retry needs an inline comment naming the upstream race and its
+  // narrow signature (the run_frontend_suites.sh precedent).
+  retries: 0,
   workers: 1, // Sequential execution needed for profile/sql tests sharing admin user
   reporter: 'html',
   use: {
     ignoreHTTPSErrors: true,
-    trace: 'on-first-retry',
+    // retain-on-failure, not on-first-retry: with retries at 0 there is no
+    // "first retry", so the retry-gated settings would never capture anything
+    // and a CI red would ship screenshots only (#426 review, major 4).
+    trace: 'retain-on-failure',
     screenshot: 'on',
-    video: 'on-first-retry',
+    video: 'retain-on-failure',
   },
   projects: [
     {

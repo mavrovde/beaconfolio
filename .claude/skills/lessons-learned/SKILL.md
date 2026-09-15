@@ -1923,6 +1923,29 @@ Related: §59 (a guard nobody proved can fire is not a guard); the same PR's oth
 an open `case` fall-through treating any unknown argument as "apply" — is the same shape:
 the DEFAULT path of an ops script must be the read-only one.
 
+## 68. An UNANCHORED URL wait that the CURRENT page already matches is a vacuous gate — and the backlog it hides surfaces as someone else's flake (#337)
+
+`page.waitForURL(/\/posts/)` after clicking Publish looked like "wait for the save to
+complete". It waited for nothing: the editor lives at `/posts/new`, which that regex
+already matches, so the wait resolved instantly and the loop plowed on while each create
+POST was still in flight — and each POST synchronously awaits an Ollama embedding
+(~2-4s serialized). Fifteen creations queued a ~40s commit backlog, and the 20s
+"post is queryable" poll on the LAST slug lost the race by **half a second** (row
+committed 05:11:10.960; poll expired ~05:11:10.5). The failure then read as a flaky
+pagination spec — two subsystems away from the vacuous wait that caused it.
+
+The diagnostic trap on top: the backend access log looked like proof the POSTs never
+happened (3 logged for 23 DB rows) — but uvicorn logs a request only when the response
+completes with a live client, and the abandoned-by-navigation requests kept running
+server-side, committed, and logged nothing. **The DB rows' timestamps, not the access
+log, are the ground truth for "did the write happen and when".**
+
+Rules: anchor URL waits to the DESTINATION (`/\/posts$/`), never a substring the origin
+page also matches; after any wait, ask "what state can the page ALREADY be in that
+satisfies this?"; and when a spec creates data it later reads, gate on the DATA (API
+poll), not on navigation. A blanket `retries: N` in the runner config buries exactly
+this class — remove it and let a red mean something.
+
 ## Where the rules live (AI-config map)
 
 - **`CLAUDE.md`** — the authoritative numbered rules (engineering rules 1–13, issue-tracking flow,

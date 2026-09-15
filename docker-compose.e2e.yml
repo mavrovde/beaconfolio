@@ -15,6 +15,15 @@ services:
       # here protects every path that uses this overlay, not just the one that
       # remembers to export it.
       - BEACONFOLIO_GEMINI_API_KEY=
+      # E2E ONLY (#337): on the CPU-only test stack under full-suite load
+      # (serialized embedding backlog + OLLAMA_NUM_PARALLEL=2), first-token
+      # latency can exceed prod's 30s per-read stream budget — the backend
+      # then substitutes degraded text and the unmocked NDJSON contract spec
+      # red-flags it. 120s absorbs the queue; prod keeps the tight default.
+      # CI starts its stack from docker-compose.prod.yml ALONE, so both E2E
+      # jobs (deploy.yml, pr-evidence.yml) inject this same value via job env
+      # — prod compose reads ${LLM_STREAM_TIMEOUT_SECONDS:-30.0}.
+      - LLM_STREAM_TIMEOUT_SECONDS=120.0
 
   frontend:
     build:
