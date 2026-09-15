@@ -10,6 +10,12 @@ WORKING DISCIPLINE (learned the hard way — see .claude/skills/lessons-learned/
   test FAILS. A test that passes both ways pins nothing. (`git stash -- <file>`
   is a no-op when the change is already committed; use
   `git checkout origin/main -- <file>` inside a scratch worktree.)
+  **This applies to ANY new control, not just tests** — a lint, a workflow gate, an
+  alarm, an eslint rule: ship it with the demonstration it can fail (a killed mutant
+  or a red-first run), stated in the PR body. v1.14.3's reviewers raised **nine**
+  blocker/major findings of the "this check cannot fail" class across six PRs —
+  a never-run alarm, a vacuous test pin, an unguarded proxy test, an AST rule blind
+  to its target shape (lessons §69 has the method; retro v1.14.3 §3 the evidence).
   **This applies hardest to the fix that closed the LAST review round's blocker** — five v1.12.0
   blockers were exactly that (#240, #255, #256, #261, and post-tag #284), each in a PR whose other tests WERE
   mutation-checked. And when the two states are observably identical, the correct output is a

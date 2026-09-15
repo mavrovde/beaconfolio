@@ -42,6 +42,7 @@ measured them; **`n-a` means not measured, never estimated.**
 | [v1.14.0](v1.14.0.md) | 11 | 23 / **20** | **1.82** | 27% (3/11)⁶ | 45%⁷ | **4**⁵ | n-a | 1 (#321) | 20 | **8.38M**³ | 762k³ | **35.5h**³ · 53.0h tag→tag |
 | [v1.14.1](v1.14.1.md) | 17¹¹ | 44 / **41**¹⁰ | **2.41**¹⁰ | **29% (5/17)** | 59%⁸ | **5**⁵ | **2** | 1 (#355) | 8 | **2.60M**⁹ | **153k**⁹ | **6.0h**⁹ · 107h tag→tag |
 | [v1.14.2](v1.14.2.md) | 14¹² | 40 / **38**¹³ | **2.71**¹³ | **0% (0/14)**¹³ | 63%¹³ | **22**⁵ ¹⁴ | **8** | **6 of 14 (43%)**¹⁵ | 7 | not recorded¹⁶ | n-a¹⁶ | n-a¹⁶ · **20.1h tag→tag** |
+| [v1.14.3](v1.14.3.md) | 17 | 36 / **34**¹⁷ | **2.00**¹⁷ | **18% (3/17)**¹⁷ | 50%¹⁷ | **8**⁵ (2 on the retro PR) | **9**¹⁸ | **1 (#412)**¹⁹ | 8 | partial²⁰ | n-a²⁰ | n-a²⁰ · **15.8h tag→tag** |
 
 ¹ v1.12.0's verdict headings predate the mandated form, so a canonical-heading re-count undercounts
 that window (15). From v1.13.0 the heading is charter-mandated **and** gate-enforced, so this column
@@ -161,6 +162,38 @@ carry nothing and one filled row is still in progress. Summing it would repeat t
 exists to stop. v1.14.1 ↔ v1.14.2 were to be the first honestly comparable token figures; they
 are not, and **#386 stays open on this criterion alone**.
 
+¹⁷ **The first window where naive == replayed: zero verdicts were posted after their PR
+merged**, so every cell is both at once. All 34 canonical verdicts are pre-merge; the 16
+reviewed PRs' APPROVEs are all delta-confirms at the merged head (stale approvals **0 of 16**).
+Mean rounds over the 16 actually reviewed: **2.13**; rework share over them: 53%.
+**The canonical cells use the OPENS-WITH filter** (marker anchored at the START of the first
+non-empty line — the fn-10 fix, now in "How to count consistently"): the older in-line test
+returns **35 / 2.06 / 51.4%** on this window by admitting one author comment on #421 that
+itself ends *"(Not a verdict…)"*. v1.14.1's cells (41/2.41/59%) were published under the
+in-line test, fn 10 stating their anchored equivalents (40/2.35/58%) — compare like with like.
+¹⁸ **All 9 class-G findings were raised BEFORE #393's mutation contracts merged in #427, the
+window's last feature PR** — this cell is the pre-control baseline, and most instances sit
+outside #393's mechanical scope (workflow steps, an eslint rule, a proxy test, a Playwright
+config). The v1.14.3 prediction splits the clause accordingly.
+¹⁹ **#412, the P0 revert of the premature release cut, merged 9 minutes after opening with
+zero verdicts.** The bypass log does not exist (never reached a hooked `gh pr merge`), and the
+weekly `Verdict Audit` had already fired for the week — mechanical detection would have waited
+until Sep 21 (#409's cadence half, second measured instance). The retrospective review is
+posted on #412; see [v1.14.3.md §4](v1.14.3.md).
+²⁰ **Partial, stated as such: 3,405k tokens / 1,727 min over 8 of the 11 board items**; the
+other three were not captured at close-the-loop and are not reconstructable
+(`Review rounds`/`Agent`/`Model` are 11 of 11 after the retro's thread-derived back-fill).
+Summing a gap is the note-3 defect; **#386 stays open a third release on this criterion.**
+
+**v1.14.2's prediction: 2 of 6 clauses PASS, 4 FAIL** — but the two headline failures moved
+hard in the right direction: no-valid-APPROVE merges **6 → 1** (and the 1 is the predicted
+"never reached the gate" mode, quoted via the absent bypass log), class F **22 → 8** with the
+retro-PR share 18 → 2. Class G's ❌ (9, target ≤3) is scored beside its own rule: **#393
+shipped** (#427) but as the window's last feature PR, so every instance predates the control.
+Passes: class N = 1 ✅, mean rounds 2.00 / zero ≥4-verdict PRs ✅ with median files/PR RISING
+7 → 8 (the falsifier did not fire). Telemetry ❌ for the third time — the v1.14.3 prediction
+makes that clause binary. See [v1.14.3.md §7](v1.14.3.md).
+
 **v1.14.1's prediction: 2 of 6 clauses PASS, 3 FAIL, 1 ⚠️ unmeasured.** Class C findings **0** ✅
 (from 7 — #391 shipped in #398, and class B also went to zero); docs-only push **13s** ✅ (target
 ≤2 min). Failed: **PRs merged with no verdict 5** ❌ (from 1, plus one merged against a standing
@@ -258,6 +291,14 @@ So the series stays comparable, count the same way every time:
                              | test(\"REQUEST CHANGES|APPROVED?\"))) | length)
           | add"
   ```
+
+  **From v1.14.3 the canonical filter is ANCHORED: the marker must OPEN the first non-empty
+  line** (`startswith`/`^`-anchored, not `test(...)` anywhere in the line) — the fix footnote
+  10 promised. The in-line form admits an author body whose first line merely *mentions* a
+  verdict: measured on #421, a live-demonstration comment ending *"(Not a verdict; the
+  standing verdict is the REQUEST CHANGES above.)"* — which is fn 10's #373 hole one level
+  deeper. When re-counting a pre-v1.14.3 window, use the filter its row was published under
+  (each row's footnote says which).
 
   **…and it also UNDER-counts, which is the half that actually changed a headline number.** Always
   run the widened sweep once — print every first line that matched NEITHER marker and read them:
