@@ -21,9 +21,10 @@ import { API_PREFIX } from '../config';
  * back to the in-stack Ollama. No paid API is reachable.
  */
 test.describe('Multi-Agent Conversation — unmocked contract', () => {
-  // 180s, not 90s (#337): Ollama serializes requests (OLLAMA_NUM_PARALLEL
-  // default), so under full-suite load this generation queues behind whatever
-  // embedding/generation requests earlier specs left in flight. This is a
+  // 180s, not 90s (#337): the stack allows only 2 concurrent Ollama requests
+  // (OLLAMA_NUM_PARALLEL=2 in docker-compose.prod.yml), so under full-suite
+  // load this generation queues behind whatever embedding/generation requests
+  // earlier specs left in flight. This is a
   // CONTRACT test, not a latency benchmark — the budget must absorb the queue,
   // and the issue's proposed action sanctions exactly this ("serialize or
   // extend timeout").

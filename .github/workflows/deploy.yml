@@ -741,6 +741,13 @@ jobs:
           # secret, so it opts into a random per-process signing key instead —
           # test-scoped, nothing committed, nothing injected from secrets.
           JWT_ALLOW_EPHEMERAL_SECRET: "true"
+          # #337: this job starts the stack from the prod compose file ALONE,
+          # so the docker-compose.e2e.yml stream-budget widening never reaches
+          # it — inject the same value here (prod compose reads
+          # ${LLM_STREAM_TIMEOUT_SECONDS:-30.0}). Without it the CPU-only
+          # runner's queued first token exceeds 30s and the backend substitutes
+          # degraded text, failing the unmocked NDJSON contract spec.
+          LLM_STREAM_TIMEOUT_SECONDS: "120.0"
         run: |
           # Start stack
           docker compose -f docker-compose.prod.yml up -d

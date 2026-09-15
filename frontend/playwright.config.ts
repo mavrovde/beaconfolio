@@ -14,9 +14,12 @@ export default defineConfig({
   reporter: 'html',
   use: {
     ignoreHTTPSErrors: true,
-    trace: 'on-first-retry',
+    // retain-on-failure, not on-first-retry: with retries at 0 there is no
+    // "first retry", so the retry-gated settings would never capture anything
+    // and a CI red would ship screenshots only (#426 review, major 4).
+    trace: 'retain-on-failure',
     screenshot: 'on',
-    video: 'on-first-retry',
+    video: 'retain-on-failure',
   },
   projects: [
     {

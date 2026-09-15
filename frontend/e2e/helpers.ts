@@ -1,4 +1,4 @@
-import { expect } from '@playwright/test';
+import { expect, type APIRequestContext } from '@playwright/test';
 import { config, API_PREFIX } from './config';
 
 /**
@@ -11,7 +11,7 @@ import { config, API_PREFIX } from './config';
  * raced the propagation on every full-suite run).
  */
 export async function waitForPostQueryable(
-    request: { get: (url: string) => Promise<{ status: () => number }> },
+    request: APIRequestContext,
     slug: string,
 ): Promise<void> {
     await expect

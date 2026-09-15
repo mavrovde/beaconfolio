@@ -153,10 +153,13 @@ All notable changes to this project will be documented in this file.
   whose synchronous Ollama embedding serializes seconds per post — and the queryable-poll raced a
   ~40s commit backlog; all five sites are now anchored to `/posts$`. `blog-interactions` gains the
   `waitForPostQueryable` propagation gate (now a shared `e2e/helpers.ts`). The unmocked NDJSON
-  contract spec no longer degrades on the CPU-only stack's model cold-load: the e2e overlay raises
-  `LLM_STREAM_TIMEOUT_SECONDS` to 120s and pins `OLLAMA_KEEP_ALIVE=1h` (prod keeps the tight
-  defaults). The blanket Playwright `retries: 2` — which masked these for months — is REMOVED:
-  a red run means something again (AC 2).
+  contract spec no longer degrades under full-suite load: with `OLLAMA_NUM_PARALLEL=2` the queued
+  first token can exceed prod's 30s per-read stream budget, so the e2e overlay raises
+  `LLM_STREAM_TIMEOUT_SECONDS` to 120s — and both CI E2E jobs (which start the stack from the
+  prod compose file alone) inject the same value via job env (prod itself keeps the tight
+  default). The blanket Playwright `retries: 2` — which masked these for months — is REMOVED,
+  and `trace`/`video` move from the now-dead `on-first-retry` to `retain-on-failure`:
+  a red run means something again, and it ships its artifacts (AC 2).
 - **The importer's processed-URN ledger is per-target (#334)** — one global `state.json`
   remembered *that* a post was imported, not *where to*, so a brand-new server silently got a
   partial first import (measured 2026-09-10: 21 of 25 posts "skip (unchanged)" against an empty

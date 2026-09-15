@@ -15,11 +15,14 @@ services:
       # here protects every path that uses this overlay, not just the one that
       # remembers to export it.
       - BEACONFOLIO_GEMINI_API_KEY=
-      # E2E ONLY (#337): the CPU-only test stack cold-loads the generation
-      # model on its first request, and first-token latency can exceed prod's
-      # 30s per-read stream budget — the backend then substitutes degraded
-      # text and the unmocked NDJSON contract spec red-flags it. 120s absorbs
-      # a cold load; prod keeps the tight default.
+      # E2E ONLY (#337): on the CPU-only test stack under full-suite load
+      # (serialized embedding backlog + OLLAMA_NUM_PARALLEL=2), first-token
+      # latency can exceed prod's 30s per-read stream budget — the backend
+      # then substitutes degraded text and the unmocked NDJSON contract spec
+      # red-flags it. 120s absorbs the queue; prod keeps the tight default.
+      # CI starts its stack from docker-compose.prod.yml ALONE, so both E2E
+      # jobs (deploy.yml, pr-evidence.yml) inject this same value via job env
+      # — prod compose reads ${LLM_STREAM_TIMEOUT_SECONDS:-30.0}.
       - LLM_STREAM_TIMEOUT_SECONDS=120.0
 
   frontend:
@@ -40,11 +43,3 @@ services:
       # can't recover a real client). Open the allowlist for the test run only.
       # Production ships CLOSED (empty ADMIN_ALLOWED_CIDRS -> loopback only).
       - ADMIN_ALLOWED_CIDRS=0.0.0.0/0
-
-  ollama:
-    environment:
-      # E2E ONLY (#337): keep loaded models resident for the whole suite —
-      # the default 5m keep_alive lets the generation model unload between
-      # the early specs and the late NDJSON contract spec, re-paying the
-      # cold load exactly when the budget is tightest.
-      - OLLAMA_KEEP_ALIVE=1h

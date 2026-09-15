@@ -266,6 +266,10 @@ jobs:
           BEACONFOLIO_GEMINI_API_KEY: ""
           ADMIN_ALLOWED_CIDRS: 0.0.0.0/0
           JWT_ALLOW_EPHEMERAL_SECRET: "true"
+          # #337: same as deploy.yml's e2e job — the prod-compose-only stack
+          # needs the widened stream budget injected via env, or the CPU-only
+          # runner fails the unmocked NDJSON contract spec on the 30s default.
+          LLM_STREAM_TIMEOUT_SECONDS: "120.0"
         run: |
           docker compose -f docker-compose.prod.yml up -d
 
