@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **The two wiki statistics articles no longer restate series figures** — `docs/wiki/`'s
+  `team-and-process.md` and `delivery-statistics.md` now link the canonical trend table and
+  per-release records instead of carrying copies (the v1.14.1-retro lesson, applied to the last
+  two surfaces that still held them); `delivery-statistics.md` is marked as the dated snapshot
+  it is and gains a links-only outcome note covering v1.14.2/v1.14.3 (#377/#393 shipped, the
+  telemetry meta-target missed twice, the gate falsifier fired).
+
 ### Added
 - **v1.14.3 release retrospective (rule 8)** — `docs/retrospectives/v1.14.3.md`, sixth in the
   series; trend table extended. Headlines: mean rounds 2.00 (best since v1.14.0) at a RISING

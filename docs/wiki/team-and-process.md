@@ -268,13 +268,15 @@ Two instruments, and a standing rule about both.
 
 **Effort telemetry, captured live.** Per-agent token and wall-clock cost is recorded
 *during* the cycle, because it is **not recoverable afterwards** — when a release
-manager was asked to reconstruct it, it correctly refused. The v1.14.1 baseline:
-**26 agent runs, 2,600,168 subagent tokens, 361.8 agent-minutes (6.0h), 23 of 26 runs
-(88%) review — 81% of spend.** The per-run table is committed as an appendix to
-`docs/retrospectives/v1.14.1.md`, because a number held only in a machine-local scratch
-file is not something a reader can check. (Subagent totals only; main-loop tokens are not
-included, so the true cycle cost is higher — state the caveat rather than implying
-precision the measurement lacks.)
+manager was asked to reconstruct it, it correctly refused. v1.14.1 is the one release
+with a complete per-run capture — **81% of its subagent spend went to review** — and
+the full table is committed as an appendix to
+[`docs/retrospectives/v1.14.1.md`](../retrospectives/v1.14.1.md), because a number held
+only in a machine-local scratch file is not something a reader can check. (Subagent
+totals only; main-loop tokens are not included, so the true cycle cost is higher —
+state the caveat rather than implying precision the measurement lacks.) The two
+releases since have NOT repeated that capture — each retro says so explicitly rather
+than summing the partial board fields, and #386 stays open on exactly this criterion.
 
 **GitHub Project 3** carries per-item `Tokens (k)`, `Time of processing (min)`,
 `Review rounds`, `Agent` and `Model`, updated **immediately on every merge**, never
@@ -322,14 +324,12 @@ nobody checks is decoration.
 ### The trend table
 
 Kept in `docs/retrospectives/README.md`, with documented counting conventions so the
-series stays comparable:
-
-| Release | PRs | Mean rounds | Approved r1 | Rework share |
-|---|---|---|---|---|
-| v1.12.0 | 10 | 2.4 | 20% | 58% |
-| v1.13.0 | 16 | 3.13 | 0% | 68% |
-| v1.14.0 | 11 | 1.82 | 27% | 45% |
-| v1.14.1 | 17 | 2.41 | 29% | 59% |
+series stays comparable. **The numbers are not restated here** — a copy of the trend
+table in this article went stale within one release and restating figures outside the
+canonical site is itself a counted defect class in this repository (the v1.14.1 retro
+PR was blocked on 13 findings of exactly that). Read the series there; as one current
+data point, v1.14.3 measured **2.00 mean review rounds per PR** with a *rising* median
+PR size ([the v1.14.3 retrospective](../retrospectives/v1.14.3.md)).
 
 The counting conventions are not pedantry — they were written because four hand counts
 of the same window (30, 32, 34, 29) were reported and **none reproduced**. Two lessons
@@ -352,27 +352,23 @@ counter-evidence was recorded alongside it: zero review rounds found nothing.
 
 v1.14.2's KPIs (issue #386) are typical of how direction becomes measurable. The owner
 asked for *"less review rounds, less costs, faster push, more dynamic"*; each became a
-target against a measured v1.14.1 baseline:
+numeric target against a measured v1.14.1 baseline — seven dimensions, from review
+rounds to docs-only push time (the target table lives on #386 and is reconciled in
+[`docs/retrospectives/v1.14.1.md`](../retrospectives/v1.14.1.md); it is not restated
+here).
 
-| Dimension | v1.14.1 baseline | v1.14.2 target |
-|---|---|---|
-| Mean review rounds / PR | **2.41** (41 verdicts, 17 PRs) | ≤ 1.6 |
-| Round-1 approvals | **29% (5 of 17)** | ≥ 50% |
-| Subagent tokens / merged PR | **~153k** (2.60M ÷ 17) | ≤ 120k |
-| Review share of spend | **81%** | ≤ 65% |
-| Docs-only push | full gate (~15 min) | ≤ 2 min |
-| PR opened → first verdict | often hours | ≤ 30 min |
-| Fake-greens reaching review | **5** | 0 |
-
-**The first three baseline cells are corrections, and the correction is itself the lesson.**
-Issue #386 filed them as *2.5 (33 rounds, 13 PRs)*, *15% (2 of 13)* and *~191k* — counted
-mid-assembly over a partial corpus that omitted four merged PRs, including the release PR. The
-canonical corpus is 17 PRs / 41 verdicts. Two of the targets were calibrated against numbers
-that were wrong in the *flattering* direction on rounds and the *harsh* direction on cost, so
-the baseline moved without the targets needing to. **A target measured against a wrong baseline
-is worse than no target** — it produces confident reporting of a change that did not happen.
-The canonical figures are in `docs/retrospectives/v1.14.1.md`, which is where this table is
-reconciled from; #386 carries the correction as a comment.
+**The lesson from that table is the correction it needed.** Three of #386's baseline
+cells were filed from a mid-assembly count over a partial corpus that omitted four
+merged PRs, including the release PR — the rounds cell was wrong in the *flattering*
+direction and the cost cell in the *harsh* one, so the baseline moved without the
+targets needing to. **A target measured against a wrong baseline is worse than no
+target** — it produces confident reporting of a change that did not happen. How the
+targets actually scored, and how the prediction discipline evolved from them, is in
+each release's retrospective ([v1.14.2](../retrospectives/v1.14.2.md) §6/§8,
+[v1.14.3](../retrospectives/v1.14.3.md) §7/§8); the standing outcome after three
+releases is that the **process** clauses (no unreviewed merges, defect classes,
+rounds) became checkable and mostly held, while the **telemetry** clause has missed
+three times running — the v1.14.3 prediction makes it binary.
 
 ---
 
@@ -454,5 +450,6 @@ fail.**
 ## Links
 
 `CLAUDE.md` · `docs/retrospectives/` · `docs/wiki/production-deployment.md` ·
-`.claude/skills/` · Issues #386 (v1.14.2 KPIs), #377 (scoped pre-push gate),
-#246 (AI-config drift check), #310 (host lifecycle).
+`.claude/skills/` · Issues #386 (KPIs/telemetry, open), #377 (scoped pre-push gate,
+shipped v1.14.2), #393 (mutation contracts, shipped v1.14.3), #246 (AI-config drift
+check), #310 (host lifecycle, → v1.17.0).
