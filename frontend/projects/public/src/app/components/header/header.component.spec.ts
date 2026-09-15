@@ -4,8 +4,6 @@ import { By } from '@angular/platform-browser';
 import { vi, afterEach } from 'vitest';
 import { Router, provideRouter } from '@angular/router';
 
-import { TranslatePipe } from '@beaconfolio/shared';
-import { MockTranslatePipe } from '@beaconfolio/shared/testing';
 
 import { LanguageService } from '@beaconfolio/shared';
 import { MockLanguageService } from '@beaconfolio/shared/testing';

@@ -68,8 +68,10 @@ export class TableHelper<T> {
         // 2. Sort
         if (this.sortField) {
             result.sort((a, b) => {
-                const valA = a[this.sortField!] as any;
-                const valB = b[this.sortField!] as any;
+                // Rows are compared with relational `>` below; every sortable column
+                // in practice is a string, number or ISO date string.
+                const valA = a[this.sortField!] as string | number;
+                const valB = b[this.sortField!] as string | number;
 
                 if (valA === valB) return 0;
 

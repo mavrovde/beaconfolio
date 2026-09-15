@@ -125,7 +125,7 @@ describe('SystemStatsComponent - Browser', () => {
 
   it('should handle public stats error', () => {
     // Spy on console.error
-    const consoleSpy = vi.spyOn(console, 'error');
+    vi.spyOn(console, 'error');
 
     // Manually trigger the subscription logic with an error since the current mock in beforeEach is hardcoded for success
     // We can simulate the error behavior directly or mock the service differently for this test.

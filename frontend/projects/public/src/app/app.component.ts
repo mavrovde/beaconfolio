@@ -6,7 +6,7 @@ import { SeoService } from './services/seo.service';
 import { CookieConsentComponent } from './components/cookie-consent/cookie-consent.component';
 import { SystemStatsComponent } from './components/stats/stats.component';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
-import { map, delay } from 'rxjs';
+import { Observable, map, delay } from 'rxjs';
 
 import { ViewportScroller } from '@angular/common';
 
@@ -23,7 +23,7 @@ import { ViewportScroller } from '@angular/common';
   `,
 })
 export class AppComponent implements OnInit {
-  jsonLd$?: any;
+  jsonLd$?: Observable<SafeHtml | null>;
 
   constructor(
     private googleAnalyticsService: GoogleAnalyticsService,

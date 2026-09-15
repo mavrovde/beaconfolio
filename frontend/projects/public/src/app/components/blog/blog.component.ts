@@ -46,10 +46,10 @@ export class BlogComponent implements OnInit {
     private seoService: SeoService,
     private router: Router,
     private cdr: ChangeDetectorRef,
-    @Inject(PLATFORM_ID) private platformId: Object,
+    @Inject(PLATFORM_ID) private platformId: object,
     private siteConfig?: SiteConfigService
   ) {
-    // cd-safety-ok: assigns a private field consumed only inside later callbacks — nothing template-bound.
+    // eslint-disable-next-line no-restricted-syntax -- cd-safety-ok: assigns a private field consumed only inside later callbacks — nothing template-bound.
     this.siteConfig?.config$?.subscribe((cfg) => (this.site = cfg));
     this.unixUser$ = (this.siteConfig?.config$ ?? of(DEFAULT_SITE_CONFIG)).pipe(
       map((c) => (c.ownerName.split(' ')[0] || 'owner').toLowerCase())
@@ -201,8 +201,8 @@ export class BlogComponent implements OnInit {
     this.loadInitialPosts();
   }
 
-  onSearch(event: any) {
-    const query = event.target.value;
+  onSearch(event: Event) {
+    const query = (event.target as HTMLInputElement).value;
     // Use standard timeout for debouncing (simple implementation)
     setTimeout(() => {
       this.currentQuery = query;
@@ -264,7 +264,7 @@ export class BlogComponent implements OnInit {
     if (isPlatformBrowser(this.platformId) && navigator.share) {
       try {
         await navigator.share({ title: post.title, url });
-      } catch { }
+      } catch { /* the user dismissing the share sheet is not an error */ }
     } else if (isPlatformBrowser(this.platformId)) {
       await navigator.clipboard.writeText(url);
     }

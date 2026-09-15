@@ -35,7 +35,7 @@ export class HeroComponent {
   readonly availability$: Observable<{ state: string; key: string }>;
 
   constructor(
-    @Inject(PLATFORM_ID) private platformId: Object,
+    @Inject(PLATFORM_ID) private platformId: object,
     siteConfigService: SiteConfigService,
   ) {
     this.availability$ = siteConfigService.config$.pipe(

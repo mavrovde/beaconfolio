@@ -8,16 +8,16 @@
     <h2 class="section-title">&gt; {{ 'ADMIN.PROFILE_DATA_UPLOAD' | translate }}</h2>
     <form [formGroup]="uploadForm" (ngSubmit)="onUpload()" class="upload-form">
       <div class="field">
-        <label>&gt; {{ 'ADMIN.PROFILE_DATA_FILE' | translate }}</label>
-        <input type="file" accept=".json,application/json" (change)="onFileSelected($event)" />
+        <label for="profile-data-file">&gt; {{ 'ADMIN.PROFILE_DATA_FILE' | translate }}</label>
+        <input id="profile-data-file" type="file" accept=".json,application/json" (change)="onFileSelected($event)" />
       </div>
       <div class="field">
-        <label>&gt; {{ 'ADMIN.PROFILE_DATA_VERSION' | translate }}</label>
-        <input type="text" formControlName="version" placeholder="v1" class="terminal-input" />
+        <label for="profile-data-version">&gt; {{ 'ADMIN.PROFILE_DATA_VERSION' | translate }}</label>
+        <input id="profile-data-version" type="text" formControlName="version" placeholder="v1" class="terminal-input" />
       </div>
       <div class="field">
-        <label>&gt; {{ 'ADMIN.PROFILE_DATA_LANGUAGE' | translate }}</label>
-        <select [(ngModel)]="selectedLanguage" [ngModelOptions]="{ standalone: true }" class="terminal-input">
+        <label for="profile-data-language">&gt; {{ 'ADMIN.PROFILE_DATA_LANGUAGE' | translate }}</label>
+        <select id="profile-data-language" [(ngModel)]="selectedLanguage" [ngModelOptions]="{ standalone: true }" class="terminal-input">
           <option value="en">EN</option>
           <option value="de">DE</option>
         </select>

@@ -37,7 +37,7 @@ export class AdminChatComponent implements AfterViewChecked, OnInit {
     scrollToBottom(): void {
         try {
             this.scrollContainer.nativeElement.scrollTop = this.scrollContainer.nativeElement.scrollHeight;
-        } catch (err) { }
+        } catch { /* best-effort scroll; the container can be mid-teardown */ }
     }
 
     async sendMessage() {

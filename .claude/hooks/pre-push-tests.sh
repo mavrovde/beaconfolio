@@ -937,8 +937,9 @@ run_checks() {
 
   if [ "$PREPUSH_RUN_FRONTEND" = "1" ] && { leg fe:cdsafety || leg fe:shared || leg fe:public || leg fe:admin || leg fe:runner; }; then
     if leg fe:cdsafety; then
-      echo "== frontend cd-safety (zoneless repaint hazards, #118) =="
-      ( cd "$ROOT/frontend" && node scripts/check-cd-safety.mjs ) || return 1
+      echo "== frontend eslint (3 projects; includes the zoneless cd-safety rule, #118/#234) =="
+      ( cd "$ROOT/frontend" && npx eslint . ) || return 1
+      ( cd "$ROOT/frontend" && node scripts/eslint-cd-safety.test.mjs ) || return 1
     fi
     # PER-PROJECT selection (#377): a projects/public/** change must not pay for
     # `admin`. `shared` is upstream of both apps, so a change there selects all

@@ -36,7 +36,7 @@ describe('SeoService canonical URL handling', () => {
     const service = TestBed.inject(SeoService);
 
     service.updateSeo({ url: '/first' });
-    let link = document.querySelector("link[rel='canonical']") as HTMLLinkElement;
+    const link = document.querySelector("link[rel='canonical']") as HTMLLinkElement;
     expect(link).toBeTruthy();
     expect(link.getAttribute('href')).toBe('https://beaconfolio.com/first');
 

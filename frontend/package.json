@@ -17,11 +17,11 @@
     "test:coverage:shared": "vitest run --coverage --config projects/shared/vitest.config.ts",
     "test:coverage:public": "vitest run --coverage --config projects/public/vitest.config.ts",
     "test:coverage:admin": "vitest run --coverage --config projects/admin/vitest.config.ts",
-    "lint": "node scripts/make-social-image.test.mjs && node scripts/check-cd-safety.test.mjs && node scripts/check-cd-safety.mjs",
-    "lint:cd-safety": "node scripts/check-cd-safety.mjs",
+    "lint": "node scripts/make-social-image.test.mjs && node scripts/eslint-cd-safety.test.mjs && eslint .",
     "test:coverage": "npm run test:coverage:shared && npm run test:coverage:public && npm run test:coverage:admin",
     "e2e": "npx playwright test",
-    "serve:ssr:public": "node dist/public/server/server.mjs"
+    "serve:ssr:public": "node dist/public/server/server.mjs",
+    "lint:eslint": "eslint ."
   },
   "prettier": {
     "printWidth": 100,
@@ -60,18 +60,22 @@
     "@angular/compiler-cli": "^22.1.6",
     "@angular/platform-browser-dynamic": "^22.1.6",
     "@angular/ssr": "^22.1.8",
+    "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/express": "^5.0.6",
     "@types/node": "^26.5.1",
     "@vitest/browser-playwright": "^5.0.0",
     "@vitest/coverage-v8": "^5.0.0",
+    "angular-eslint": "^22.5.0",
+    "eslint": "^10.10.0",
     "jsdom": "^30.0.1",
     "ng-packagr": "^22.0.2",
     "stylelint": "^17.14.1",
     "stylelint-config-standard": "^40.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.0",
     "vitest": "^5.0.0"
   }
 }

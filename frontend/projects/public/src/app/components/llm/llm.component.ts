@@ -61,7 +61,7 @@ export class LlmComponent implements OnInit, AfterViewChecked {
   isConfigVisible = true;
   conversationStatus: string = '';
   conversationTimeRemaining = 300; // 5 minutes
-  private conversationTimer: any;
+  private conversationTimer: ReturnType<typeof setInterval> | undefined;
   multiMessages: Array<{ agent: number, content: string }> = [];
   public currentAgentMessage: { agent: number, content: string } | null = null;
   public appVersion = VERSION;
@@ -72,7 +72,7 @@ export class LlmComponent implements OnInit, AfterViewChecked {
     private cdr: ChangeDetectorRef,
     private router: Router,
     private seoService: SeoService,
-    @Inject(PLATFORM_ID) private platformId: Object
+    @Inject(PLATFORM_ID) private platformId: object
   ) { }
 
   ngOnInit() {
@@ -98,7 +98,7 @@ export class LlmComponent implements OnInit, AfterViewChecked {
     if (this.scrollContainer) {
       try {
         this.scrollContainer.nativeElement.scrollTop = this.scrollContainer.nativeElement.scrollHeight;
-      } catch (err) { }
+      } catch { /* best-effort scroll; the container can be mid-teardown */ }
     }
   }
 
@@ -409,7 +409,7 @@ export class LlmComponent implements OnInit, AfterViewChecked {
   }
 
   @HostListener('window:keydown.escape', ['$event'])
-  handleEsc(event: any) {
+  handleEsc(_event: KeyboardEvent) {
     if (this.isConfigVisible) {
       this.isConfigVisible = false;
     }

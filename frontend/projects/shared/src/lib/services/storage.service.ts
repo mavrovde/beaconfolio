@@ -11,7 +11,7 @@ export class StorageService {
     consent$: Observable<boolean>;
     private isBrowser: boolean;
 
-    constructor(@Inject(PLATFORM_ID) private platformId: Object) {
+    constructor(@Inject(PLATFORM_ID) private platformId: object) {
         this.isBrowser = isPlatformBrowser(this.platformId);
         this.consentSubject = new BehaviorSubject<boolean>(this.hasConsented());
         this.consent$ = this.consentSubject.asObservable();

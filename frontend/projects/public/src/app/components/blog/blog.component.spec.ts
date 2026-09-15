@@ -3,8 +3,7 @@ import { provideRouter, Router } from '@angular/router';
 import { BlogComponent } from './blog.component';
 import { BlogService } from '@beaconfolio/shared';
 import { LanguageService } from '@beaconfolio/shared';
-import { of, Observable, throwError } from 'rxjs';
-import { By } from '@angular/platform-browser';
+import { of, throwError } from 'rxjs';
 import { MockTranslatePipe } from '@beaconfolio/shared/testing';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 

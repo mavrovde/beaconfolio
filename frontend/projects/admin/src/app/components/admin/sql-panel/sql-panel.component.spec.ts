@@ -141,8 +141,8 @@ describe('SqlPanelComponent', () => {
     });
 
     it('should handle backup downloading without Content-Disposition', () => {
-        const createObjUrlSpy = vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:url');
-        const revokeObjUrlSpy = vi.spyOn(window.URL, 'revokeObjectURL');
+        vi.spyOn(window.URL, 'createObjectURL').mockReturnValue('blob:url');
+        vi.spyOn(window.URL, 'revokeObjectURL');
         const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click');
 
         component.backup();

@@ -88,7 +88,7 @@ export class PostEditorComponent implements OnInit {
         this.loading = false;
         this.cdr.detectChanges();
       },
-      error: (error) => {
+      error: () => {
         this.errorMessage = 'Failed to load post';
         this.loading = false;
         this.cdr.detectChanges();
@@ -265,8 +265,8 @@ export class PostEditorComponent implements OnInit {
 
   // ... (existing properties)
 
-  onFileSelected(event: any): void {
-    const file = event.target.files[0];
+  onFileSelected(event: Event): void {
+    const file = (event.target as HTMLInputElement).files?.[0];
     if (file) {
       this.selectedFile = file;
 

@@ -6,6 +6,9 @@ import { StorageService } from './storage.service';
 
 export type Language = 'en' | 'de';
 
+/** Nested i18n catalog: leaves are strings, branches nest. */
+export type TranslationTree = { [key: string]: string | TranslationTree };
+
 @Injectable({
   providedIn: 'root',
 })
@@ -13,7 +16,7 @@ export class LanguageService {
   private currentLangSubject = new BehaviorSubject<Language>('en');
   currentLang$ = this.currentLangSubject.asObservable();
 
-  private translationsSubject = new BehaviorSubject<any>({});
+  private translationsSubject = new BehaviorSubject<TranslationTree>({});
   translations$ = this.translationsSubject.asObservable();
 
   constructor(private http: HttpClient, private storageService: StorageService) {
@@ -41,7 +44,7 @@ export class LanguageService {
 
   private loadTranslations(lang: Language) {
     this.http
-      .get(`/assets/i18n/${lang}.json`)
+      .get<TranslationTree>(`/assets/i18n/${lang}.json`)
       .pipe(
         catchError((err) => {
           console.error(`Error loading translations for ${lang}`, err);
@@ -58,11 +61,12 @@ export class LanguageService {
     return this.translations$.pipe(
       map((translations) => {
         const keys = key.split('.');
-        let value = translations;
+        let value: unknown = translations;
         for (const k of keys) {
-          value = value?.[k];
+          // A leaf hit mid-path just walks to undefined, exactly as before.
+          value = (value as TranslationTree | undefined)?.[k];
         }
-        return value || key;
+        return (value || key) as string;
       }),
     );
   }

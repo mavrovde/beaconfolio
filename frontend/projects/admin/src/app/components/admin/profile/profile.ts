@@ -1,4 +1,4 @@
-import { Component, inject, ChangeDetectorRef, DestroyRef } from '@angular/core';
+import { Component, inject, ChangeDetectorRef, DestroyRef, OnInit } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -12,7 +12,7 @@ import { TranslatePipe } from '@beaconfolio/shared';
   templateUrl: './profile.html',
   styleUrls: ['./profile.scss'],
 })
-export class ProfileComponent {
+export class ProfileComponent implements OnInit {
   private authService = inject(AuthService);
   private cdr = inject(ChangeDetectorRef);
   private destroyRef = inject(DestroyRef);
@@ -81,7 +81,7 @@ export class ProfileComponent {
           this.cdr.detectChanges();
         }, 3000);
       },
-      error: (err) => {
+      error: () => {
         this.error = 'Failed to save API Key';
         this.loading = false;
         this.cdr.detectChanges();
