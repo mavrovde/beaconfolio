@@ -28,8 +28,11 @@ All notable changes to this project will be documented in this file.
   Eight knobs wired into `backend/.env.example`, the root `.env.example` and the backend service
   of **both** compose files (`WHISPER_MODEL_DIR` deliberately exempted as a volume mount target,
   the `LINKEDIN_COOKIES_DIR` precedent). Measured on an 8-core arm64 host: 20.6 s first-ever cold
-  start incl. download, 0.31 s warm load, 1.09 s to transcribe 14.6 s of speech. The recording
-  widget and the admin player are a separate frontend PR.
+  start incl. download, 0.31 s warm load, 1.09 s to transcribe 14.6 s of speech. Validated at the
+  composed layer too (#260's tier): three black-box cases through the real proxy — intake survives
+  a genuinely broken transcriber, the app's `413` is not shadowed by the proxy, and the endpoint
+  is rate limited — with the tier's Whisper model pinned to an invalid name so CI never downloads
+  weights. The recording widget and the admin player are a separate frontend PR.
 - **PSTN / telephony is documented-deferred with a dated verdict (#264)** — README's new voice
   section records why a phone number, voicemail-to-inbox via Twilio/SIP and voice-**call**
   escalation are not implemented (metered credential, public webhook ingress, per-jurisdiction
@@ -53,6 +56,16 @@ All notable changes to this project will be documented in this file.
   v1.14.2/v1.14.3 (#377/#393 shipped, the telemetry meta-target missed twice, the gate
   falsifier fired at six merges and then at one). Applies the v1.14.1-retro lesson: a release
   figure is written once and linked everywhere else.
+
+### Fixed
+- **The reverse proxy no longer shadows the app's own upload limits (#264)** — nginx had no
+  `client_max_body_size`, so its **1 MB default** silently governed every upload: the new voice
+  cap (2 MB; a ~90 s Opus recording is ~1.1 MB) and the long-standing 5 MB admin profile-JSON and
+  photo caps were all unreachable through the proxy, and a caller got nginx's opaque HTML `413`
+  instead of the endpoint's `{"detail": ...}`. `proxy/default.conf.template` now sets the limit
+  strictly above the app's caps on both `/api/app/` locations (public `3m`, admin `6m`) so the
+  application is the component that answers — found by the composed integration tier, which no
+  unit test could have caught (there is no nginx in an ASGI transport), and pinned there.
 
 ## [1.14.3] - 2026-09-15
 
