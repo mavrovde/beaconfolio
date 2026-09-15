@@ -79,3 +79,22 @@ services:
       # no paid key that could make a billable call.
       - JWT_ALLOW_EPHEMERAL_SECRET=true
       - BEACONFOLIO_GEMINI_API_KEY=
+      # Voice channel (#264). PINNED on, because CI layers this overlay over
+      # docker-compose.prod.yml where the flag defaults OFF — inherited, the
+      # tier would silently test a 404 instead of the intake path.
+      - VOICE_MESSAGES_ENABLED=true
+      # ...and pinned BROKEN, deliberately. Transcribing for real would pull
+      # ~150 MB of Whisper weights from Hugging Face on every CI run, which is
+      # the same class of mistake as a test reaching a paid API (rule 10's
+      # rationale, even though nothing here is billable). A name that is
+      # neither a known size nor a `repo/id` fails in faster-whisper's own
+      # validation BEFORE any network call — measured:
+      # `ValueError: Invalid model size 'inttest-no-such-model', expected one
+      # of: tiny.en, tiny, base.en, ...`. HF_HUB_OFFLINE=1 is the backstop, so
+      # even a future code path that resolved a repo id cannot reach the
+      # network from this tier. What the tier then asserts is the contract that
+      # matters at this layer and cannot be faked in a unit test: a failing
+      # transcriber never breaks intake — the row lands and the audio stays
+      # playable (issue #264's verify step 3).
+      - WHISPER_MODEL=inttest-no-such-model
+      - HF_HUB_OFFLINE=1

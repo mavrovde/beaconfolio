@@ -775,7 +775,7 @@ What the backend guarantees, each pinned by a test:
 |---|---|
 | Intake never blocks on AI | transcription, notification and translation are background tasks; the 201 is returned after the DB commit |
 | A broken transcriber never costs a contact | the audio row + inbox row are already committed; the payload records `transcription: "failed"` and the message stays playable |
-| The size cap is real | bounded read of `VOICE_MESSAGE_MAX_BYTES + 1` bytes → `413`; nothing is stored |
+| The size cap is real — and the APP owns it | bounded read of `VOICE_MESSAGE_MAX_BYTES + 1` bytes → `413`; nothing is stored. The proxy must stay out of this decision: nginx's default `client_max_body_size` is **1 MB**, below the cap, so `proxy/default.conf.template` sets it to `3m` on the public `/api/app/` location — raise it there first if you raise the cap, or callers get nginx's HTML `413` instead of the endpoint's JSON |
 | The duration cap is not the client's word | the endpoint checks the browser's `duration_s`, and the transcriber re-checks the **decoded** length before decoding any segments (2 MB of WebM/Opus is ~3 minutes, i.e. twice the cap) |
 | Abuse budget | `VOICE_RATE_LIMIT_REQUESTS`/`_WINDOW_SECONDS` per client IP (3/60s default — tighter than the contact form's 5/60s, because a voice message costs storage *and* CPU) |
 | The transcript is an ordinary message | it is written to `Interaction.message`, so the inbox list, promote-to-pipeline and #248's translation need no per-source special case |
