@@ -81,9 +81,12 @@ class Settings(BaseSettings):
         default="", validation_alias="BEACONFOLIO_MATRIX_ROOM_ID"
     )
     # Self-hosted SMS gateway (#431): a REST endpoint on the owner's OWN
-    # Android phone + SIM (SMSGate / httpSMS / textbee). Free beyond the
-    # existing SIM plan and — the rule-10 point — there is no metered API
-    # credential to hold. NOT a CPaaS URL: see the SmsGatewayChannel docstring.
+    # Android phone + SIM — specifically **sms-gate.app in LOCAL mode**, whose
+    # contract this channel implements (Basic auth + textMessage/phoneNumbers).
+    # Free beyond the existing SIM plan and — the rule-10 point — there is no
+    # metered API credential to hold. httpSMS and textbee are NOT drop-in URLs
+    # (header API keys, different bodies) and neither is a CPaaS URL; the
+    # SmsGatewayChannel docstring carries the per-vendor compatibility table.
     sms_gateway_url: str = Field(
         default="", validation_alias="BEACONFOLIO_SMS_GATEWAY_URL"
     )
