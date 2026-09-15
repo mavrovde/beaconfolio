@@ -51,10 +51,14 @@ All notable changes to this project will be documented in this file.
   skipped. Measured from the API at #433's pre-fix head: **5 runs — 2 cancelled + 3 skipped**
   (one of the skipped runs sat *queued for 11m15s* before skipping), i.e. zero integration
   evidence on a PR created with `gh pr create --label` — the labels-at-creation flow the issue
-  policy requires. The cancellation is now gated on the same condition as the jobs, so a
-  non-`run-e2e` label queues instead of killing the run, and the integration job's check-run name
-  now says so when it is a label no-op, because a run that skips under the tier's own name makes
-  `gh pr checks` report the tier as `skipping` while the real run passes out of sight.
+  policy requires. Root cause: `on.pull_request.types` **cannot filter by label name**, so every
+  unrelated label started the integration tier's own workflow. The `run-e2e` browser tier is
+  therefore split into `.github/workflows/pr-evidence-e2e.yml` and `labeled` dropped from the
+  integration tier's triggers — no run, no cancellation, and no phantom `skipped` check-run
+  posting over the real one (which is the second half of the bug: `gh pr checks` reported the
+  tier as `skipping` while the passing run sat invisible in run history). A trigger-dependent job
+  `name:` was tried first and rejected on measurement — GitHub does not evaluate the expression
+  for a skipped job and published the raw `${{ … }}` text as the check-run name.
 - **The wiki statistics articles stop competing with the canonical record** — `docs/wiki/`'s
   `team-and-process.md` replaces its trend-table and KPI-baseline copies (and its restated
   cost figures) with links to `docs/retrospectives/`; `delivery-statistics.md` is banner-dated
