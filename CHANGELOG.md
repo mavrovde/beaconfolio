@@ -49,9 +49,13 @@ All notable changes to this project will be documented in this file.
   `infra/edge/apply.test.sh` pins that contract with stubbed caddy/systemctl (27 cases,
   ~1s, hermetic) and runs in the pre-push gate (new diff-scoped `edge` leg, with selection
   cases + a mutation) and in CI. Deliberately NOT in the rollout job: the edge serves every
-  tenant and must not roll on one tenant's cadence (#310 option A). Verified on the live
-  host: drift detected → broken copy refused (running config untouched, measured) → apply →
-  byte-identical → live probe HTTP 200. Second-tenant onboarding is now a PR (template block
+  tenant and must not roll on one tenant's cadence (#310 option A). Live-host verification
+  was measured with the ROUND-1 script (drift detected → broken copy refused with the
+  running config untouched → apply → byte-identical → live probe HTTP 200); the rewritten
+  fail-closed contract is pinned by the hermetic self-test and has not yet re-run on the
+  host — the first host-side `--check` under the new (read-only-default) invocation is a
+  documented runbook step, and the old `bash apply.sh` muscle memory now lands on the
+  read-only mode. Second-tenant onboarding is now a PR (template block
   committed) plus one apply. The wiki's planning-phase edge sketch is replaced by a pointer
   to the committed file with its three deltas reconciled, and the port registry gains
   beaconfolio's `127.0.0.1:5433` Postgres binding.

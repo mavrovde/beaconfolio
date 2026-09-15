@@ -81,14 +81,22 @@ fresh_case; cp "$SRC" "$DST"
 rc=0; run_apply --check >/dev/null 2>&1 || rc=$?
 check "--check is green when in sync" 0 "$rc"
 
-# 4. stdin mode is refused before anything resolves (finding 1)
+# 4. stdin mode is refused before anything resolves (finding 1). The trap being
+# pinned is NOT "stdin exits non-zero" — it is "stdin silently adopts whatever
+# ./Caddyfile lies in the cwd" (#420 round 2: without the decoy below, a
+# guard-less script found no cwd Caddyfile, exited 1 incidentally, and the
+# vulnerable code passed its own regression test). So: plant a decoy in the
+# cwd and set the confirm, so a script whose stdin guard is removed would
+# sail through every later gate and INSTALL the decoy — both assertions red.
 fresh_case "old config"
+printf 'DECOY — must never be validated or installed\n' > "$TMP/Caddyfile"
 rc=0; ( cd "$TMP" && env EDGE_DST="$DST" EDGE_SUDO= EDGE_CADDY="$STUB/caddy" \
-    EDGE_SYSTEMCTL="$STUB/systemctl" STUB_LOG="$LOG" \
+    EDGE_SYSTEMCTL="$STUB/systemctl" STUB_LOG="$LOG" EDGE_APPLY_CONFIRM=1 \
     bash -s -- --apply < "$APPLY" ) >/dev/null 2>&1 || rc=$?
 check "stdin mode (bash -s) is refused" 1 "$rc"
 [ "$(cat "$DST")" = "old config" ] && ok "stdin mode installed nothing" \
     || bad "stdin mode MODIFIED the target"
+rm -f "$TMP/Caddyfile"
 
 # 5. --apply with drift and NO confirm refuses (finding 3)
 fresh_case "old config"
