@@ -166,11 +166,16 @@ are not, and **#386 stays open on this criterion alone**.
 merged**, so every cell is both at once. All 34 canonical verdicts are pre-merge; the 16
 reviewed PRs' APPROVEs are all delta-confirms at the merged head (stale approvals **0 of 16**).
 Mean rounds over the 16 actually reviewed: **2.13**; rework share over them: 53%.
+**The canonical cells use the OPENS-WITH filter** (marker anchored at the START of the first
+non-empty line — the fn-10 fix, now in "How to count consistently"): the older in-line test
+returns **35 / 2.06 / 51.4%** on this window by admitting one author comment on #421 that
+itself ends *"(Not a verdict…)"*. v1.14.1's cells (41/2.41/59%) were published under the
+in-line test, fn 10 stating their anchored equivalents (40/2.35/58%) — compare like with like.
 ¹⁸ **All 9 class-G findings were raised BEFORE #393's mutation contracts merged in #427, the
 window's last feature PR** — this cell is the pre-control baseline, and most instances sit
 outside #393's mechanical scope (workflow steps, an eslint rule, a proxy test, a Playwright
 config). The v1.14.3 prediction splits the clause accordingly.
-¹⁹ **#412, the P0 revert of the premature release cut, merged 23 minutes after opening with
+¹⁹ **#412, the P0 revert of the premature release cut, merged 9 minutes after opening with
 zero verdicts.** The bypass log does not exist (never reached a hooked `gh pr merge`), and the
 weekly `Verdict Audit` had already fired for the week — mechanical detection would have waited
 until Sep 21 (#409's cadence half, second measured instance). The retrospective review is
@@ -286,6 +291,14 @@ So the series stays comparable, count the same way every time:
                              | test(\"REQUEST CHANGES|APPROVED?\"))) | length)
           | add"
   ```
+
+  **From v1.14.3 the canonical filter is ANCHORED: the marker must OPEN the first non-empty
+  line** (`startswith`/`^`-anchored, not `test(...)` anywhere in the line) — the fix footnote
+  10 promised. The in-line form admits an author body whose first line merely *mentions* a
+  verdict: measured on #421, a live-demonstration comment ending *"(Not a verdict; the
+  standing verdict is the REQUEST CHANGES above.)"* — which is fn 10's #373 hole one level
+  deeper. When re-counting a pre-v1.14.3 window, use the filter its row was published under
+  (each row's footnote says which).
 
   **…and it also UNDER-counts, which is the half that actually changed a headline number.** Always
   run the widened sweep once — print every first line that matched NEITHER marker and read them:

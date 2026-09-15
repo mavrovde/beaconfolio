@@ -91,7 +91,7 @@ and `backend/docker-entrypoint.sh` (`set -e`, `db_probe.py`) crash-loops — a f
    from merged PRs since the last tag: `gh pr list --state merged`, `git log <lastTag>..main`).
    **Never cut the release PR while issues planned under `release:vX.Y.Z` are still open**
    unless the owner explicitly de-scopes them, named one by one. At v1.14.3 the release PR
-   (#411) was cut with 12 planned issues open; the owner-ordered revert (#412) cost two PRs,
+   (#411) was cut with 11 planned issues open; the owner-ordered revert (#412) cost two PRs,
    a cancelled deploy, and — merged in the P0 scramble — the window's only rule-13 violation.
    **A revert or emergency PR is still a PR: it gets an expedited verdict BEFORE merge**
    (rule 13: "expedited, not skipped" — #428's expedited round measured 21 minutes; #412's
