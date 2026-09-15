@@ -2033,6 +2033,61 @@ revealed the field this code was using (`message`) is annotated *"deprecated, us
 instead"*, i.e. the implementation was also wrong-but-working, which no amount of mocked-httpx
 testing could have found. **Mocks pin the shape you believed; only the vendor's spec pins the
 shape that is true.**
+## 75. An app-side upload cap is FICTION until the proxy's `client_max_body_size` is above it (#264)
+
+nginx's default `client_max_body_size` is **1m**, and this repo's `proxy/default.conf.template`
+never set it. So every upload cap the backend documented was capped at 1 MB in reality: #264's
+2 MB voice cap (a ~90 s Opus recording is ~1.1 MB — inside the app's cap, over nginx's) and the
+long-standing 5 MB `MAX_PROFILE_JSON_BYTES` / `MAX_PROFILE_PHOTO_BYTES`. The caller got nginx's
+opaque HTML `413` and the endpoint's `{"detail": ...}` was **unreachable in production**.
+
+Measured, booting the proxy image twice against a stub upstream and POSTing 1.5 MB:
+
+```
+origin/main template -> HTTP 413  "<h1>413 Request Entity Too Large</h1> ... nginx/1.31.5"
+with client_max_body_size -> HTTP 502  (forwarded; 502 only because the probe has no backend)
+```
+
+**Why 100% unit coverage cannot see this:** there is no nginx in an ASGI transport. The unit test
+POSTs `max + 1` bytes straight into the app, gets the app's 413, and is *correct* — about a
+component that never receives the request in production. This is the canonical case for rule 12:
+the composed tier is not a formality, it owns assertions the other layers structurally cannot make.
+
+Rules that follow:
+- adding or raising an upload cap is **two** edits — the app constant AND
+  `proxy/default.conf.template` (the matching `/api/app/` location, strictly above the cap);
+- assert the **app's** signature in the composed test (`content-type: application/json` + the
+  `detail` key), never just `status == 413` — nginx returns 413 too, and a status-only assertion
+  passes while the proxy is the one answering;
+- `nginx -t` inside the proxy image validates the template, but only if the upstream names resolve:
+  `docker run --add-host backend:127.0.0.1 --add-host frontend:127.0.0.1 …`, otherwise the parse
+  aborts at the first `proxy_pass` with `host not found in upstream` and you learn nothing about
+  your own lines. Also substitute a `PUBLIC_SERVER_NAME` that is NOT `localhost`, or the
+  HTTP→HTTPS redirect block shadows the app block and every probe returns 301 (cost one wrong
+  measurement).
+
+## 76. `gh pr create --label` cancels its own PR-evidence run — check, don't assume (#264)
+
+`pr-evidence.yml` promises the WireMock tier on every `backend/**` PR, but creating a PR with
+labels fires `opened` **plus one `labeled` event per label**. `concurrency: pr-evidence-<n>`
+cancels the `opened` run — whose integration job had already started — and the surviving `labeled`
+runs skip the job by its own guard
+(`if: github.event.action != 'labeled' || github.event.label.name == 'run-e2e'`). Measured on #434:
+job conclusion `cancelled` on run `34997836540`, `skipping` on the two survivors. Since the label
+scheme REQUIRES labels at creation, the default outcome is **no integration evidence at all** until
+the PR's next push.
+
+**Root cause FIXED on 2026-09-18 by #424 / PR #433** — the `run-e2e` browser tier moved to its
+own `.github/workflows/pr-evidence-e2e.yml` and `labeled` was dropped from the integration
+tier's triggers, so an unrelated label no longer starts (and therefore no longer cancels) the
+integration run. The workarounds below are kept because the *general* rule outlives the bug, and
+because `concurrency` is still evaluated BEFORE a job's `if` anywhere else it is used.
+
+Two workarounds, both verified: `gh run rerun <opened-run-id>` (a rerun replays the original
+`opened` payload, so the guard passes), or simply push the next commit (`synchronize` passes the
+guard too). The general rule is the one rule 12 keeps re-teaching: **read the check's conclusion,
+never infer it from the workflow's `paths:` filter** — "it runs automatically on backend PRs" was
+true of the workflow and false of the run.
 
 ## Where the rules live (AI-config map)
 
