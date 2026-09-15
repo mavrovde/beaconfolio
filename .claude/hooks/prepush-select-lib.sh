@@ -56,6 +56,7 @@
 #   changelog   scripts/check_changelog_merge.sh (+ self-test) — the MERGED result vs origin/main (#391)
 #   vaudit      scripts/audit_no_verdict_merges.test.sh (the no-verdict detector's own test, #392)
 #   setup       setup.test.sh
+#   edge        infra/edge/apply.test.sh (the shared-edge apply contract, #338)
 #   hook:NAME   .claude/hooks/NAME.test.sh
 #   backend     backend pytest (-n auto, --cov-fail-under=100)
 #   lint        ruff check + ruff format --check + mypy + bandit
@@ -173,6 +174,12 @@ prepush_legs_for_path() {
   # e2e specs, the build scripts, a fourth project someday — can affect every
   # project, so it runs every project. Conservative on purpose.
   frontend/*) prepush_fe_all_legs ;;
+
+  # --- infra: the shared edge as code (#338) --------------------------------
+  # apply.sh's fail-closed contract (read-only default, stdin refusal, diff-
+  # and-confirm, restore-on-failure) is pinned by its own stub-based self-test;
+  # ~1s, no sudo/caddy/systemd needed, so it runs wherever the diff selects it.
+  infra/edge/*) echo edge ;;
 
   # --- documentation --------------------------------------------------------
   # CHANGELOG.md is the one doc whose defect lives in the MERGED result, not the

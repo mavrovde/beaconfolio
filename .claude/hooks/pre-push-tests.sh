@@ -804,6 +804,16 @@ run_checks() {
         return 1
       }
     fi
+    # Shared-edge apply contract (#338/#420): apply.sh gates /etc/caddy for
+    # EVERY tenant, so its fail-closed behaviors (read-only default, stdin
+    # refusal, diff-and-confirm, restore-on-failure) are pinned by a stubbed
+    # self-test — ~1s, no sudo/caddy/systemd required.
+    if leg edge && [ -f "$ROOT/infra/edge/apply.test.sh" ]; then
+      ( cd "$ROOT" && bash infra/edge/apply.test.sh >/dev/null ) || {
+        echo "  ✗ infra/edge/apply.test.sh failed — run 'bash infra/edge/apply.test.sh' to see which case"
+        return 1
+      }
+    fi
   fi
 
   # Hook self-tests. Selected PER HOOK (#377) — except that a change to

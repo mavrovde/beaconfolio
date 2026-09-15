@@ -1,0 +1,48 @@
+# Host-level shared edge (#310, option A): Caddy owns 80/443 for EVERY tenant.
+# Each tenant is a loopback upstream on its registered port (see ports.md).
+# The edge forwards to the tenant's HTTPS port — its HTTP port only redirects (#310
+# redirect-loop finding). The tenant presents a self-signed cert on the internal
+# hop, hence insecure_skip_verify on loopback only.
+#
+# COMMITTED AS CODE since #338: /etc/caddy/Caddyfile on the host must be
+# byte-identical to this file — `infra/edge/apply.sh --check` diffs them, and
+# `apply.sh` is the only sanctioned way to change the running edge. The edge
+# deliberately does NOT roll on tenant deploys (the option-A rationale): apply
+# is a manual, reviewed step. No secrets live here: hostnames + loopback ports.
+
+beaconfolio.com, www.beaconfolio.com {
+	reverse_proxy https://127.0.0.1:18443 {
+		transport http {
+			tls
+			tls_insecure_skip_verify
+		}
+		header_up Host {host}
+	}
+}
+
+admin.beaconfolio.com {
+	reverse_proxy https://127.0.0.1:18443 {
+		transport http {
+			tls
+			tls_insecure_skip_verify
+		}
+		header_up Host {host}
+	}
+}
+
+# --- Second-tenant template (#338 AC: the dry-run example) -------------------
+# Onboarding a tenant is a PR against THIS file + ports.md, then one apply:
+#   1. Claim a port range in ports.md (next free 100-block).
+#   2. Uncomment + adapt the block below; the upstream port is the tenant's
+#      registered HTTPS publish (its compose binds 127.0.0.1:<port>:443).
+#   3. PR + review; on the host: `apply.sh` (read-only check), `apply.sh --apply`.
+#
+# nextproject.example {
+# 	reverse_proxy https://127.0.0.1:18543 {
+# 		transport http {
+# 			tls
+# 			tls_insecure_skip_verify
+# 		}
+# 		header_up Host {host}
+# 	}
+# }

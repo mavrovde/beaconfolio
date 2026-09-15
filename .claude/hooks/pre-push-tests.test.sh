@@ -341,6 +341,12 @@ sel "a frontend workspace file runs every project" \
     "fe:admin fe:cdsafety fe:public fe:shared pii" frontend/angular.json
 sel "compose + .env.example select the documented-knob contract" \
     "compose docs pii" docker-compose.prod.yml .env.example
+sel "the shared-edge files select the edge apply contract and NOTHING heavier (#338)" \
+    "edge pii" infra/edge/apply.sh infra/edge/Caddyfile
+sel "the edge self-test selects its own leg (#338)" \
+    "edge pii" infra/edge/apply.test.sh
+sel_lacks "an edge diff does NOT select backend" "backend" infra/edge/apply.sh
+sel_lacks "an edge diff does NOT select a Vitest project" "fe:public" infra/edge/apply.sh
 # A lint script selects its own leg AND `aiconfig` (#388 review, minor): the
 # selector is pure and cannot tell an EDIT from a DELETION, and a deleted lint
 # leaves the AI-config map naming a file that no longer exists — precisely what
@@ -1056,6 +1062,8 @@ mutate die "$LIBF" "scanner/config text files stop selecting their docs leg" \
   'replace::  sonar-project.properties|.gitignore) echo docs ;;=>  sonar-project.properties|.gitignore) echo ;;'
 mutate die "$LIBF" ".mcp.json stops selecting the AI-config drift check" \
   'replace::  .mcp.json) echo aiconfig ;;=>  .mcp.json) echo ;;'
+mutate die "$LIBF" "the shared-edge files stop selecting the apply contract (#338)" \
+  'replace::  infra/edge/*) echo edge ;;=>  infra/edge/*) echo ;;'
 mutate die "$LIBF" "an unobtainable git range reports success instead of failing" \
   'replace::  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 1=>  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo docs/fake.md; return 0; }'
 mutate die "$LIBF" "rename detection hides the SOURCE path of a git mv (#388 blocker 1)" \
