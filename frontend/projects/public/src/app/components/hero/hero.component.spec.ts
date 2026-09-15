@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { of } from 'rxjs';
 import { HeroComponent } from './hero.component';
 import { SiteConfigService } from '../../services/site-config.service';

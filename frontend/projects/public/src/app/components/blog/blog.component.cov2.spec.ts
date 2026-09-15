@@ -91,7 +91,7 @@ describe('BlogComponent (cov2 branch coverage)', () => {
   it('should skip SEO update when not standalone', () => {
     const seoSpy = { updateSeo: vi.fn() };
     const c = new BlogComponent(
-      blogServiceSpy, seoSpy as any, {} as any, {} as any, 'server', undefined
+      blogServiceSpy, seoSpy as any, {} as any, { markForCheck: () => undefined } as any, 'server', undefined
     );
     c.standalone = false;
     c.ngOnInit();
@@ -104,7 +104,7 @@ describe('BlogComponent (cov2 branch coverage)', () => {
     const late = new ReplaySubject<SiteConfig>(1);
     const seoSpy = { updateSeo: vi.fn() };
     const c = new BlogComponent(
-      blogServiceSpy, seoSpy as any, {} as any, {} as any, 'server',
+      blogServiceSpy, seoSpy as any, {} as any, { markForCheck: () => undefined } as any, 'server',
       { config$: late } as any
     );
     c.standalone = true;
@@ -123,7 +123,7 @@ describe('BlogComponent (cov2 branch coverage)', () => {
   it('falls back to the neutral default identity when no SiteConfigService is available', () => {
     const seoSpy = { updateSeo: vi.fn() };
     const c = new BlogComponent(
-      blogServiceSpy, seoSpy as any, {} as any, {} as any, 'server', undefined
+      blogServiceSpy, seoSpy as any, {} as any, { markForCheck: () => undefined } as any, 'server', undefined
     );
     c.standalone = true;
     c.ngOnInit();
@@ -139,12 +139,12 @@ describe('BlogComponent (cov2 branch coverage)', () => {
     expect(await firstValueFrom(component.unixUser$)).toBe('mock');
     // no service at all -> the FRONTEND neutral fallback (DEFAULT_SITE_CONFIG)
     const bare = new BlogComponent(
-      blogServiceSpy, {} as any, {} as any, {} as any, 'server', undefined
+      blogServiceSpy, {} as any, {} as any, { markForCheck: () => undefined } as any, 'server', undefined
     );
     expect(await firstValueFrom(bare.unixUser$)).toBe('portfolio');
     // empty owner name -> 'owner'
     const emptyCfg = new BlogComponent(
-      blogServiceSpy, {} as any, {} as any, {} as any, 'server',
+      blogServiceSpy, {} as any, {} as any, { markForCheck: () => undefined } as any, 'server',
       { config$: of({ ownerName: '' }) } as any
     );
     expect(await firstValueFrom(emptyCfg.unixUser$)).toBe('owner');
@@ -195,7 +195,7 @@ describe('BlogComponent (cov2 branch coverage)', () => {
   // Line 92-95 branch: dedupe existing ids in SSR getPosts path (non-browser)
   it('should dedupe posts by id in SSR getPosts path', () => {
     const serverComponent = new BlogComponent(
-      blogServiceSpy, {} as any, {} as any, {} as any, 'server', undefined
+      blogServiceSpy, {} as any, {} as any, { markForCheck: () => undefined } as any, 'server', undefined
     );
     serverComponent.posts = [{ ...mockPosts[0] }] as any;
     blogServiceSpy.getPosts.mockReturnValueOnce(
@@ -241,7 +241,7 @@ describe('BlogComponent (cov2 branch coverage)', () => {
   // Line 229 + 234: sharePost non-browser branch uses https://beaconfolio.com and skips both browser branches
   it('should build https://beaconfolio.com url and skip browser actions on SSR sharePost', async () => {
     const serverComponent = new BlogComponent(
-      blogServiceSpy, {} as any, {} as any, {} as any, 'server', undefined
+      blogServiceSpy, {} as any, {} as any, { markForCheck: () => undefined } as any, 'server', undefined
     );
     const post = { ...mockPosts[0], slug: 'test-post', title: 'Test Post' } as any;
     // Should not throw even though navigator is not used on SSR
