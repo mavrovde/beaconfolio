@@ -327,7 +327,8 @@ Kept in `docs/retrospectives/README.md`, with documented counting conventions so
 series stays comparable. **The numbers are not restated here** — a copy of the trend
 table in this article went stale within one release and restating figures outside the
 canonical site is itself a counted defect class in this repository (the v1.14.1 retro
-PR was blocked on 13 findings of exactly that). Read the series there; as one current
+PR was blocked on a full round of exactly that — counted in
+[v1.14.2 §3](../retrospectives/v1.14.2.md)). Read the series there; as one current
 data point, v1.14.3 measured **2.00 mean review rounds per PR** with a *rising* median
 PR size ([the v1.14.3 retrospective](../retrospectives/v1.14.3.md)).
 
@@ -415,14 +416,17 @@ not compound.
 This process is heavy for a portfolio site, and pretending otherwise would be the same
 failure mode the process exists to prevent. The trade is deliberate:
 
-- Review consumes **81% of the agent budget**. The justification is the defect list in
-  [§ What review actually catches](#what-review-actually-catches) — a live open
-  redirect and a self-inflicted security bypass, both green on CI.
-- The mean PR takes **2.41 review rounds**, so most work is seen at least twice.
-- Two PRs in one cycle consumed **46% of all review spend** (37% of total) — cost is
-  dominated by outliers, not by the median.
+- Review dominates the agent budget — **81%** of subagent spend in the one release
+  measured end-to-end ([v1.14.1](../retrospectives/v1.14.1.md)). The justification is
+  the defect list in [§ What review actually catches](#what-review-actually-catches) —
+  a live open redirect and a self-inflicted security bypass, both green on CI.
+- Most work is seen at least twice: the mean-rounds figure has stayed above 1.8 in
+  every release measured, and the per-release series is in
+  [the trend table](../retrospectives/README.md).
+- Cost is dominated by outliers, not by the median — in the release measured
+  end-to-end, two PRs consumed most of the review spend ([v1.14.1](../retrospectives/v1.14.1.md)).
 
-The counterweights are the KPIs above, the scoped-gate work in #377, and the standing
+The counterweights are the KPIs above, the scoped-gate work shipped in #377, and the standing
 rule that agent parallelism stays at **solo + one agent** outside an explicitly
 authorized release push. Quota is a real constraint, and the owner sets it per cycle.
 

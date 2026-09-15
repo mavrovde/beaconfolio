@@ -4,14 +4,6 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-### Changed
-- **The two wiki statistics articles no longer restate series figures** — `docs/wiki/`'s
-  `team-and-process.md` and `delivery-statistics.md` now link the canonical trend table and
-  per-release records instead of carrying copies (the v1.14.1-retro lesson, applied to the last
-  two surfaces that still held them); `delivery-statistics.md` is marked as the dated snapshot
-  it is and gains a links-only outcome note covering v1.14.2/v1.14.3 (#377/#393 shipped, the
-  telemetry meta-target missed twice, the gate falsifier fired).
-
 ### Added
 - **v1.14.3 release retrospective (rule 8)** — `docs/retrospectives/v1.14.3.md`, sixth in the
   series; trend table extended. Headlines: mean rounds 2.00 (best since v1.14.0) at a RISING
@@ -22,6 +14,15 @@ All notable changes to this project will be documented in this file.
   (nine class-G findings this window); lessons §70 (bump_version rotates the CHANGELOG itself;
   rotated entries are unrewordable in the rotation PR) and §71 (CodeQL default-setup runs
   cannot be re-run; single-SHA red with no error text is an upload fault).
+
+### Changed
+- **The wiki statistics articles stop competing with the canonical record** — `docs/wiki/`'s
+  `team-and-process.md` replaces its trend-table and KPI-baseline copies (and its restated
+  cost figures) with links to `docs/retrospectives/`; `delivery-statistics.md` is banner-dated
+  and frozen as the v1.13.0→v1.14.1 snapshot it is, with a links-only outcome note covering
+  v1.14.2/v1.14.3 (#377/#393 shipped, the telemetry meta-target missed twice, the gate
+  falsifier fired at six merges and then at one). Applies the v1.14.1-retro lesson: a release
+  figure is written once and linked everywhere else.
 
 ## [1.14.3] - 2026-09-15
 

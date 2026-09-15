@@ -8,7 +8,8 @@
 > records ([v1.14.2](../retrospectives/v1.14.2.md), [v1.14.3](../retrospectives/v1.14.3.md)).
 > Figures are deliberately not refreshed here: restating series numbers outside the
 > canonical site is a counted defect class in this repository (the v1.14.1 retro PR
-> was blocked on 13 findings of exactly that shape). See the outcome note at the end.
+> was blocked on 13 findings of exactly that shape —
+> [v1.14.2 §3](../retrospectives/v1.14.2.md)). See the outcome note at the end.
 
 What the last three releases actually cost, what moved, and why. Then the plan for
 the targets set on the next one.
@@ -307,8 +308,9 @@ numbers live:
   gap this page measured as "of the seven `scripts/*.test.sh` self-tests, none" —
   closed at v1.14.3 (#427), and the four hooks now all carry contracts in CI.
 - **The process targets largely came good one release late**: v1.14.2 went backwards
-  on the review targets amid its no-verdict-merge incident; v1.14.3 posted the
-  series' best rounds figure at a rising median PR size with every verdict pre-merge
+  on the review targets amid its no-verdict-merge incident; v1.14.3 posted the best
+  rounds figure since v1.14.0 at a rising median PR size, with all of its posted
+  verdicts landing pre-merge — though one PR (#412) merged with none at all
   — scored clause by clause in [v1.14.2 §6/§8](../retrospectives/v1.14.2.md) and
   [v1.14.3 §7/§8](../retrospectives/v1.14.3.md).
 - **The telemetry meta-target ("zero runs with unrecorded cost") failed both times**,
