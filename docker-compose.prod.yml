@@ -187,6 +187,10 @@ services:
       # unset host variable never blanks the branding.
       - SITE_NAME=${SITE_NAME:-}
       - SITE_URL=${SITE_URL:-}
+      # PUBLIC_URL is NOT a backend knob — it names the freshness/health-gate
+      # probe target. Forwarded so startup can warn when it is set while
+      # SITE_URL (the real identity knob) is not (#335).
+      - PUBLIC_URL=${PUBLIC_URL:-}
       - OWNER_NAME=${OWNER_NAME:-}
       - OWNER_HEADLINE=${OWNER_HEADLINE:-}
       - OWNER_DESCRIPTION=${OWNER_DESCRIPTION:-}

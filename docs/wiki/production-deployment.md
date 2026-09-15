@@ -1100,7 +1100,12 @@ Before the first `up`, set in `.env`:
 - **Required secrets** — `ADMIN_PASSWORD`, `JWT_SECRET_KEY` (`openssl rand -hex
   32`), `POSTGRES_PASSWORD`. The backend refuses to start without the first two.
 - **Identity** — `SITE_URL`, `SITE_NAME`, `OWNER_NAME`, … or the site renders the
-  Jane Doe demo persona.
+  Jane Doe demo persona. The backend prints an `IDENTITY:` line at every startup
+  and flags `DEFAULTS IN USE` when the demo persona is live; it also warns when
+  `PUBLIC_URL` (the freshness/rollout probe target — *not* an identity knob) is
+  set while `SITE_URL` is not (#335 — both traps fired on the 2026-09-10 first
+  deploy). Three `.env` files can exist (dev checkout, server workspace, deploy
+  dir): **production reads only the deploy dir's** (`/opt/beaconfolio/.env`).
 
 `.env` holds every prod secret: mode 600, owned by the deploy user. On a shared
 box, confirm who else can read it — `ls -l .env` and `getent group docker`, since

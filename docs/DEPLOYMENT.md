@@ -87,6 +87,14 @@ cp .env.example .env
 #    set SITE_URL, SITE_NAME, OWNER_NAME, OWNER_HEADLINE, OWNER_DESCRIPTION,
 #    SOCIAL_LINKS (and BEACONFOLIO_ANALYTICS_ID to keep analytics) or the site
 #    renders the demo identity and SSR advertises example.com og:url/canonical.
+#    The backend prints an IDENTITY line at every startup and flags
+#    "DEFAULTS IN USE" loudly when the demo persona is live (#335).
+#    ⚠️ PUBLIC_URL is NOT site identity — it only names the freshness/rollout
+#    probe target; SITE_URL is the knob SEO/og:url read. Startup warns when
+#    PUBLIC_URL is set while SITE_URL is not (#335, measured 2026-09-10).
+#    ⚠️ WHICH .env: production reads ONLY the deploy dir's .env (this file,
+#    /opt/beaconfolio/.env) — not your laptop's checkout, not a server
+#    debug workspace. Edit here, then `docker compose restart <service>`.
 #    Then upload the real Profile Data JSON + CV via the admin panel.
 #    Image coordinates: IMAGE_REPO defaults to ghcr.io/mavrovde/beaconfolio;
 #    set IMAGE_TAG to the release you are deploying (e.g. 1.12.0).
