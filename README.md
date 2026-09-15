@@ -692,7 +692,28 @@ deliberately not on this seam.
 | **Telegram** | `BEACONFOLIO_TELEGRAM_BOT_TOKEN` + `BEACONFOLIO_TELEGRAM_CHAT_ID` | **2-minute setup**: message [@BotFather](https://t.me/botfather) → `/newbot` → copy the token; then message your bot once and read your chat id from `https://api.telegram.org/bot<token>/getUpdates`. Free; lands on your phone in seconds. |
 | Webhook | `BEACONFOLIO_NOTIFY_WEBHOOK_URL` | provider-agnostic JSON POST (`text` + structured fields) — works as-is with Slack/Mattermost/Discord incoming webhooks, ntfy and Gotify |
 | **Matrix** | `BEACONFOLIO_MATRIX_HOMESERVER` + `_ACCESS_TOKEN` + `_ROOM_ID` (all three) | free and **self-hostable**: create a bot account on your own homeserver (or matrix.org), get a token from `POST /_matrix/client/v3/login`, invite it to a room, paste the room id (`!abc:your.server`). Sent as `m.notice`, the bot convention. |
-| **SMS (self-hosted gateway)** | `BEACONFOLIO_SMS_GATEWAY_URL` + `_USER` + `_PASSWORD` + `_TO` (all four) | an SMS **with no data connection and no app installed**, via a gateway app on your own spare Android phone with your own SIM ([sms-gate.app](https://sms-gate.app/), [httpSMS](https://github.com/NdoleStudio/httpsms), [textbee](https://github.com/textbee/textbee)). Free beyond your SIM plan; **no metered credential exists**. Fails closed if the phone is offline. ⚠️ Do **not** point this at a CPaaS — see the table below. |
+| **SMS (self-hosted gateway)** | `BEACONFOLIO_SMS_GATEWAY_URL` + `_USER` + `_PASSWORD` + `_TO` (all four) | an SMS **with no data connection and no app installed**, via [**sms-gate.app**](https://sms-gate.app/) in local mode on your own spare Android phone with your own SIM. Free beyond your SIM plan; **no metered credential exists**. Fails closed if the phone is offline. See the compatibility note below — this channel implements *one* gateway's contract, not a category. |
+
+#### SMS gateway compatibility — one product, named (checked 2026-09-15)
+
+`SmsGatewayChannel` implements **sms-gate.app**'s local-mode contract and nothing else:
+`POST http://<phone-ip>:8080/message`, HTTP Basic, body
+`{"textMessage": {"text": …}, "phoneNumbers": [ … ]}` (from the vendor's README and its official
+Go client; the flat top-level `message` field that client still carries is annotated *"deprecated,
+use TextMessage instead"*, so this channel does not send it).
+
+The other self-hosted Android gateways are **not drop-in URLs**, and setting one gets you a
+*registered* channel that returns `False` on every send with only an exception type in the log:
+
+| Gateway | Endpoint | Auth | Body |
+|---|---|---|---|
+| **sms-gate.app** ✅ supported | `POST /message` (local mode) | HTTP **Basic** | `{"textMessage": {"text": …}, "phoneNumbers": […]}` |
+| [httpSMS](https://github.com/NdoleStudio/httpsms) ❌ | `POST /v1/messages/send` | `x-api-Key` **header** | requires `content` + `from` + `to` |
+| [textbee](https://github.com/textbee/textbee) ❌ | `POST /api/v1/gateway/send-sms` | `x-api-key` **header** | `{"recipients": […], "message": …}` |
+
+Both are fine products — they just need their own `NotificationChannel` class (~25 lines on this
+seam), which is exactly what the seam is for. ⚠️ The example URL is `http://`, so Basic auth
+crosses your LAN in the clear; prefer `https://` or reach the phone over a tailnet/VPN.
 
 ### Every other messenger — the verdict, and the date it was checked
 
@@ -706,7 +727,7 @@ class the day the reason changes. Re-open one with new evidence, not new enthusi
 | **Telegram** | ✅ **ships** | self-serve (@BotFather) | free | see above |
 | **Generic webhook** — Slack, Discord, Mattermost, ntfy, Gotify | ✅ **already covered, no new code** | self-serve webhook URL | free | all five are a JSON POST, so `WebhookChannel` serves them as-is. This is a *finding*, not a gap — there is deliberately no per-provider class. |
 | **Matrix** | ✅ **ships** | self-serve; your own homeserver or matrix.org | free | self-hosted-first, same argument as the local-Whisper decision in #264 |
-| **SMS — self-hosted Android gateway** | ✅ **ships** | install the app on a spare phone; no carrier/A2P registration (traffic is P2P from your own number) | free beyond your SIM plan | the only SMS path with **no metered API credential** |
+| **SMS — self-hosted Android gateway** (sms-gate.app) | ✅ **ships** | install sms-gate.app on a spare phone; no carrier/A2P registration (traffic is P2P from your own number) | free beyond your SIM plan | the only SMS path with **no metered API credential**. One product's contract — httpSMS/textbee differ, see the note above |
 | **SMS — CPaaS** (Twilio, Vonage, MessageBird) | ⛔ **deferred** | account **plus** US A2P 10DLC brand & campaign registration | metered: ≈ **US$0.012–0.013/message** (≈$0.0083 + $0.0035–0.0045 carrier pass-through), plus campaign fees and number rental | **zero capability gain** over the free gateway above, in exchange for a billed credential in the deployment |
 | **WhatsApp** | ⛔ **deferred** | Meta business portfolio + WhatsApp Business Account + verified number + **template pre-approval**; business verification to scale | **per-message since 2025-07-01** (this replaced the old per-conversation model) | **Structural, not just cost:** an owner notification arrives with **no open 24-hour customer-service window** — you never messaged your own business number — so it can only be a **pre-approved template with variable substitution**. The free-text summary this app sends cannot be delivered at all. |
 | **Viber** | ⛔ **deferred** | **not self-serve since 2024-02-05**: commercial terms only, via Rakuten Viber or a verified partner | metered **plus a monthly minimum per sender id** (≈ €115+) | a monthly floor for one owner's notifications; the recipient must also subscribe to the bot first |

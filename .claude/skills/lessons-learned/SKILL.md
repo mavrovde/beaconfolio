@@ -2014,6 +2014,26 @@ pricing change repairs. Practical note for verification: `developers.facebook.co
 error page to `curl`, so "re-confirm at build time" needs a real browser or an explicit
 "cited as of <date>, not re-measured" admission.
 
+## 74. "Product A, B and C all expose the same API" is a claim about THREE vendors — check three, or name one (#431/#433)
+
+The PR that deleted one false third-party claim (WhatsApp, §73) shipped another in the same diff,
+on four surfaces: a channel written against **sms-gate.app**'s contract was documented as working
+with *"SMSGate, httpSMS, textbee"*, which "all expose the same shape of REST endpoint". Measured
+at review time from each vendor's own docs: httpSMS wants an `x-api-Key` header and
+`content`/`from`/`to`; textbee wants `x-api-key` and `{recipients, message}`. Neither auth nor
+body is interchangeable. The cost of being wrong was concrete and silent: an owner following the
+README gets a channel that **registers** (config is present) and returns `False` on every send,
+whose only log line is an exception type — because the same PR's security rule forbids logging
+more. **The generalisable rules.** (1) A category claim costs N verifications; if you only did
+one, name that one — "written against X's contract" is both truer and more useful than a list.
+(2) Verifying it is cheap and first-hand: a vendor's official client library pins the wire format
+better than its prose, and `gh api repos/<vendor>/<client>/contents/<file>` reads it without a
+browser. (3) The check pays for itself beyond the claim — reading sms-gate.app's own Go client
+revealed the field this code was using (`message`) is annotated *"deprecated, use TextMessage
+instead"*, i.e. the implementation was also wrong-but-working, which no amount of mocked-httpx
+testing could have found. **Mocks pin the shape you believed; only the vendor's spec pins the
+shape that is true.**
+
 ## Where the rules live (AI-config map)
 
 - **`CLAUDE.md`** — the authoritative numbered rules (engineering rules 1–13, issue-tracking flow,

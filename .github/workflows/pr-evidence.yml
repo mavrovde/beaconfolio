@@ -61,8 +61,10 @@ on:
 # ...but NOT for a label this workflow does not consume. `concurrency` is
 # evaluated BEFORE a job's `if`, so the job-level guards below could not save
 # the in-flight run: a `labeled` event cancelled it and then skipped itself,
-# leaving the PR with NO evidence at all. Measured on PR #433, whose four runs
-# were `opened` **cancelled** + three `labeled` **skipped** — and that PR did
+# leaving the PR with NO evidence at all. Measured from the API at PR #433's
+# pre-fix head `f55a7e8c`: **5 runs — 2 cancelled + 3 skipped**, one of the
+# skipped ones having sat QUEUED 11m15s (created 15:49:12Z, started 16:00:27Z)
+# before it skipped. That PR did
 # nothing unusual: it was created with `gh pr create --label`, which is exactly
 # what the issue-tracking flow mandates ("labels AT CREATION"), so every
 # correctly-labelled PR lost the integration tier that #380 promised it.
@@ -89,7 +91,21 @@ permissions:
 
 jobs:
   integration-evidence:
-    name: PR Integration Evidence (WireMock Stack)
+    # The name is TRIGGER-DEPENDENT on purpose (#433 review round 1, finding
+    # 4). A label event this workflow does not consume still creates a run, and
+    # that run posts a check-run under the job's name — so with a single name,
+    # `gh pr checks` showed `PR Integration Evidence (WireMock Stack):
+    # skipping` while the real, PASSING run sat invisible in the run history.
+    # Measured on #433 at head `a4063df9`: two `skipped` check-runs (16:15:30Z,
+    # 16:15:34Z) posted AFTER the `success` one (16:02:12Z) and masked it — a
+    # reviewer reading the checks list concludes the tier never ran, which is
+    # the exact inverse of what #380 built this workflow to prove. The label
+    # no-op now reports under its own name, leaving the tier's name to mean
+    # only the tier.
+    name: >-
+      ${{ github.event.action == 'labeled'
+      && 'PR Evidence (label no-op — see the WireMock run for this head)'
+      || 'PR Integration Evidence (WireMock Stack)' }}
     # `labeled` fires once PER label — measured at this PR's creation: 8
     # labeled events + opened = 9 runs, 8 cancelled by the concurrency group,
     # and an unlucky late label can cancel IN-FLIGHT evidence. Only the one
