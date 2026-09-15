@@ -21,8 +21,9 @@ services:
       # then substitutes degraded text and the unmocked NDJSON contract spec
       # red-flags it. 120s absorbs the queue; prod keeps the tight default.
       # CI starts its stack from docker-compose.prod.yml ALONE, so both E2E
-      # jobs (deploy.yml, pr-evidence.yml) inject this same value via job env
-      # — prod compose reads ${LLM_STREAM_TIMEOUT_SECONDS:-30.0}.
+      # jobs (deploy.yml, pr-evidence-e2e.yml — the PR-side job moved out of
+      # pr-evidence.yml in #433) inject this same value via job env — prod
+      # compose reads ${LLM_STREAM_TIMEOUT_SECONDS:-30.0}.
       - LLM_STREAM_TIMEOUT_SECONDS=120.0
 
   frontend:
