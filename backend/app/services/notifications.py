@@ -245,15 +245,43 @@ class MatrixChannel:
 
 
 class SmsGatewayChannel:
-    """SMS via a SELF-HOSTED gateway — the owner's own Android phone and SIM
-    (SMSGate, httpSMS, textbee all expose the same shape of REST endpoint).
+    """SMS via a SELF-HOSTED gateway on the owner's own Android phone and SIM.
 
-    Why this one and not a CPaaS: there is no metered API credential to hold.
-    Traffic leaves the owner's own number as ordinary P2P SMS, so there is no
-    carrier/A2P campaign registration and no per-message bill. Do NOT point
-    `BEACONFOLIO_SMS_GATEWAY_URL` at Twilio/Vonage/MessageBird — the payload
-    shape differs, and doing so silently accepts per-message billing that the
-    rule-10 contract of this registry exists to prevent.
+    ONE gateway product, named: **sms-gate.app** (capcom6/android-sms-gateway),
+    local-network mode. Its contract, read from the vendor's own README and its
+    official Go client on 2026-09-15:
+
+        POST http://<phone-ip>:8080/message
+        Authorization: Basic <user:password>
+        {"textMessage": {"text": ...}, "phoneNumbers": [...]}
+
+    `textMessage.text` — NOT the flat top-level `message` string. That field
+    still exists but the vendor's client annotates it *"deprecated, use
+    TextMessage instead"* (`android-sms-gateway/client-go`,
+    `smsgateway/domain_messages.go:131`), so sending it works today and rots
+    later. Round 1 of #431 shipped the deprecated shape; this is the fix.
+
+    NOT interchangeable with the other self-hosted gateways, which is why this
+    docstring names one product instead of a category (#433 review round 1:
+    claiming three was a false third-party claim of exactly the kind this issue
+    exists to delete). Measured 2026-09-15 from each vendor's own docs:
+    - **httpSMS** — `POST /v1/messages/send`, auth via an `x-api-Key` HEADER
+      (its swagger `securityDefinitions.ApiKeyAuth`, `in: header`), body
+      requires `content` + `from` + `to`.
+    - **textbee** — `POST /api/v1/gateway/send-sms`, `x-api-key` header, body
+      `{"recipients": [...], "message": ...}`.
+    Neither the auth scheme nor the body matches, so each needs its own
+    `NotificationChannel` class (~25 lines on this seam) or a shim. Pointing
+    `BEACONFOLIO_SMS_GATEWAY_URL` at one of them gets a REGISTERED channel that
+    returns False on every send, and — by the logging rule below — nothing to
+    debug from. Do not do it.
+
+    Why a self-hosted gateway and not a CPaaS: there is no metered API
+    credential to hold. Traffic leaves the owner's own number as ordinary P2P
+    SMS, so there is no carrier/A2P campaign registration and no per-message
+    bill. Do NOT point the URL at Twilio/Vonage/MessageBird either — different
+    payload, and it silently accepts per-message billing that the rule-10
+    contract of this registry exists to prevent.
 
     Real failure mode, deliberately tested: the phone goes offline. The send
     then fails CLOSED (returns False, logs the exception TYPE only — the Basic
@@ -269,7 +297,7 @@ class SmsGatewayChannel:
                 settings.sms_gateway_url,
                 auth=(settings.sms_gateway_user, settings.sms_gateway_password),
                 json={
-                    "message": event.summary(),
+                    "textMessage": {"text": event.summary()},
                     "phoneNumbers": [settings.sms_gateway_to],
                 },
                 timeout=settings.notify_timeout_seconds,

@@ -9,8 +9,10 @@ All notable changes to this project will be documented in this file.
   **Matrix** (`MatrixChannel`: `PUT …/rooms/{roomId}/send/m.room.message/{txnId}` with a bearer
   token, sent as `m.notice`, fresh `uuid4` transaction id per send so the homeserver cannot
   deduplicate a second recruiter contact away) and **SMS via a self-hosted Android gateway**
-  (`SmsGatewayChannel`: JSON POST + HTTP Basic to sms-gate.app / httpSMS / textbee running on the
-  owner's own phone and SIM — an alert that arrives with no data connection and no app installed).
+  (`SmsGatewayChannel`: JSON POST + HTTP Basic to **sms-gate.app** in local mode on the owner's
+  own phone and SIM — an alert that arrives with no data connection and no app installed. One
+  gateway's contract, named and dated, not a category: httpSMS and textbee authenticate with an
+  `x-api-key` header and take different bodies, so each would need its own class).
   Seven `BEACONFOLIO_*`-namespaced knobs, wired into `backend/.env.example`, the root
   `.env.example` and the backend service of **both** compose files. The #263 contract is
   unchanged and re-pinned per channel: a channel exists only when **every** part of its config is
@@ -45,11 +47,14 @@ All notable changes to this project will be documented in this file.
   two-way recruiter conversation is tracked separately (#432).
 - **A correctly-labelled PR stopped losing its integration evidence (#431, found while opening
   #433)** — `pr-evidence.yml`'s `concurrency` cancelled in-progress runs unconditionally, and
-  `concurrency` is evaluated *before* a job's `if`, so each `labeled` event killed the `opened`
-  run and then skipped itself. Measured on #433: four runs, one **cancelled** + three
-  **skipped**, i.e. zero integration evidence on a PR created with `gh pr create --label` — the
-  labels-at-creation flow the issue policy requires. The cancellation is now gated on the same
-  condition as the jobs, so a non-`run-e2e` label queues instead of killing the run.
+  `concurrency` is evaluated *before* a job's `if`, so each `labeled` event killed the run it then
+  skipped. Measured from the API at #433's pre-fix head: **5 runs — 2 cancelled + 3 skipped**
+  (one of the skipped runs sat *queued for 11m15s* before skipping), i.e. zero integration
+  evidence on a PR created with `gh pr create --label` — the labels-at-creation flow the issue
+  policy requires. The cancellation is now gated on the same condition as the jobs, so a
+  non-`run-e2e` label queues instead of killing the run, and the integration job's check-run name
+  now says so when it is a label no-op, because a run that skips under the tier's own name makes
+  `gh pr checks` report the tier as `skipping` while the real run passes out of sight.
 - **The wiki statistics articles stop competing with the canonical record** — `docs/wiki/`'s
   `team-and-process.md` replaces its trend-table and KPI-baseline copies (and its restated
   cost figures) with links to `docs/retrospectives/`; `delivery-statistics.md` is banner-dated

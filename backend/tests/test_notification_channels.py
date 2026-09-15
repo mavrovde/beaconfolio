@@ -72,35 +72,49 @@ def _with(patches, fn):
 # ---------------------------------------------------------------- registry --
 
 
-def test_empty_config_means_empty_registry_and_zero_requests():
-    """Rule 10, on EVERY httpx verb the module uses. #431 added a channel that
-    calls `httpx.put`, so a post-only patch would pass here vacuously: delete
-    either patch and the corresponding `assert_not_called` disappears with it,
-    which is why both verbs are asserted explicitly rather than via a helper."""
-    with (
-        patch("app.services.notifications.httpx.post") as post,
-        patch("app.services.notifications.httpx.put") as put,
-    ):
-        result = _with(_cfg(), lambda: notify_owner(EVENT))
-        assert result == {}
-        post.assert_not_called()
-        put.assert_not_called()
-
-
-def test_every_httpx_verb_the_module_calls_is_patched_by_the_empty_config_test():
-    """Guards the test above from going blind AGAIN the next time a channel
-    uses a new verb (#431): the source is scanned for `httpx.<verb>` calls and
-    the set must be exactly the one the empty-config case patches. A third
-    verb (e.g. `httpx.request`) turns this red instead of silently making the
-    zero-requests assertion partial."""
+def _httpx_verbs_the_module_calls() -> set[str]:
+    """Every `httpx.<verb>(` call site in the module under test, read from its
+    source. The rule-10 zero-requests case patches THIS set rather than a
+    hand-written list: #433 review round 1, nit 5 — a hand-written list and the
+    verb set are two objects that must agree, so deleting a patch AND its
+    paired assertion together left the suite green. One object cannot disagree
+    with itself."""
     import re
     from pathlib import Path
 
     import app.services.notifications as n
 
-    source = Path(n.__file__).read_text()
-    verbs = set(re.findall(r"\bhttpx\.([a-z]+)\(", source))
-    assert verbs == {"post", "put"}
+    return set(re.findall(r"\bhttpx\.([a-z]+)\(", Path(n.__file__).read_text()))
+
+
+def test_empty_config_means_empty_registry_and_zero_requests():
+    """Rule 10, on EVERY httpx verb the module uses — discovered, not listed.
+    #431 added a channel that calls `httpx.put`, so the original post-only
+    patch would have passed here vacuously. Driving the patch set off the
+    source scan means a NEW verb is covered the moment it is written."""
+    from contextlib import ExitStack
+
+    verbs = _httpx_verbs_the_module_calls()
+    # If the scan ever finds nothing, every `assert_not_called` below becomes
+    # vacuous — fail loudly instead of silently passing on an empty set.
+    assert verbs, "no httpx call sites found: the instrument itself is broken"
+    with ExitStack() as stack:
+        mocks = {
+            verb: stack.enter_context(patch(f"app.services.notifications.httpx.{verb}"))
+            for verb in verbs
+        }
+        result = _with(_cfg(), lambda: notify_owner(EVENT))
+    assert result == {}
+    for verb, mock in mocks.items():
+        assert not mock.called, f"httpx.{verb} was called with empty config"
+
+
+def test_the_verb_scan_sees_exactly_the_verbs_this_module_uses_today():
+    """The companion canary: the scan above is only as good as its regex, so
+    the set it returns is also pinned literally. Adding a third verb turns
+    this red — a deliberate-change signal — while the zero-requests case keeps
+    covering it automatically."""
+    assert _httpx_verbs_the_module_calls() == {"post", "put"}
 
 
 def test_channels_register_exactly_when_their_config_is_present():
@@ -376,7 +390,10 @@ def test_matrix_real_httpx_logging_never_carries_the_access_token(caplog):
 # --------------------------------------------------------------------- sms --
 
 
-def test_sms_posts_message_and_recipient_with_basic_auth():
+def test_sms_posts_the_sms_gate_app_contract_with_basic_auth():
+    """The ONE gateway this channel targets is sms-gate.app in local mode, and
+    its documented body is `{"textMessage": {"text": ...}, "phoneNumbers": []}`
+    (vendor README + official Go client, read 2026-09-15)."""
     with patch("app.services.notifications.httpx.post") as post:
         post.return_value = MagicMock(raise_for_status=lambda: None)
         result = _with(_cfg(**SMS_CFG), lambda: notify_owner(EVENT))
@@ -384,9 +401,25 @@ def test_sms_posts_message_and_recipient_with_basic_auth():
     assert post.call_args.args[0] == "http://192.168.1.50:8080/message"
     assert post.call_args.kwargs["auth"] == ("sms", "pw")
     payload = post.call_args.kwargs["json"]
-    assert "[contact_form] New interaction from Rita Recruiter" in payload["message"]
+    assert (
+        "[contact_form] New interaction from Rita Recruiter"
+        in payload["textMessage"]["text"]
+    )
     assert payload["phoneNumbers"] == ["+491700000000"]
     assert post.call_args.kwargs["timeout"] == settings.notify_timeout_seconds
+
+
+def test_sms_does_not_send_the_deprecated_flat_message_field():
+    """Round 1 of #431 sent `{"message": ...}` — a field the vendor's own client
+    annotates "deprecated, use TextMessage instead". It works today and rots on
+    the vendor's schedule, so the absence is pinned, not just the presence:
+    reinstate the flat key and this goes red."""
+    with patch("app.services.notifications.httpx.post") as post:
+        post.return_value = MagicMock(raise_for_status=lambda: None)
+        _with(_cfg(**SMS_CFG), lambda: notify_owner(EVENT))
+    payload = post.call_args.kwargs["json"]
+    assert "message" not in payload
+    assert set(payload) == {"textMessage", "phoneNumbers"}
 
 
 def test_sms_failure_is_false_and_logs_the_type_only():
