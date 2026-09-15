@@ -25,6 +25,19 @@ name: PR E2E Evidence
 # this tier's normal state, it is on-demand), and the integration tier's name
 # now means only the integration tier.
 #
+# KNOWN RESIDUAL, seen and accepted rather than missed (#433 review round 2,
+# non-blocking finding 3): the masking class still exists INSIDE this tier.
+# Once `run-e2e` is on the PR, a FURTHER label satisfies the `contains(...)`
+# clause but fails the `label.name == 'run-e2e'` clause, so it skips and posts
+# a `skipped` check-run under this job's name — potentially over a passing
+# browser run. It is strictly narrower than the bug that was fixed (it needs
+# `run-e2e` to be applied already, and it can never mask the ALWAYS-ON
+# integration tier, which is the lane a merger actually reads), and the clean
+# cure is the same one that failed here — GitHub will not evaluate a `name:`
+# expression for a skipped job — so closing it needs a different topology
+# (e.g. `workflow_dispatch`, or a repository_dispatch relay). Not worth that
+# complexity for an on-demand tier whose normal state is `skipped`.
+#
 # Everything else about this tier is unchanged from #380: expensive (4 image
 # builds + full prod topology + Playwright), so it is SUMMONED with the
 # `run-e2e` label rather than run on every PR; a measured local run remains

@@ -31,8 +31,10 @@ with onboarding and cost per provider, is in README.md → "Owner notifications"
                                code was needed; that is a finding, not a gap.
 - Matrix            SHIPPED  — `MatrixChannel`; free, self-serve, and the
                                owner can run the homeserver themselves.
-- SMS, self-hosted  SHIPPED  — `SmsGatewayChannel`; the owner's own Android
-                               phone + SIM, so no metered credential exists.
+- SMS, self-hosted  SHIPPED  — `SmsGatewayChannel`, against **sms-gate.app**
+                               specifically; the owner's own Android phone +
+                               SIM, so no metered credential exists. Other
+                               gateways differ — see that class's table.
 - SMS, CPaaS (Twilio/Vonage/MessageBird)
                     DEFERRED — adds a metered credential (~US$0.012–0.013 per
                                US message incl. carrier fees, plus 10DLC
