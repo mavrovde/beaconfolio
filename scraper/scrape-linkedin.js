@@ -3,6 +3,7 @@ import { config } from 'dotenv';
 import { writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { extractPhotoUrl } from './extract-photo.js';
 
 config();
 
@@ -306,30 +307,19 @@ async function main() {
 
 // ─────────────────────────── Avatar (#333) ───────────────────────────
 // LinkedIn is the designated portrait source when no other exists (owner
-// directive 2026-09-14). The voyager payload carries the avatar as a
-// vectorImage (rootUrl + per-size artifacts); take the largest.
-function extractPhotoUrl(included) {
-  for (const e of included) {
-    const vec =
-      (e.profilePicture && e.profilePicture.displayImageReference && e.profilePicture.displayImageReference.vectorImage) ||
-      (e.profilePicture && e.profilePicture.displayImage && e.profilePicture.displayImage.vectorImage);
-    if (vec && vec.rootUrl && Array.isArray(vec.artifacts) && vec.artifacts.length) {
-      const best = [...vec.artifacts].sort((a, b) => (b.width || 0) - (a.width || 0))[0];
-      if (best && best.fileIdentifyingUrlPathSegment) {
-        return vec.rootUrl + best.fileIdentifyingUrlPathSegment;
-      }
-    }
-  }
-  return null;
-}
+// directive 2026-09-14). Extraction lives in extract-photo.js so it is
+// unit-tested (extract-photo.test.js) without a live session.
 
 async function downloadPhoto(page, included) {
-  const url = extractPhotoUrl(included);
-  if (!url) {
-    console.log('Photo:           — (no avatar in the profile payload)');
-    return;
-  }
+  // Everything — extraction included — stays inside the try: this leg must
+  // never abort main() after profile_data.json is written (#422 round 1,
+  // finding 3: an extraction throw used to suppress the RESULT block).
   try {
+    const url = extractPhotoUrl(included);
+    if (!url) {
+      console.log('Photo:           — (no avatar in the profile payload)');
+      return;
+    }
     // page.request rides the authenticated session's cookies.
     const res = await page.request.get(url);
     if (!res.ok()) throw new Error(`HTTP ${res.status()}`);

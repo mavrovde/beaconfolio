@@ -121,12 +121,41 @@ async def test_delete_db_error_is_500(client: AsyncClient):
     assert "Failed to delete profile photo" in r.json()["detail"]
 
 
+# --- authentication / authorization matrix ---------------------------------
+# Same shape as test_admin_profile_api.py's matrix: without these, stripping
+# the admin dependency off the two write routes left all 13 sibling tests
+# green (#422 review round 1, measured) — the public photo would be
+# writable/deletable by anyone.
+
+
+async def test_photo_upload_requires_auth(clean_client: AsyncClient):
+    """No session → 401 (never reaches the handler)."""
+    r = await clean_client.post(UPLOAD, files=_file(PNG))
+    assert r.status_code == 401
+
+
+async def test_photo_upload_forbidden_for_non_admin(normal_client: AsyncClient):
+    """A logged-in non-admin is forbidden (403)."""
+    r = await normal_client.post(UPLOAD, files=_file(PNG))
+    assert r.status_code == 403
+
+
+async def test_photo_delete_requires_auth(clean_client: AsyncClient):
+    assert (await clean_client.delete(UPLOAD)).status_code == 401
+
+
+async def test_photo_delete_forbidden_for_non_admin(normal_client: AsyncClient):
+    assert (await normal_client.delete(UPLOAD)).status_code == 403
+
+
 # --- public serving ---------------------------------------------------------
 
 
 async def test_get_photo_404_before_first_upload(client: AsyncClient):
     r = await client.get(PUBLIC)
     assert r.status_code == 404
+    # no-store: a cached 404 would hide the first upload for max-age.
+    assert r.headers["cache-control"] == "no-store"
 
 
 async def test_get_photo_serves_uploaded_bytes(client: AsyncClient):

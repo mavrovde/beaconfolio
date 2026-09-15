@@ -202,8 +202,13 @@ async def activate_profile_version(
 
 # --- Portrait (#333) --------------------------------------------------------
 
-# Bounded like the profile JSON above: even an authenticated admin (or a
-# stolen admin token) must not be able to exhaust memory with a huge body.
+# Bounded like the profile JSON above. Precisely: the HANDLER's read is
+# bounded (`file.read(MAX+1)`), so this process never materialises more than
+# MAX+1 bytes in memory — but Starlette has already spooled the multipart
+# body (to a temp file past its own threshold) before the handler runs, so
+# the bound is on handler memory and the stored row, not on request-body
+# spooling (#422 review round 1, nit 7). Whole-request size belongs to the
+# proxy's client_max_body_size, the layer that sees bytes first.
 MAX_PROFILE_PHOTO_BYTES = 5 * 1024 * 1024  # 5 MB
 
 # Magic-byte signatures, not client-declared content types — a filename or a
@@ -286,6 +291,6 @@ async def delete_profile_photo(
         await db.rollback()
         raise HTTPException(status_code=500, detail="Failed to delete profile photo")
     # CursorResult in practice; typed as Result, which lacks rowcount.
-    removed = int(getattr(result, "rowcount", 0) or 0)
+    removed = int(getattr(result, "rowcount", 0))
     logger.info("Admin %s removed profile photo (%d row(s))", admin.email, removed)
     return {"success": True, "removed": removed}

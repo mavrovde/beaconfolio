@@ -47,7 +47,6 @@ describe('HeroComponent', () => {
     vi.restoreAllMocks();
   });
 
-
   it('renders the runtime photo URL until the API errors (#333)', () => {
     const img = fixture.debugElement.query(By.css('[data-testid="profile-photo"]'))
       .nativeElement as HTMLImageElement;

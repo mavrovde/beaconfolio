@@ -136,7 +136,12 @@ async def get_profile_photo(db: AsyncSession = Depends(get_db)):
     )
     photo = result.scalar_one_or_none()
     if photo is None:
-        raise HTTPException(status_code=404, detail="No profile photo uploaded.")
+        # no-store: a cached 404 would hide a first upload for max-age.
+        raise HTTPException(
+            status_code=404,
+            detail="No profile photo uploaded.",
+            headers={"Cache-Control": "no-store"},
+        )
     return Response(
         content=photo.data,
         media_type=photo.content_type,
