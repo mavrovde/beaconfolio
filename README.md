@@ -675,22 +675,57 @@ export const environment = {
 };
 ```
 
-## 📣 Owner notifications — channels (#263)
+## 📣 Owner notifications — channels (#263, #431)
 
 Every new inbox interaction fans out to **all configured channels**; a channel exists exactly
-when its config does, and one dead channel never blocks another (nor intake).
+when its config does, and one dead channel never blocks another (nor intake). Scope is
+**outbound notification to you, the owner** — one recipient, one direction. Two-way recruiter
+conversations (inbound webhooks, reply windows, threading) are a separate feature with a public
+attack surface, tracked as [#432](https://github.com/mavrovde/beaconfolio/issues/432) and
+deliberately not on this seam.
+
+### Channels that ship today
 
 | Channel | Config | Notes |
 |---|---|---|
 | Email | `SMTP_*` | the pre-existing path, unchanged |
 | **Telegram** | `BEACONFOLIO_TELEGRAM_BOT_TOKEN` + `BEACONFOLIO_TELEGRAM_CHAT_ID` | **2-minute setup**: message [@BotFather](https://t.me/botfather) → `/newbot` → copy the token; then message your bot once and read your chat id from `https://api.telegram.org/bot<token>/getUpdates`. Free; lands on your phone in seconds. |
-| Webhook | `BEACONFOLIO_NOTIFY_WEBHOOK_URL` | provider-agnostic JSON POST (`text` + structured fields) — works as-is with Slack/Mattermost incoming webhooks and ntfy |
+| Webhook | `BEACONFOLIO_NOTIFY_WEBHOOK_URL` | provider-agnostic JSON POST (`text` + structured fields) — works as-is with Slack/Mattermost/Discord incoming webhooks, ntfy and Gotify |
+| **Matrix** | `BEACONFOLIO_MATRIX_HOMESERVER` + `_ACCESS_TOKEN` + `_ROOM_ID` (all three) | free and **self-hostable**: create a bot account on your own homeserver (or matrix.org), get a token from `POST /_matrix/client/v3/login`, invite it to a room, paste the room id (`!abc:your.server`). Sent as `m.notice`, the bot convention. |
+| **SMS (self-hosted gateway)** | `BEACONFOLIO_SMS_GATEWAY_URL` + `_USER` + `_PASSWORD` + `_TO` (all four) | an SMS **with no data connection and no app installed**, via a gateway app on your own spare Android phone with your own SIM ([sms-gate.app](https://sms-gate.app/), [httpSMS](https://github.com/NdoleStudio/httpsms), [textbee](https://github.com/textbee/textbee)). Free beyond your SIM plan; **no metered credential exists**. Fails closed if the phone is offline. ⚠️ Do **not** point this at a CPaaS — see the table below. |
 
-**WhatsApp — a documented decision, not a missing feature:** the Business Cloud API requires a
-Meta-verified business account, pre-approved message templates, and bills per conversation.
-That cost/approval model makes it a deliberate later adapter; the channel seam
-(`NotificationChannel` in `backend/app/services/notifications.py`) makes it one small class the
-day an owner actually needs it. No stub pretends otherwise.
+### Every other messenger — the verdict, and the date it was checked
+
+A deferral here is **a decision with a written reason**, not a missing feature: the seam
+(`NotificationChannel` in `backend/app/services/notifications.py`) makes any of these one small
+class the day the reason changes. Re-open one with new evidence, not new enthusiasm.
+**All facts below checked 2026-09-15.**
+
+| Provider | Verdict | Onboarding | Cost model | Why |
+|---|---|---|---|---|
+| **Telegram** | ✅ **ships** | self-serve (@BotFather) | free | see above |
+| **Generic webhook** — Slack, Discord, Mattermost, ntfy, Gotify | ✅ **already covered, no new code** | self-serve webhook URL | free | all five are a JSON POST, so `WebhookChannel` serves them as-is. This is a *finding*, not a gap — there is deliberately no per-provider class. |
+| **Matrix** | ✅ **ships** | self-serve; your own homeserver or matrix.org | free | self-hosted-first, same argument as the local-Whisper decision in #264 |
+| **SMS — self-hosted Android gateway** | ✅ **ships** | install the app on a spare phone; no carrier/A2P registration (traffic is P2P from your own number) | free beyond your SIM plan | the only SMS path with **no metered API credential** |
+| **SMS — CPaaS** (Twilio, Vonage, MessageBird) | ⛔ **deferred** | account **plus** US A2P 10DLC brand & campaign registration | metered: ≈ **US$0.012–0.013/message** (≈$0.0083 + $0.0035–0.0045 carrier pass-through), plus campaign fees and number rental | **zero capability gain** over the free gateway above, in exchange for a billed credential in the deployment |
+| **WhatsApp** | ⛔ **deferred** | Meta business portfolio + WhatsApp Business Account + verified number + **template pre-approval**; business verification to scale | **per-message since 2025-07-01** (this replaced the old per-conversation model) | **Structural, not just cost:** an owner notification arrives with **no open 24-hour customer-service window** — you never messaged your own business number — so it can only be a **pre-approved template with variable substitution**. The free-text summary this app sends cannot be delivered at all. |
+| **Viber** | ⛔ **deferred** | **not self-serve since 2024-02-05**: commercial terms only, via Rakuten Viber or a verified partner | metered **plus a monthly minimum per sender id** (≈ €115+) | a monthly floor for one owner's notifications; the recipient must also subscribe to the bot first |
+| **Signal** | ⛔ **deferred** | register a number through an **unofficial** client (`signal-cli`) | free | no official API; the REST wrapper is a stateful linked-device daemon — a second service to operate, with ToS risk. **Escape hatch:** already running `signal-cli-rest-api`? Bridge it into the webhook channel via ntfy/Apprise today. |
+| **Facebook Messenger** | ⛔ **deferred** | Facebook Page + **Meta App Review** | in-window sends free; out-of-window routes to paid Utility Templates | unsolicited outbound is not a supported use case, and it narrowed in 2026: Message Tags deprecated **2026-02-09**, legacy tags retire **2026-04-27**, Recurring Notifications ended **2026-02-10** |
+| **LINE** | ⛔ **deferred** | self-serve LINE Official Account | free tier with a small monthly **push** quota, billed beyond it | works, but push consumes quota and it is regionally specific (JP/TW/TH) — revisit if a forker in those markets asks |
+| **WeChat** | ⛔ **deferred** | **overseas-entity verification** (5–10 business days, annual fee) | verification fee + template constraints | template-only sends under strict content rules |
+
+Two notes on the evidence, so you can weigh it rather than trust it. **(1)** WhatsApp's
+per-message model and the window/template rules come from
+[Meta's WhatsApp pricing docs](https://developers.facebook.com/docs/whatsapp/pricing) as reviewed
+on 2026-09-15; that page refuses non-browser clients, so re-check it in a browser before acting
+on it. A further change — in-window *service* messages becoming billable on **2026-10-01** with a
+reported 1,000-message monthly allowance — is **BSP/industry reporting, not Meta's own page**, and
+is recorded here as unconfirmed. **(2)** [Apprise](https://pypi.org/project/apprise/) (BSD-3,
+~150 services) was evaluated as a shortcut for all of the above and **rejected**: it puts a large
+dependency between the app and every channel, while the two channels worth shipping are ~25 lines
+each on a seam that already existed.
+
 ## 🌐 Transparent translation (#248)
 
 Recruiter messages arrive in any language; the inbox detects it and shows a translation into

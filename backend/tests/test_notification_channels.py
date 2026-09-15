@@ -32,9 +32,31 @@ def _cfg(**overrides):
         "telegram_bot_token": "",
         "telegram_chat_id": "",
         "notify_webhook_url": "",
+        "matrix_homeserver": "",
+        "matrix_access_token": "",
+        "matrix_room_id": "",
+        "sms_gateway_url": "",
+        "sms_gateway_user": "",
+        "sms_gateway_password": "",
+        "sms_gateway_to": "",
     }
     defaults.update(overrides)
     return [patch(f"app.config.settings.{k}", v) for k, v in defaults.items()]
+
+
+# Full, valid config per #431 channel — reused so a "blank exactly one part"
+# case cannot accidentally blank two.
+MATRIX_CFG = {
+    "matrix_homeserver": "https://matrix.example",
+    "matrix_access_token": "syt_token",
+    "matrix_room_id": "!room:matrix.example",
+}
+SMS_CFG = {
+    "sms_gateway_url": "http://192.168.1.50:8080/message",
+    "sms_gateway_user": "sms",
+    "sms_gateway_password": "pw",
+    "sms_gateway_to": "+491700000000",
+}
 
 
 def _with(patches, fn):
@@ -51,10 +73,34 @@ def _with(patches, fn):
 
 
 def test_empty_config_means_empty_registry_and_zero_requests():
-    with patch("app.services.notifications.httpx.post") as post:
+    """Rule 10, on EVERY httpx verb the module uses. #431 added a channel that
+    calls `httpx.put`, so a post-only patch would pass here vacuously: delete
+    either patch and the corresponding `assert_not_called` disappears with it,
+    which is why both verbs are asserted explicitly rather than via a helper."""
+    with (
+        patch("app.services.notifications.httpx.post") as post,
+        patch("app.services.notifications.httpx.put") as put,
+    ):
         result = _with(_cfg(), lambda: notify_owner(EVENT))
         assert result == {}
         post.assert_not_called()
+        put.assert_not_called()
+
+
+def test_every_httpx_verb_the_module_calls_is_patched_by_the_empty_config_test():
+    """Guards the test above from going blind AGAIN the next time a channel
+    uses a new verb (#431): the source is scanned for `httpx.<verb>` calls and
+    the set must be exactly the one the empty-config case patches. A third
+    verb (e.g. `httpx.request`) turns this red instead of silently making the
+    zero-requests assertion partial."""
+    import re
+    from pathlib import Path
+
+    import app.services.notifications as n
+
+    source = Path(n.__file__).read_text()
+    verbs = set(re.findall(r"\bhttpx\.([a-z]+)\(", source))
+    assert verbs == {"post", "put"}
 
 
 def test_channels_register_exactly_when_their_config_is_present():
@@ -69,6 +115,12 @@ def test_channels_register_exactly_when_their_config_is_present():
         _cfg(notify_webhook_url="https://hooks.example/x"),
         lambda: [c.name for c in configured_channels()],
     ) == ["webhook"]
+    assert _with(
+        _cfg(**MATRIX_CFG), lambda: [c.name for c in configured_channels()]
+    ) == ["matrix"]
+    assert _with(_cfg(**SMS_CFG), lambda: [c.name for c in configured_channels()]) == [
+        "sms"
+    ]
     # Half a Telegram config is NO Telegram config.
     assert (
         _with(
@@ -77,6 +129,19 @@ def test_channels_register_exactly_when_their_config_is_present():
         )
         == []
     )
+    # ...and the same per PART for the #431 channels. One "all blank" case
+    # would pass against an `or`-gated registry, so every part is blanked on
+    # its own, with the others still set.
+    for blanked in MATRIX_CFG:
+        cfg = {**MATRIX_CFG, blanked: ""}
+        assert (
+            _with(_cfg(**cfg), lambda: [c.name for c in configured_channels()]) == []
+        ), f"matrix registered with {blanked} blank"
+    for blanked in SMS_CFG:
+        cfg = {**SMS_CFG, blanked: ""}
+        assert (
+            _with(_cfg(**cfg), lambda: [c.name for c in configured_channels()]) == []
+        ), f"sms registered with {blanked} blank"
 
 
 # ---------------------------------------------------------------- telegram --
@@ -166,6 +231,235 @@ def test_telegram_http_500_is_a_failure_not_a_success():
     assert result == {"telegram": False}
 
 
+# ------------------------------------------------------------------ matrix --
+
+
+def test_matrix_puts_an_m_notice_with_bearer_auth_and_encoded_room():
+    with patch("app.services.notifications.httpx.put") as put:
+        put.return_value = MagicMock(raise_for_status=lambda: None)
+        result = _with(_cfg(**MATRIX_CFG), lambda: notify_owner(EVENT))
+    assert result == {"matrix": True}
+    url = put.call_args.args[0]
+    # The room id contains `!` and `:` — reserved in a path segment, so it must
+    # arrive percent-encoded or the homeserver 404s (spec: one path segment).
+    assert url.startswith(
+        "https://matrix.example/_matrix/client/v3/rooms/"
+        "%21room%3Amatrix.example/send/m.room.message/"
+    )
+    assert "!room:matrix.example" not in url
+    headers = put.call_args.kwargs["headers"]
+    assert headers["Authorization"] == "Bearer syt_token"
+    payload = put.call_args.kwargs["json"]
+    assert payload["msgtype"] == "m.notice"
+    assert "[contact_form] New interaction from Rita Recruiter" in payload["body"]
+    assert "admin" in payload["body"]  # the deep link back to the inbox
+    # The timeout is load-bearing (#207): a hung homeserver must not pin the
+    # background task forever. Deleting it leaves httpx on its own default.
+    assert put.call_args.kwargs["timeout"] == settings.notify_timeout_seconds
+
+
+def test_matrix_trailing_slash_on_the_homeserver_does_not_double_up():
+    with patch("app.services.notifications.httpx.put") as put:
+        put.return_value = MagicMock(raise_for_status=lambda: None)
+        _with(
+            _cfg(**{**MATRIX_CFG, "matrix_homeserver": "https://matrix.example/"}),
+            lambda: notify_owner(EVENT),
+        )
+    assert put.call_args.args[0].startswith("https://matrix.example/_matrix/")
+
+
+def test_matrix_uses_a_fresh_transaction_id_per_send():
+    """The txn id is Matrix's idempotency key: reuse it and the homeserver
+    DEDUPLICATES, so the second recruiter contact of the session is silently
+    dropped. Two sends, two ids."""
+    with patch("app.services.notifications.httpx.put") as put:
+        put.return_value = MagicMock(raise_for_status=lambda: None)
+        _with(_cfg(**MATRIX_CFG), lambda: notify_owner(EVENT))
+        _with(_cfg(**MATRIX_CFG), lambda: notify_owner(EVENT))
+    first, second = (c.args[0].rsplit("/", 1)[1] for c in put.call_args_list)
+    assert first and second and first != second
+
+
+def test_matrix_body_stays_raw_for_the_owner():
+    """An `m.notice` plain body parses no markup, so escaping here would show
+    the owner `&amp;`-noise for nothing — same reasoning as Telegram (#297
+    round 3), now pinned for Matrix too."""
+    event = OwnerNotification.build(
+        source="contact_form",
+        name="N",
+        email="n@example.com",
+        company=None,
+        message="We pay > 100k & need C++ <urgent>",
+    )
+    with patch("app.services.notifications.httpx.put") as put:
+        put.return_value = MagicMock(raise_for_status=lambda: None)
+        _with(_cfg(**MATRIX_CFG), lambda: notify_owner(event))
+    body = put.call_args.kwargs["json"]["body"]
+    assert "We pay > 100k & need C++ <urgent>" in body
+    assert "&amp;" not in body
+
+
+def test_matrix_failure_is_false_and_logs_the_type_only():
+    """Mutation contract: change the handler to log `{e}` and this goes red —
+    the exception's own message carries the access token here."""
+    import httpx as real_httpx
+
+    with patch("app.services.notifications.httpx.put") as put:
+        put.side_effect = real_httpx.ConnectError(
+            "boom while authenticating with Bearer SECRET-MATRIX-TOKEN"
+        )
+        with patch("app.services.notifications.logger") as log:
+            result = _with(
+                _cfg(**{**MATRIX_CFG, "matrix_access_token": "SECRET-MATRIX-TOKEN"}),
+                lambda: notify_owner(EVENT),
+            )
+    assert result == {"matrix": False}
+    logged = " ".join(str(c) for c in log.error.call_args_list)
+    assert "SECRET-MATRIX-TOKEN" not in logged
+    assert "ConnectError" in logged
+
+
+def test_matrix_http_500_is_a_failure_not_a_success():
+    """`raise_for_status` is the ONLY thing turning a 5xx into False (#297
+    review major 5 on the Telegram twin): a well-formed 500, no exception."""
+    import httpx as real_httpx
+
+    response = real_httpx.Response(
+        500,
+        request=real_httpx.Request("PUT", "https://matrix.example/_matrix/x"),
+    )
+    with patch("app.services.notifications.httpx.put", return_value=response):
+        result = _with(_cfg(**MATRIX_CFG), lambda: notify_owner(EVENT))
+    assert result == {"matrix": False}
+
+
+def test_matrix_real_httpx_logging_never_carries_the_access_token(caplog):
+    """The #297-established pattern (test_httpx_success_logging_never_carries
+    _the_token): a test that MOCKS httpx cannot see httpx's OWN request
+    logging, which is how the original Telegram leak survived its first test.
+    A real client over MockTransport runs that pipeline for real — on the
+    success path AND on the failure path, since a transport error logs too."""
+    import logging
+
+    import httpx as real_httpx
+
+    def through_real_client(url, **kwargs):
+        transport = real_httpx.MockTransport(
+            lambda request: real_httpx.Response(200, json={"event_id": "$1"})
+        )
+        with real_httpx.Client(transport=transport) as c:
+            return c.put(url, json=kwargs.get("json"), headers=kwargs.get("headers"))
+
+    def through_real_client_that_dies(url, **kwargs):
+        def die(request):
+            raise real_httpx.ConnectError("homeserver down", request=request)
+
+        with real_httpx.Client(transport=real_httpx.MockTransport(die)) as c:
+            return c.put(url, json=kwargs.get("json"), headers=kwargs.get("headers"))
+
+    cfg = {**MATRIX_CFG, "matrix_access_token": "SECRET-MATRIX-TOKEN-42"}
+    for router, expected in (
+        (through_real_client, True),
+        (through_real_client_that_dies, False),
+    ):
+        caplog.clear()
+        with (
+            patch("app.services.notifications.httpx.put", side_effect=router),
+            caplog.at_level(logging.DEBUG),
+        ):
+            result = _with(_cfg(**cfg), lambda: notify_owner(EVENT))
+        assert result == {"matrix": expected}
+        assert caplog.text  # the pipeline really did log something
+        assert "SECRET-MATRIX-TOKEN-42" not in caplog.text
+
+
+# --------------------------------------------------------------------- sms --
+
+
+def test_sms_posts_message_and_recipient_with_basic_auth():
+    with patch("app.services.notifications.httpx.post") as post:
+        post.return_value = MagicMock(raise_for_status=lambda: None)
+        result = _with(_cfg(**SMS_CFG), lambda: notify_owner(EVENT))
+    assert result == {"sms": True}
+    assert post.call_args.args[0] == "http://192.168.1.50:8080/message"
+    assert post.call_args.kwargs["auth"] == ("sms", "pw")
+    payload = post.call_args.kwargs["json"]
+    assert "[contact_form] New interaction from Rita Recruiter" in payload["message"]
+    assert payload["phoneNumbers"] == ["+491700000000"]
+    assert post.call_args.kwargs["timeout"] == settings.notify_timeout_seconds
+
+
+def test_sms_failure_is_false_and_logs_the_type_only():
+    """The documented real failure mode: the owner's gateway phone is off.
+    Mutation contract — log `{e}` instead of `type(e).__name__` and this goes
+    red, because the Basic-auth password is in the exception's message."""
+    import httpx as real_httpx
+
+    with patch("app.services.notifications.httpx.post") as post:
+        post.side_effect = real_httpx.ConnectError(
+            "All connection attempts failed for sms:SECRET-SMS-PASSWORD@phone"
+        )
+        with patch("app.services.notifications.logger") as log:
+            result = _with(
+                _cfg(**{**SMS_CFG, "sms_gateway_password": "SECRET-SMS-PASSWORD"}),
+                lambda: notify_owner(EVENT),
+            )
+    assert result == {"sms": False}
+    logged = " ".join(str(c) for c in log.error.call_args_list)
+    assert "SECRET-SMS-PASSWORD" not in logged
+    assert "ConnectError" in logged
+
+
+def test_sms_http_500_is_a_failure_not_a_success():
+    import httpx as real_httpx
+
+    response = real_httpx.Response(
+        500,
+        request=real_httpx.Request("POST", "http://192.168.1.50:8080/message"),
+    )
+    with patch("app.services.notifications.httpx.post", return_value=response):
+        result = _with(_cfg(**SMS_CFG), lambda: notify_owner(EVENT))
+    assert result == {"sms": False}
+
+
+def test_sms_real_httpx_logging_never_carries_the_gateway_password(caplog):
+    """Same #297 pattern as Matrix above: a REAL httpx client over
+    MockTransport, so httpx's own request logging runs — and the Basic-auth
+    credential must not surface on either path."""
+    import logging
+
+    import httpx as real_httpx
+
+    def through_real_client(url, **kwargs):
+        transport = real_httpx.MockTransport(
+            lambda request: real_httpx.Response(200, json={"state": "Pending"})
+        )
+        with real_httpx.Client(transport=transport) as c:
+            return c.post(url, json=kwargs.get("json"), auth=kwargs.get("auth"))
+
+    def through_real_client_that_dies(url, **kwargs):
+        def die(request):
+            raise real_httpx.ConnectError("phone offline", request=request)
+
+        with real_httpx.Client(transport=real_httpx.MockTransport(die)) as c:
+            return c.post(url, json=kwargs.get("json"), auth=kwargs.get("auth"))
+
+    cfg = {**SMS_CFG, "sms_gateway_password": "SECRET-SMS-PASSWORD-42"}
+    for router, expected in (
+        (through_real_client, True),
+        (through_real_client_that_dies, False),
+    ):
+        caplog.clear()
+        with (
+            patch("app.services.notifications.httpx.post", side_effect=router),
+            caplog.at_level(logging.DEBUG),
+        ):
+            result = _with(_cfg(**cfg), lambda: notify_owner(EVENT))
+        assert result == {"sms": expected}
+        assert caplog.text
+        assert "SECRET-SMS-PASSWORD-42" not in caplog.text
+
+
 # ----------------------------------------------------------------- webhook --
 
 
@@ -241,6 +535,39 @@ def test_one_dead_channel_never_blocks_another():
         )
     assert result == {"telegram": False, "webhook": True}
     assert len(calls) == 2
+
+
+def test_a_dead_matrix_channel_never_suppresses_sms_or_the_webhook():
+    """#431's half of `test_one_dead_channel_never_blocks_another`: the new
+    channels use DIFFERENT httpx verbs, so isolation has to be pinned across
+    that boundary too — a homeserver that is down must not cost the owner the
+    SMS that would have reached them with no data connection."""
+    import httpx as real_httpx
+
+    calls: list[str] = []
+
+    def put(url, **kwargs):
+        calls.append(url)
+        raise real_httpx.ConnectError("homeserver down")
+
+    def post(url, **kwargs):
+        calls.append(url)
+        return MagicMock(raise_for_status=lambda: None)
+
+    with (
+        patch("app.services.notifications.httpx.put", side_effect=put),
+        patch("app.services.notifications.httpx.post", side_effect=post),
+    ):
+        result = _with(
+            _cfg(
+                **MATRIX_CFG,
+                **SMS_CFG,
+                notify_webhook_url="https://hooks.example/x",
+            ),
+            lambda: notify_owner(EVENT),
+        )
+    assert result == {"matrix": False, "sms": True, "webhook": True}
+    assert len(calls) == 3
 
 
 def test_a_channel_that_raises_outside_its_own_handling_is_isolated():
@@ -392,11 +719,23 @@ def test_beaconfolio_namespaced_env_binds_and_generic_does_not(monkeypatch):
     monkeypatch.setenv("BEACONFOLIO_TELEGRAM_BOT_TOKEN", "ns-token")
     monkeypatch.setenv("BEACONFOLIO_TELEGRAM_CHAT_ID", "ns-chat")
     monkeypatch.setenv("BEACONFOLIO_NOTIFY_WEBHOOK_URL", "https://ns.example/w")
+    monkeypatch.setenv("BEACONFOLIO_MATRIX_ACCESS_TOKEN", "ns-matrix-token")
+    monkeypatch.setenv("BEACONFOLIO_SMS_GATEWAY_PASSWORD", "ns-sms-pw")
     fresh = Settings(_env_file=None)
     assert fresh.telegram_bot_token == "ns-token"
     assert fresh.telegram_chat_id == "ns-chat"
     assert fresh.notify_webhook_url == "https://ns.example/w"
+    assert fresh.matrix_access_token == "ns-matrix-token"
+    assert fresh.sms_gateway_password == "ns-sms-pw"
 
     monkeypatch.delenv("BEACONFOLIO_TELEGRAM_BOT_TOKEN")
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "generic-must-not-bind")
     assert Settings(_env_file=None).telegram_bot_token == ""
+    # #431's credentials obey the same namespace: the generic names are inert.
+    monkeypatch.delenv("BEACONFOLIO_MATRIX_ACCESS_TOKEN")
+    monkeypatch.delenv("BEACONFOLIO_SMS_GATEWAY_PASSWORD")
+    monkeypatch.setenv("MATRIX_ACCESS_TOKEN", "generic-must-not-bind")
+    monkeypatch.setenv("SMS_GATEWAY_PASSWORD", "generic-must-not-bind")
+    inert = Settings(_env_file=None)
+    assert inert.matrix_access_token == ""
+    assert inert.sms_gateway_password == ""

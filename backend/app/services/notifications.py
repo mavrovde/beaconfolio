@@ -1,24 +1,101 @@
-"""Pluggable owner-notification channels (#263).
+"""Pluggable owner-notification channels (#263, extended by #431).
 
 The product's promise is "no recruiter contact is ever missed" — and email is
 where notifications go to be missed. This registry fans one event out to every
 CONFIGURED channel: email stays one channel among several, a Telegram ping
-lands on the owner's phone in seconds, and a generic webhook covers
+lands on the owner's phone in seconds, a Matrix notice reaches an owner whose
+chat stack is self-hosted, a self-hosted SMS gateway reaches a phone with no
+data connection and no app installed, and a generic webhook covers
 Slack/Discord/Mattermost/ntfy with a single implementation.
+
+SCOPE: outbound owner notification only — one recipient, one direction, no
+inbound endpoint, no identity mapping, no threading. Two-way recruiter
+conversations (public inbound webhooks, signature verification, reply windows,
+threading into the #69 inbox) are a separate, multi-release feature with a
+public attack surface — tracked as #432 and deliberately NOT on this seam.
 
 Contracts, identical to the email path this generalizes:
 - empty config  = the channel is absent from the registry; zero requests.
 - one dead channel never blocks another, and none ever blocks intake — the
   caller already runs in a background task whose wrapper swallows everything.
 
-WhatsApp is a DOCUMENTED DECISION, not a stub: the Business Cloud API needs a
-Meta-verified business, template pre-approval, and bills per conversation, so
-the adapter is deferred until an owner actually wants it. The seam makes it
-one class implementing `NotificationChannel`; nothing here pretends it exists.
+DATED PROVIDER VERDICTS (#431, facts checked 2026-09-15; a deferral here is a
+decision with a reason, not a missing feature, and re-opening one needs new
+evidence rather than new enthusiasm). The reader-facing copy of this table,
+with onboarding and cost per provider, is in README.md → "Owner notifications".
+
+- Telegram          SHIPPED  — `TelegramChannel`; free, self-serve @BotFather.
+- Slack / Discord / Mattermost / ntfy / Gotify
+                    COVERED  — incoming webhooks are a JSON POST, so
+                               `WebhookChannel` already serves them. No new
+                               code was needed; that is a finding, not a gap.
+- Matrix            SHIPPED  — `MatrixChannel`; free, self-serve, and the
+                               owner can run the homeserver themselves.
+- SMS, self-hosted  SHIPPED  — `SmsGatewayChannel`; the owner's own Android
+                               phone + SIM, so no metered credential exists.
+- SMS, CPaaS (Twilio/Vonage/MessageBird)
+                    DEFERRED — adds a metered credential (~US$0.012–0.013 per
+                               US message incl. carrier fees, plus 10DLC
+                               campaign registration and number rental) for
+                               ZERO capability gain over the free gateway
+                               above. Rule-10 blast radius for nothing.
+- WhatsApp          DEFERRED — the reason was REWRITTEN in #431 because the
+                               old one had gone false: Meta replaced
+                               conversation-based billing with PER-MESSAGE
+                               pricing on 2025-07-01, so "bills per
+                               conversation" is no longer true. The real
+                               blocker is structural and stronger: an owner
+                               notification arrives with NO open 24-hour
+                               customer-service window (the owner never
+                               messages the business number), so it can only
+                               be a PRE-APPROVED TEMPLATE with variable
+                               substitution — the free-text `summary()` below
+                               cannot be sent at all. On top of that: Meta
+                               business portfolio + WABA + verified number +
+                               template approval before the first message.
+- Viber             DEFERRED — bots have not been self-serve since 2024-02-05;
+                               commercial terms only, via Rakuten Viber or a
+                               verified partner, with a MONTHLY MINIMUM per
+                               sender id (~EUR 115+). A monthly floor for one
+                               owner's notifications is the hardest no here.
+- Signal            DEFERRED — no official API. `signal-cli-rest-api` is an
+                               UNOFFICIAL client (ToS risk) and a stateful
+                               linked-device daemon, i.e. a second service to
+                               operate, not a stateless HTTP call. Escape
+                               hatch: an owner already running it can bridge
+                               into `WebhookChannel` today via ntfy/Apprise.
+- Facebook Messenger
+                    DEFERRED — Page + Meta App Review, and unsolicited
+                               outbound is not a supported use case: 24-hour
+                               window, Message Tags deprecated 2026-02-09
+                               (legacy tags retire 2026-04-27), Recurring
+                               Notifications ended 2026-02-10.
+- LINE              DEFERRED — self-serve and free-tier, but PUSH messages
+                               consume a small monthly quota and it is
+                               regionally specific (JP/TW/TH). Revisit when a
+                               forker in those markets asks.
+- WeChat            DEFERRED — overseas-entity verification (5–10 business
+                               days, annual fee) and template-only sends.
+
+Sourcing note, so the next reader can weigh each fact: the per-message model
+and the template/window rules come from Meta's own WhatsApp pricing and
+Messenger Platform documentation
+(<https://developers.facebook.com/docs/whatsapp/pricing>), which serves an
+error page to non-browser clients — it was not re-fetchable from this build,
+so it is cited as of the 2026-09-15 review rather than re-measured here. The
+reported 2026-10-01 billing change for in-window service messages is
+BSP/industry reporting, NOT Meta's page, and is flagged as such.
+
+`apprise` (BSD-3, ~150 services) was evaluated as a shortcut for all of the
+above and rejected: it would put a large dependency between the app and every
+channel, and the two channels worth shipping are ~25 lines each on a seam that
+already existed.
 """
 
 from dataclasses import dataclass
 from typing import Protocol
+from urllib.parse import quote
+from uuid import uuid4
 
 import httpx
 
@@ -127,6 +204,84 @@ class TelegramChannel:
             return False
 
 
+class MatrixChannel:
+    """Matrix Client-Server API — free, self-serve, and federated: the owner
+    can point this at their OWN homeserver, which is the same self-hosted-first
+    argument as the local-Whisper decision in #264.
+
+    Sends `m.notice` (the convention for bot traffic, so clients can style it
+    apart from a human's message) with the RAW `summary()`: a plain
+    `m.notice` body carries no markup, so escaping here would show the owner
+    `&amp;`-noise for nothing — the #297 round-3 finding, same as Telegram.
+
+    The access token rides in the `Authorization` header rather than the URL,
+    but the failure path still logs `type(e).__name__` ONLY: an httpx
+    exception's request context is not a place to gamble a credential.
+    """
+
+    name = "matrix"
+
+    def send(self, event: OwnerNotification) -> bool:
+        # The room id contains reserved characters (`!room:server.example`), so
+        # it is a single percent-encoded path segment per the spec.
+        room = quote(settings.matrix_room_id, safe="")
+        url = (
+            f"{settings.matrix_homeserver.rstrip('/')}"
+            f"/_matrix/client/v3/rooms/{room}/send/m.room.message/{uuid4().hex}"
+        )
+        try:
+            response = httpx.put(
+                url,
+                headers={"Authorization": f"Bearer {settings.matrix_access_token}"},
+                json={"msgtype": "m.notice", "body": event.summary()},
+                timeout=settings.notify_timeout_seconds,
+            )
+            response.raise_for_status()
+            logger.info("Matrix notification sent")
+            return True
+        except Exception as e:
+            logger.error(f"Matrix notification failed: {type(e).__name__}")
+            return False
+
+
+class SmsGatewayChannel:
+    """SMS via a SELF-HOSTED gateway — the owner's own Android phone and SIM
+    (SMSGate, httpSMS, textbee all expose the same shape of REST endpoint).
+
+    Why this one and not a CPaaS: there is no metered API credential to hold.
+    Traffic leaves the owner's own number as ordinary P2P SMS, so there is no
+    carrier/A2P campaign registration and no per-message bill. Do NOT point
+    `BEACONFOLIO_SMS_GATEWAY_URL` at Twilio/Vonage/MessageBird — the payload
+    shape differs, and doing so silently accepts per-message billing that the
+    rule-10 contract of this registry exists to prevent.
+
+    Real failure mode, deliberately tested: the phone goes offline. The send
+    then fails CLOSED (returns False, logs the exception TYPE only — the Basic
+    auth password must never reach a log line) and every other channel still
+    fires.
+    """
+
+    name = "sms"
+
+    def send(self, event: OwnerNotification) -> bool:
+        try:
+            response = httpx.post(
+                settings.sms_gateway_url,
+                auth=(settings.sms_gateway_user, settings.sms_gateway_password),
+                json={
+                    "message": event.summary(),
+                    "phoneNumbers": [settings.sms_gateway_to],
+                },
+                timeout=settings.notify_timeout_seconds,
+            )
+            response.raise_for_status()
+            logger.info("SMS gateway notification sent")
+            return True
+        except Exception as e:
+            logger.error(f"SMS gateway notification failed: {type(e).__name__}")
+            return False
+
+
 class WebhookChannel:
     """Provider-agnostic JSON POST — one implementation covers Slack-style
     incoming webhooks, Discord, Mattermost, ntfy and anything similar."""
@@ -177,6 +332,21 @@ def configured_channels() -> list[NotificationChannel]:
         channels.append(EmailChannel())
     if settings.telegram_bot_token and settings.telegram_chat_id:
         channels.append(TelegramChannel())
+    # ALL parts, not any — an `or` here would build a channel that cannot send
+    # and would still make a request with a blank token or room (#431).
+    if (
+        settings.matrix_homeserver
+        and settings.matrix_access_token
+        and settings.matrix_room_id
+    ):
+        channels.append(MatrixChannel())
+    if (
+        settings.sms_gateway_url
+        and settings.sms_gateway_user
+        and settings.sms_gateway_password
+        and settings.sms_gateway_to
+    ):
+        channels.append(SmsGatewayChannel())
     if settings.notify_webhook_url:
         channels.append(WebhookChannel())
     return channels
