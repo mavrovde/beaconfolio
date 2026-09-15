@@ -57,9 +57,23 @@ on:
 
 # A newer push to the same PR obsoletes the running evidence — cancel it
 # (unlike deploy.yml's queue-don't-cancel, nothing here publishes).
+#
+# ...but NOT for a label this workflow does not consume. `concurrency` is
+# evaluated BEFORE a job's `if`, so the job-level guards below could not save
+# the in-flight run: a `labeled` event cancelled it and then skipped itself,
+# leaving the PR with NO evidence at all. Measured on PR #433, whose four runs
+# were `opened` **cancelled** + three `labeled` **skipped** — and that PR did
+# nothing unusual: it was created with `gh pr create --label`, which is exactly
+# what the issue-tracking flow mandates ("labels AT CREATION"), so every
+# correctly-labelled PR lost the integration tier that #380 promised it.
+# Gating the CANCELLATION on the same condition as the jobs closes it: a
+# non-`run-e2e` label now queues behind the real run instead of killing it
+# (a skip costs nothing), while a push — or the `run-e2e` summon — still
+# supersedes stale evidence.
 concurrency:
   group: pr-evidence-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  cancel-in-progress: >-
+    ${{ github.event.action != 'labeled' || github.event.label.name == 'run-e2e' }}
 
 env:
   REGISTRY: ${{ vars.REGISTRY || 'ghcr.io' }}
