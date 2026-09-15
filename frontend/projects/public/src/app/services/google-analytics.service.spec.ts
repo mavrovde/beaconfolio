@@ -21,8 +21,7 @@ const MOCK_SITE_CONFIG_PROVIDER = {
 
 describe('GoogleAnalyticsService', () => {
   let service: GoogleAnalyticsService;
-  let router: Router;
-  let routerEventsSubject: Subject<any>;
+    let routerEventsSubject: Subject<any>;
 
   beforeEach(() => {
     routerEventsSubject = new Subject<any>();
@@ -34,7 +33,6 @@ describe('GoogleAnalyticsService', () => {
       providers: [GoogleAnalyticsService, { provide: Router, useValue: routerMock }, MOCK_SITE_CONFIG_PROVIDER],
     });
     service = TestBed.inject(GoogleAnalyticsService);
-    router = TestBed.inject(Router);
 
     // Mock window.gtag
     Object.defineProperty(window, 'gtag', {

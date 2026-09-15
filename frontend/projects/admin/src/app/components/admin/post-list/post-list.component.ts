@@ -29,7 +29,7 @@ export class PostListComponent implements OnInit, OnDestroy {
 
   ngOnInit() {
     // Subscribe to parameter changes
-    this.subscription = this.table.params$.subscribe(params => {
+    this.subscription = this.table.params$.subscribe(() => {
       this.loadPosts();
     });
   }

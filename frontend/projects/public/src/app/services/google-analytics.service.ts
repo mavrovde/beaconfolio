@@ -5,7 +5,7 @@ import { filter, take } from 'rxjs/operators';
 import { SiteConfigService } from './site-config.service';
 
 // Declare gtag as a global variable
-declare const gtag: Function;
+declare const gtag: (...args: unknown[]) => void;
 
 @Injectable({
     providedIn: 'root'
@@ -16,7 +16,7 @@ export class GoogleAnalyticsService {
     private googleAnalyticsId = '';
 
     constructor(
-        @Inject(PLATFORM_ID) private platformId: Object,
+        @Inject(PLATFORM_ID) private platformId: object,
         private router: Router,
         private siteConfig: SiteConfigService
     ) { }
@@ -29,11 +29,11 @@ export class GoogleAnalyticsService {
         }
         // config$ is a one-shot shareReplay stream; take(1) both bounds the
         // subscription and re-checks the guards once the id is known.
-        // cd-safety-ok: assigns a private service field and injects <script> tags — nothing template-bound.
         this.siteConfig.config$.pipe(take(1)).subscribe((cfg) => {
             // The id is interpolated into an inline <script> and a URL — a
             // config value must never be able to smuggle markup/JS. GA
             // measurement ids are [A-Za-z0-9-]; anything else is dropped.
+            // eslint-disable-next-line no-restricted-syntax -- cd-safety-ok: assigns a private service field and injects <script> tags — nothing template-bound.
             this.googleAnalyticsId = /^[A-Za-z0-9-]+$/.test(cfg.analyticsId)
                 ? cfg.analyticsId
                 : '';
@@ -41,6 +41,7 @@ export class GoogleAnalyticsService {
                 this.loadScript();
                 this.initGtag();
                 this.trackPageViews();
+                // eslint-disable-next-line no-restricted-syntax -- cd-safety-ok: private guard flag, nothing template-bound.
                 this.isInitialized = true;
             }
         });
@@ -80,10 +81,10 @@ export class GoogleAnalyticsService {
     private trackPageViews() {
         this.router.events
             .pipe(filter(event => event instanceof NavigationEnd))
-            .subscribe((event: any) => {
+            .subscribe((event) => {
                 if (typeof gtag !== 'undefined') {
                     gtag('config', this.googleAnalyticsId, {
-                        'page_path': event.urlAfterRedirects
+                        'page_path': (event as NavigationEnd).urlAfterRedirects
                     });
                 }
             });

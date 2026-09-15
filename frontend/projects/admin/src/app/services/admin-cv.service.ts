@@ -45,7 +45,7 @@ export class AdminCvService {
     /** `activate=false` uploads a VARIANT (#247 criterion 4): the public
      *  download keeps serving the current default. Default true = the
      *  historical make-it-the-default behavior. */
-    uploadCv(file: File, version: string, activate: boolean = true): Observable<any> {
+    uploadCv(file: File, version: string, activate: boolean = true): Observable<unknown> {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('version', version);
@@ -60,14 +60,14 @@ export class AdminCvService {
         sortOrder: 'asc' | 'desc' = 'desc',
         search: string | null = null
     ): Observable<PaginatedResponse<CvRequestSummary>> {
-        const params: any = {
+        const params: Record<string, string> = {
             page: page.toString(),
             page_size: pageSize.toString(),
             sort_by: sortBy,
             sort_order: sortOrder
         };
         if (search) {
-            params.search = search;
+            params['search'] = search;
         }
         return this.http.get<PaginatedResponse<CvRequestSummary>>(`${this.apiUrl}/requests`, { params });
     }
@@ -79,14 +79,14 @@ export class AdminCvService {
         sortOrder: 'asc' | 'desc' = 'desc',
         search: string | null = null
     ): Observable<PaginatedResponse<CvVersion>> {
-        const params: any = {
+        const params: Record<string, string> = {
             page: page.toString(),
             page_size: pageSize.toString(),
             sort_by: sortBy,
             sort_order: sortOrder
         };
         if (search) {
-            params.search = search;
+            params['search'] = search;
         }
         return this.http.get<PaginatedResponse<CvVersion>>(`${this.apiUrl}/versions`, { params });
     }

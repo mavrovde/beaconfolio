@@ -166,7 +166,7 @@ VERIFY, DON'T ASSUME
   interceptor keys the URL) delegating to HttpXhrBackend, NEVER FetchBackend; and
   (b) BOTH browser apps are ZONELESS (no zone.js polyfill) — public explicitly, admin by
   default (#276) — so async property mutations in subscribe/setInterval don't repaint:
-  use the async pipe / signals / markForCheck. `npm run lint:cd-safety` scans both.
+  use the async pipe / signals / markForCheck. `npm run lint` (the #234 eslint cd-safety rule) scans both.
   When you change a user-visible behavior, grep ALL e2e specs for the OLD assertion.
 
 GITHUB & PIPELINES

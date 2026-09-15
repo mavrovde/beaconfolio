@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { LlmComponent } from './llm.component';
 import { LlmService } from '@beaconfolio/shared';
 import { FormsModule } from '@angular/forms';

@@ -138,14 +138,14 @@ export class BlogPostComponent implements OnInit {
     private blogService: BlogService,
     private seoService: SeoService,
     siteConfig: SiteConfigService,
-    @Inject(PLATFORM_ID) private platformId: Object,
+    @Inject(PLATFORM_ID) private platformId: object,
     // On the server this is the mutable `ResponseInit` the @angular/ssr engine
     // uses to build the outgoing Response; on the browser (and in unit tests) the
     // platform factory yields `null`. Mutating `.status` during render lets us
     // turn a soft-404 into a real HTTP 404 for unknown blog slugs (#109).
     @Inject(RESPONSE_INIT) private responseInit: ResponseInit | null
   ) {
-    // cd-safety-ok: assigns a private field consumed only inside later callbacks — nothing template-bound.
+    // eslint-disable-next-line no-restricted-syntax -- cd-safety-ok: assigns a private field consumed only inside later callbacks — nothing template-bound.
     siteConfig.config$.subscribe((cfg) => (this.site = cfg));
     this.unixUser$ = siteConfig.config$.pipe(
       map((c) => (c.ownerName.split(' ')[0] || 'owner').toLowerCase())
@@ -238,7 +238,7 @@ export class BlogPostComponent implements OnInit {
     if (isPlatformBrowser(this.platformId) && navigator.share) {
       try {
         await navigator.share({ title: document.title, url });
-      } catch { }
+      } catch { /* the user dismissing the share sheet is not an error */ }
     } else if (isPlatformBrowser(this.platformId)) {
       await navigator.clipboard.writeText(url);
     }

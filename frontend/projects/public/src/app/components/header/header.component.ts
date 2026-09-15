@@ -32,7 +32,7 @@ export class HeaderComponent {
     private languageService: LanguageService,
     private yearsService: YearsService,
     private router: Router,
-    @Inject(PLATFORM_ID) private platformId: Object,
+    @Inject(PLATFORM_ID) private platformId: object,
     private cdr: ChangeDetectorRef
   ) {
     this.languageService.currentLang$.subscribe((lang) => {

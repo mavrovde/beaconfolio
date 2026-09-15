@@ -60,7 +60,8 @@
 #   hook:NAME   .claude/hooks/NAME.test.sh
 #   backend     backend pytest (-n auto, --cov-fail-under=100)
 #   lint        ruff check + ruff format --check + mypy + bandit
-#   fe:cdsafety frontend/scripts/check-cd-safety.mjs
+#   fe:cdsafety frontend ESLint over all 3 projects (eslint.config.mjs, #234 —
+#               carries the cd-safety AST rule) + its mutation self-test
 #   fe:shared / fe:public / fe:admin   the three Vitest projects, INDEPENDENTLY
 #   fe:runner   scripts/run_frontend_suites.test.sh (the retry contract)
 #   ALL         every leg — the fail-closed answer
@@ -166,6 +167,9 @@ prepush_legs_for_path() {
   backend/*) prepush_backend_legs ;;
 
   # --- frontend: PER PROJECT ------------------------------------------------
+  # The lint config and its self-test affect only the eslint leg — running
+  # three Vitest projects for a selector tweak buys nothing (#234).
+  frontend/eslint.config.mjs|frontend/scripts/eslint-cd-safety.test.mjs) echo fe:cdsafety ;;
   frontend/projects/shared/*) prepush_fe_all_legs ;;
   frontend/projects/public/*) prepush_fe_public_legs ;;
   frontend/projects/admin/*) prepush_fe_admin_legs ;;

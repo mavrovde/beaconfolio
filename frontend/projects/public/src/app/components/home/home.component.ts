@@ -2,7 +2,7 @@ import { Component, OnInit, Inject, PLATFORM_ID } from '@angular/core';
 import { CommonModule, ViewportScroller, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { Observable } from 'rxjs';
-import { tap, take } from 'rxjs/operators';
+import { take } from 'rxjs/operators';
 
 import { HeaderComponent } from '../header/header.component';
 import { HeroComponent } from '../hero/hero.component';
@@ -64,7 +64,7 @@ export class HomeComponent implements OnInit {
     private viewportScroller: ViewportScroller,
     private seoService: SeoService,
     private siteConfig: SiteConfigService,
-    @Inject(PLATFORM_ID) private platformId: Object
+    @Inject(PLATFORM_ID) private platformId: object
   ) { }
 
   ngOnInit() {

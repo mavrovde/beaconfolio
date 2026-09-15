@@ -1,8 +1,7 @@
-import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AdminChatComponent } from './chat.component';
 import { LlmService } from '@beaconfolio/shared';
 import { FormsModule } from '@angular/forms';
-import { By } from '@angular/platform-browser';
 import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 describe('AdminChatComponent', () => {

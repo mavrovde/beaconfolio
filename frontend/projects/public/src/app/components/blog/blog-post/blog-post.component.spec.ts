@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { BlogPostComponent, BlogPostVm } from './blog-post.component';
 import { BlogService } from '@beaconfolio/shared';
 import { SeoService } from '../../../services/seo.service';
@@ -198,7 +198,6 @@ describe('BlogPostComponent Server Rendering', () => {
     let component: BlogPostComponent;
     let fixture: ComponentFixture<BlogPostComponent>;
     let blogServiceSpy: any;
-    let routerSpy: any;
 
     beforeEach(async () => {
         blogServiceSpy = { getPost: vi.fn() };
@@ -235,7 +234,6 @@ describe('BlogPostComponent Server Rendering', () => {
 
         fixture = TestBed.createComponent(BlogPostComponent);
         component = fixture.componentInstance;
-        routerSpy = TestBed.inject(Router);
     });
 
     it('should use prod host string for share link in SSR', async () => {

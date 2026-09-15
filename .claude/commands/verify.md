@@ -15,7 +15,7 @@ Against Postgres on `127.0.0.1:5433` (a `test_*` DB via `TEST_DATABASE_URL`/`DAT
 5. `pytest` (keep coverage ≥95%; project standard is 100%)
 
 ## 2. Frontend (`cd frontend`)
-6. `npm run lint --if-present` and `npm run lint:cd-safety`
+6. `npm run lint` (make-social-image + cd-safety self-tests, then `eslint .` — the #234 successor to `lint:cd-safety`)
 7. `npm run test:coverage` — all three projects at 100%.
    NOT `npm test -- --watch=false --coverage`: measured, that expands to
    `npm run test:shared && npm run test:public && npm run test:admin --watch=false --coverage`,

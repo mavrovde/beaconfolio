@@ -46,12 +46,12 @@ import { SSR_BACKEND_ORIGIN } from '../ssr-backend-origin';
 export class SsrHttpBackend implements HttpBackend {
   constructor(
     private readonly xhrBackend: HttpXhrBackend,
-    @Inject(PLATFORM_ID) private readonly platformId: Object,
+    @Inject(PLATFORM_ID) private readonly platformId: object,
   ) {}
 
-  handle(req: HttpRequest<any>): Observable<HttpEvent<any>> {
+  handle(req: HttpRequest<unknown>): Observable<HttpEvent<unknown>> {
     if (isPlatformServer(this.platformId) && !req.url.startsWith('http')) {
-      let absoluteUrl = req.url;
+      let absoluteUrl: string;
       if (req.url.startsWith('/api')) {
         absoluteUrl = `${SSR_BACKEND_ORIGIN}${req.url}`;
       } else if (req.url.startsWith('api/')) {

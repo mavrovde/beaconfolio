@@ -1,9 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { TagManagerComponent } from './tag-manager.component';
-import { TagsService, TagStat } from '../../../services/tags.service';
+import { TagsService } from '../../../services/tags.service';
 import { of, throwError, Subject } from 'rxjs';
 import { describe, it, expect, beforeEach, vi, type Mock } from 'vitest';
-import { By } from '@angular/platform-browser';
 
 describe('TagManagerComponent', () => {
     let component: TagManagerComponent;
@@ -110,7 +109,7 @@ describe('TagManagerComponent', () => {
         const oldName = 'Python';
 
         const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => { });
-        const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => { });
+        vi.spyOn(console, 'error').mockImplementation(() => { });
 
         component.startEdit(oldName);
         component.newTagName = 'PyScript';

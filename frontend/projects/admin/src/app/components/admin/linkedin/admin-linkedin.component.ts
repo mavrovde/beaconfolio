@@ -24,7 +24,7 @@ export class AdminLinkedinComponent implements OnInit {
     linkedinUsername = '';
     linkedinPassword = '';
 
-    profileData: any = null;
+    profileData: unknown = null;
     posts: LinkedInPost[] = [];
     statusMessage: string = '';
 
@@ -62,8 +62,10 @@ export class AdminLinkedinComponent implements OnInit {
             this.statusMessage = 'Successfully logged in and session saved.';
             this.clearMessageAfterDelay();
             this.linkedinPassword = ''; // Clear for security
-        } catch (e: any) {
-            this.statusMessage = e.message || 'Login failed. Note: MFA is not currently supported.';
+        } catch (e) {
+            this.statusMessage =
+                (e instanceof Error && e.message) ||
+                'Login failed. Note: MFA is not currently supported.';
         } finally {
             this.isLoggingIn = false;
             this.cdr.detectChanges();
@@ -84,7 +86,7 @@ export class AdminLinkedinComponent implements OnInit {
             this.isSyncingProfile = false;
             this.statusMessage = 'Profile synced successfully.';
             this.clearMessageAfterDelay();
-        } catch (err: any) {
+        } catch (err) {
             this.isSyncingProfile = false;
             console.error('Error syncing profile:', err);
             this.statusMessage = 'Error syncing profile.';
@@ -103,10 +105,11 @@ export class AdminLinkedinComponent implements OnInit {
             this.isFetchingPosts = false;
             this.statusMessage = `Fetched ${posts.length} posts.`;
             this.clearMessageAfterDelay();
-        } catch (err: any) {
+        } catch (err) {
             this.isFetchingPosts = false;
             console.error('Error fetching posts:', err);
-            this.statusMessage = err.message || 'Error fetching posts.';
+            this.statusMessage =
+                (err instanceof Error && err.message) || 'Error fetching posts.';
         } finally {
             this.cdr.detectChanges();
         }
@@ -123,7 +126,7 @@ export class AdminLinkedinComponent implements OnInit {
             this.statusMessage = `Transferred as draft ${res.id}`;
             this.posts = this.posts.filter(p => p.id !== post.id);
             this.clearMessageAfterDelay();
-        } catch (err: any) {
+        } catch (err) {
             this.transferringPostId = null;
             console.error('Error transferring post:', err);
             this.statusMessage = 'Error transferring post.';
@@ -151,8 +154,9 @@ export class AdminLinkedinComponent implements OnInit {
                 `${res.updated} updated, ${res.skipped} skipped (drafts).`;
             this.selectedPostsFile = null;
             this.clearMessageAfterDelay();
-        } catch (err: any) {
-            this.statusMessage = err.message || 'Error uploading posts JSON.';
+        } catch (err) {
+            this.statusMessage =
+                (err instanceof Error && err.message) || 'Error uploading posts JSON.';
         } finally {
             this.isUploadingPostsJson = false;
             this.cdr.detectChanges();

@@ -19,7 +19,7 @@ import packageJson from '../../../../../../package.json';
 export class SystemStatsComponent implements OnInit, OnDestroy {
   uptime: string = '00:00:00';
   private serverStartTime: number | null = null;
-  private intervalId: any;
+  private intervalId: ReturnType<typeof setInterval> | undefined;
   visitorIp: string = '127.0.0.1'; // Mock for now
   memoryUsage: number = 24; // Mock MB usage
   isVisible: boolean = true;
@@ -30,7 +30,7 @@ export class SystemStatsComponent implements OnInit, OnDestroy {
   site$: Observable<SiteConfig>;
 
   constructor(
-    @Inject(PLATFORM_ID) private platformId: Object,
+    @Inject(PLATFORM_ID) private platformId: object,
     private statsService: StatsService,
     private router: Router,
     private cdr: ChangeDetectorRef,

@@ -121,7 +121,7 @@ describe('AuthService', () => {
       (window.localStorage.getItem as any).mockReturnValue('bad-token');
 
       const spyLogout = vi.spyOn(AuthService.prototype, 'logout');
-      const newService = TestBed.inject(AuthService);
+      TestBed.inject(AuthService);
       vi.runAllTimers();
 
       const req = httpMock.expectOne(`${environment.apiUrl}${environment.apiPrefix}/auth/me`);
@@ -134,7 +134,7 @@ describe('AuthService', () => {
       (window.localStorage.getItem as any).mockReturnValue('bad-token');
 
       const spyLogout = vi.spyOn(AuthService.prototype, 'logout');
-      const newService = TestBed.inject(AuthService);
+      TestBed.inject(AuthService);
       vi.runAllTimers();
 
       const req = httpMock.expectOne(`${environment.apiUrl}${environment.apiPrefix}/auth/me`);
@@ -147,7 +147,7 @@ describe('AuthService', () => {
       (window.localStorage.getItem as any).mockReturnValue('some-token');
 
       const spyLogout = vi.spyOn(AuthService.prototype, 'logout');
-      const newService = TestBed.inject(AuthService);
+      TestBed.inject(AuthService);
       vi.runAllTimers();
 
       const req = httpMock.expectOne(`${environment.apiUrl}${environment.apiPrefix}/auth/me`);

@@ -339,6 +339,12 @@ sel "shared fans out to ALL THREE projects (both apps consume it)" \
     "fe:admin fe:cdsafety fe:public fe:shared pii" frontend/projects/shared/src/lib/api.service.ts
 sel "a frontend workspace file runs every project" \
     "fe:admin fe:cdsafety fe:public fe:shared pii" frontend/angular.json
+sel "the eslint config selects only the eslint leg (#234)" \
+    "fe:cdsafety pii" frontend/eslint.config.mjs
+sel_lacks "an eslint-config change does NOT run the Vitest projects" "fe:public" \
+    frontend/eslint.config.mjs
+sel "the cd-safety mutation self-test selects only the eslint leg (#234)" \
+    "fe:cdsafety pii" frontend/scripts/eslint-cd-safety.test.mjs
 sel "compose + .env.example select the documented-knob contract" \
     "compose docs pii" docker-compose.prod.yml .env.example
 sel "the shared-edge files select the edge apply contract and NOTHING heavier (#338)" \

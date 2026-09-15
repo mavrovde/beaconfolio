@@ -5,6 +5,9 @@ import { HttpClient } from '@angular/common/http';
 import { environment } from '../../../../environments/environment';
 import { TranslatePipe } from '@beaconfolio/shared';
 
+/** One result row — arbitrary columns straight from the executed SQL. */
+type SqlRow = Record<string, unknown>;
+
 @Component({
   selector: 'app-sql-panel',
   standalone: true,
@@ -14,7 +17,7 @@ import { TranslatePipe } from '@beaconfolio/shared';
 })
 export class SqlPanelComponent {
   query = '';
-  result: any[] | null = null;
+  result: SqlRow[] | null = null;
   columns: string[] = [];
   loading = false;
   error: string | null = null;
@@ -29,7 +32,7 @@ export class SqlPanelComponent {
     this.error = null;
     this.result = null;
 
-    this.http.post<any[]>(this.apiUrl, { query: this.query }).subscribe({
+    this.http.post<SqlRow[]>(this.apiUrl, { query: this.query }).subscribe({
       next: (data) => {
         this.result = data;
         if (data && data.length > 0) {
@@ -100,8 +103,8 @@ export class SqlPanelComponent {
     });
   }
 
-  onFileSelected(event: any) {
-    const file: File = event.target.files[0];
+  onFileSelected(event: Event) {
+    const file = (event.target as HTMLInputElement).files?.[0];
     if (file) {
       this.restore(file);
     }
@@ -119,7 +122,7 @@ export class SqlPanelComponent {
     const formData = new FormData();
     formData.append('file', file);
 
-    this.http.post<any>(`${environment.apiPrefix}/admin/sql/restore`, formData).subscribe({
+    this.http.post<{ message: string; output: string }>(`${environment.apiPrefix}/admin/sql/restore`, formData).subscribe({
       next: (data) => {
         this.result = [{ message: data.message, output: data.output }];
         this.columns = ['message', 'output'];

@@ -5,7 +5,6 @@ import { Router } from '@angular/router';
 import { AuthService } from '../services/auth.service';
 import { authInterceptor } from './auth.interceptor';
 import { environment } from '../../environments/environment';
-import { of, throwError } from 'rxjs';
 import { vi, describe, it, expect, beforeEach, afterEach, Mock } from 'vitest';
 
 describe('AuthInterceptor', () => {

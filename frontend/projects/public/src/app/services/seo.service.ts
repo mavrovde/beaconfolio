@@ -53,8 +53,8 @@ export class SeoService {
         @Inject(DOCUMENT) private document: Document,
         siteConfig: SiteConfigService
     ) {
-        // cd-safety-ok: writes go to the Title/Meta DOM services, never to a template-bound property — no repaint needed.
         siteConfig.config$.subscribe((cfg) => {
+            // eslint-disable-next-line no-restricted-syntax -- cd-safety-ok: writes go to the Title/Meta DOM services, never to a template-bound property — no repaint needed.
             this.site = cfg;
             // Re-brand whatever the current page already applied. Title/Meta
             // are DOM-level services, not change-detection consumers, so this

@@ -86,7 +86,7 @@ export class NotFoundComponent implements OnInit {
     constructor(
         route: ActivatedRoute,
         private seoService: SeoService,
-        @Inject(PLATFORM_ID) private platformId: Object,
+        @Inject(PLATFORM_ID) private platformId: object,
         @Inject(RESPONSE_INIT) private responseInit: ResponseInit | null,
     ) {
         this.path$ = route.url.pipe(

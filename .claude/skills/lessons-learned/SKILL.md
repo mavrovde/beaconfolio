@@ -732,7 +732,10 @@ ERRORs, not the guard's refusal message, and that difference was the whole diagn
 
 ## 32. A guard's SCOPE is a claim, and claims rot — check the premise, not the wiring (#276)
 
-`frontend/scripts/check-cd-safety.mjs` shipped in #233 scoped to `projects/public` with the
+`frontend/scripts/check-cd-safety.mjs` (the #118 heuristic, RETIRED at #234 in favour of the
+`no-restricted-syntax` AST rule in `frontend/eslint.config.mjs` — same scope, same suppression
+discipline, pinned by `frontend/scripts/eslint-cd-safety.test.mjs`) shipped in #233 scoped to
+`projects/public` with the
 comment *"The admin app is zone-based CSR … neither has the zoneless footgun."* That sentence was
 false on the day it was written: `frontend/angular.json` gives the admin project **no `polyfills`
 entry** (so no zone.js is bundled — `grep -rl __zone_symbol__ dist/admin/` returns nothing) and its

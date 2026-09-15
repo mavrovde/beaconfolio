@@ -134,7 +134,7 @@ export class CvManagerComponent implements OnInit, OnDestroy {
         this.loadVersions(); // Refresh versions list
         this.cdr.detectChanges();
       },
-      error: (err) => {
+      error: () => {
         this.errorMessage = 'Upload failed. Please try again.';
         this.uploading = false;
         this.cdr.detectChanges();

@@ -1,9 +1,9 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { of } from 'rxjs';
 import { HeroComponent } from './hero.component';
 import { SiteConfigService } from '../../services/site-config.service';
 import { Profile } from '../../services/profile.service';
-import { By } from '@angular/platform-browser';
 import { vi } from 'vitest';
 
 import { TranslatePipe } from '@beaconfolio/shared';
@@ -106,7 +106,7 @@ describe('HeroComponent', () => {
 
   it('scrollTo should do nothing if element is not found', () => {
     const event = new Event('click');
-    const preventDefaultSpy = vi.spyOn(event, 'preventDefault');
+    vi.spyOn(event, 'preventDefault');
 
     vi.spyOn(document, 'querySelector').mockReturnValue(null);
     const scrollToSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => { });

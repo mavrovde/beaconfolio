@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **angular-eslint across the whole frontend workspace (#234)** — one flat `eslint.config.mjs`
+  (eslint 10 + typescript-eslint 8 + angular-eslint 22, non-type-aware so the pre-push gate
+  stays in seconds) lints all three projects and their templates. The #118 zoneless cd-safety
+  heuristic (`check-cd-safety.mjs`) is RETIRED, ported to `no-restricted-syntax` esquery
+  selectors with the same scope (public+admin src, no specs/server entries) covering BOTH
+  subscribe shapes — direct callback and observer object (`subscribe({ next })`) — so a comment
+  can no longer satisfy the repaint check, and `frontend/scripts/eslint-cd-safety.test.mjs` pins
+  the #94 anti-pattern with seven live-config probe cases (per-handler judgment included). The
+  adoption round fixed 106 real violations (typed 40+ `any` sites incl. every admin service/API
+  seam, 39 unused bindings, label/keyboard/focus a11y in 6 templates — visitor-visible: public
+  blog rows become keyboard-operable `role="button"` tab stops, tag chips stay pointer-only
+  shortcuts to avoid invalid nested controls, and the LLM terminal's `autofocus` attribute is
+  replaced by the existing ViewChild focus call) and left exactly two rules baselined with
+  in-config rationale — `prefer-inject` (127 sites) and `template/prefer-control-flow`
+  (217 sites) — for the official Angular codemods in a follow-up. `npm run lint` and CI's
+  Frontend Lint job now run the real thing; the pre-push `fe:cdsafety` leg runs eslint + the
+  mutation self-test, and `eslint.config.mjs` edits select only that leg.
 - **Complete env samples + a guard that keeps them complete — the #61 onboarding close-out** —
   `backend/.env.example` gains the 17 `Settings` knobs it still omitted (DB pool, messenger
   channels #263, translation #248, engagement analytics #249/#326, owner language,

@@ -159,7 +159,7 @@ export class TailoredComponent implements OnInit {
         private tailoredLinks: TailoredLinkService,
         private profileService: ProfileService,
         private seoService: SeoService,
-        @Inject(PLATFORM_ID) private platformId: Object,
+        @Inject(PLATFORM_ID) private platformId: object,
         // Server-side this is the mutable ResponseInit the @angular/ssr engine
         // builds the outgoing Response from; in the browser (and in unit tests)
         // the platform factory yields null. Mutating `.status` during render is

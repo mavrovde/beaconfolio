@@ -32,7 +32,7 @@ applies. Proven reachable in the browser: stripping the `addNote()` `detectChang
 served pipeline chunk made `frontend/e2e/admin/pipeline.spec.ts` fail while its API assertion still
 passed — the note reached the server and the operator never saw it. **Consequence: every rule below
 applies to admin components exactly as it does to public ones**, and
-`npm run lint:cd-safety` scans both roots.
+`npm run lint` (the #234 eslint cd-safety rule) scans both roots.
 
 Neither app has `zone.js` at runtime. Therefore **nothing repaints on its own**: change detection
 runs only for signals, the `async` pipe, template events, and explicit
@@ -50,7 +50,7 @@ will render **once and never again** unless one of these holds:
 Audit grep (what the reviewer runs): in `projects/public` **and `projects/admin`**, find
 `subscribe(`/`.then(`/`setInterval(`/`setTimeout(` callbacks that assign `this.<prop> =` with no
 `markForCheck` in the same callback and no signal/async-pipe consumption of that property —
-`npm run lint:cd-safety` automates exactly this over both roots. An `await`-then-assign
+`npm run lint` (the #234 eslint cd-safety rule) automates exactly this over both roots. An `await`-then-assign
 continuation is the heuristic's known blind spot (needs the #234 AST lint) — check those by eye.
 
 **Rule (the READ direction, #255): never read an async-populated field synchronously in

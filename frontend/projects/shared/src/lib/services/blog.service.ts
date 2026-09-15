@@ -20,6 +20,26 @@ export interface BlogPost {
   similarity?: number; // For search results
 }
 
+/** AI-suggested field values for a draft post (POST /suggest-details). */
+export interface SuggestedPostDetails {
+  title?: string;
+  slug?: string;
+  summary?: string;
+  tags?: string[];
+}
+
+/** One entry of the pre-rendered fallback catalog (assets/blog_data_*.json). */
+interface StaticBlogEntry {
+  id?: string;
+  slug?: string;
+  title: string;
+  content?: string;
+  summary?: string;
+  image_url?: string;
+  tags?: string[];
+  date?: string;
+}
+
 export interface BlogSearchResult {
   id: number;
   title: string;
@@ -63,25 +83,25 @@ export class BlogService {
   ): Observable<PaginatedResponse<BlogPost>> {
     // If lang is explicitly provided (string) or null (no filter), use it directly
     if (lang !== undefined) {
-      const params: any = {
+      const params: Record<string, string> = {
         page: page.toString(),
         page_size: pageSize.toString(),
         sort_by: sortBy,
         sort_order: sortOrder,
       };
       if (lang !== null) {
-        params.lang = lang;
+        params['lang'] = lang;
       }
       if (tag) {
-        params.tag = tag;
+        params['tag'] = tag;
       }
       if (search) {
-        params.search = search;
+        params['search'] = search;
       }
       if (publishedOnly) {
-        params.published_only = 'true';
+        params['published_only'] = 'true';
       } else {
-        params.published_only = 'false';
+        params['published_only'] = 'false';
       }
       return this.http.get<PaginatedResponse<BlogPost>>(this.apiUrl, { params });
     }
@@ -89,7 +109,7 @@ export class BlogService {
     // Otherwise fallback to current language from service
     return this.languageService.currentLang$.pipe(
       switchMap((currentLang) => {
-        const params: any = {
+        const params: Record<string, string> = {
           lang: currentLang,
           page: page.toString(),
           page_size: pageSize.toString(),
@@ -97,15 +117,15 @@ export class BlogService {
           sort_order: sortOrder,
         };
         if (tag) {
-          params.tag = tag;
+          params['tag'] = tag;
         }
         if (search) {
-          params.search = search;
+          params['search'] = search;
         }
         if (publishedOnly) {
-          params.published_only = 'true';
+          params['published_only'] = 'true';
         } else {
-          params.published_only = 'false';
+          params['published_only'] = 'false';
         }
         return this.http.get<PaginatedResponse<BlogPost>>(this.apiUrl, { params });
       }),
@@ -116,7 +136,7 @@ export class BlogService {
     return this.http.get<BlogPost>(`${this.apiUrl}/${slug}`);
   }
 
-  createPost(post: any): Observable<BlogPost> {
+  createPost(post: Partial<BlogPost>): Observable<BlogPost> {
     return this.http.post<BlogPost>(this.apiUrl, post);
   }
 
@@ -124,7 +144,7 @@ export class BlogService {
     return this.http.get<BlogPost>(`${this.apiUrl}/${id}`);
   }
 
-  updatePostById(id: number, post: any): Observable<BlogPost> {
+  updatePostById(id: number, post: Partial<BlogPost>): Observable<BlogPost> {
     return this.http.put<BlogPost>(`${this.apiUrl}/${id}`, post);
   }
 
@@ -146,17 +166,23 @@ export class BlogService {
     return this.http.post<{ tags: string[] }>(`${this.apiUrl}/suggest-tags`, { title, content });
   }
 
-  suggestPostDetails(content: string, field: string = 'all'): Observable<any> {
-    return this.http.post<any>(`${this.apiUrl}/suggest-details`, { content, field });
+  suggestPostDetails(
+    content: string,
+    field: string = 'all',
+  ): Observable<SuggestedPostDetails> {
+    return this.http.post<SuggestedPostDetails>(`${this.apiUrl}/suggest-details`, {
+      content,
+      field,
+    });
   }
 
   getStaticPosts(page: number = 1, pageSize: number = 10): Observable<PaginatedResponse<BlogPost>> {
     const lang = this.languageService.getCurrentLanguage();
-    return this.http.get<any[]>(`/assets/blog_data_${lang}.json`).pipe(
+    return this.http.get<StaticBlogEntry[]>(`/assets/blog_data_${lang}.json`).pipe(
       map((posts) => {
         const total = posts.length;
         const start = (page - 1) * pageSize;
-        const items = posts.slice(start, start + pageSize).map((p: any, i: number) => ({
+        const items = posts.slice(start, start + pageSize).map((p, i: number) => ({
           id: i + start,
           title: p.title,
           slug: p.id || p.slug || `post-${i + start}`,

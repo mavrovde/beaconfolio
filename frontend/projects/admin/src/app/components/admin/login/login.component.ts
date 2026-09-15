@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -43,7 +44,7 @@ export class LoginComponent {
           console.log('Navigating to:', returnUrl);
           this.router.navigate([returnUrl]);
         },
-        error: (error: any) => {
+        error: (error: HttpErrorResponse) => {
           console.error('Login error in component:', error);
           if (error.status === 401) {
             this.errorMessage = 'Incorrect username or password.';

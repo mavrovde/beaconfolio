@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { BlogPostComponent } from './blog-post.component';
 import { BlogService } from '@beaconfolio/shared';
-import { ActivatedRoute, Router, provideRouter } from '@angular/router';
+import { ActivatedRoute, provideRouter } from '@angular/router';
 import { SeoService } from '../../../services/seo.service';
 import { SiteConfigService } from '../../../services/site-config.service';
 import { of, BehaviorSubject } from 'rxjs';

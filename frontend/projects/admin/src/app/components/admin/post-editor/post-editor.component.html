@@ -84,9 +84,9 @@
     </div>
 
     <div class="form-group">
-      <label [class.field-changed]="isChanged('tags')">Tags (Max 5)</label>
+      <label for="post-tag-input" [class.field-changed]="isChanged('tags')">Tags (Max 5)</label>
       <div class="flex gap-2 mb-2">
-        <input type="text" [(ngModel)]="newTag" name="newTag" placeholder="add tag..."
+        <input id="post-tag-input" type="text" [(ngModel)]="newTag" name="newTag" placeholder="add tag..."
           (keydown.enter)="$event.preventDefault(); addTag()" [disabled]="post.tags.length >= 5 || saving"
           class="tag-input" />
         <button type="button" (click)="addTag()" [disabled]="post.tags.length >= 5 || saving"

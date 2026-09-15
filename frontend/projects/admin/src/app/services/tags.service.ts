@@ -30,23 +30,23 @@ export class TagsService {
     sortOrder: 'asc' | 'desc' = 'desc',
     search: string | null = null
   ): Observable<PaginatedResponse<TagStat>> {
-    const params: any = {
+    const params: Record<string, string> = {
       page: page.toString(),
       page_size: pageSize.toString(),
       sort_by: sortBy,
       sort_order: sortOrder
     };
     if (search) {
-      params.search = search;
+      params['search'] = search;
     }
     return this.http.get<PaginatedResponse<TagStat>>(this.apiUrl, { params });
   }
 
-  renameTag(oldName: string, newName: string): Observable<any> {
+  renameTag(oldName: string, newName: string): Observable<unknown> {
     return this.http.put(`${this.apiUrl}/${oldName}`, { new_name: newName });
   }
 
-  deleteTag(name: string): Observable<any> {
+  deleteTag(name: string): Observable<unknown> {
     return this.http.delete(`${this.apiUrl}/${name}`);
   }
 }

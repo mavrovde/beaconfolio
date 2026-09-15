@@ -60,7 +60,7 @@ export class LinkedinService {
     /**
      * Dynamically login using username and password
      */
-    async login(username: string, password: string):Promise<any> {
+    async login(username: string, password: string): Promise<unknown> {
         const response = await fetch(`${this.apiUrl}/login`, {
             method: 'POST',
             headers: this.getHeaders(),
@@ -76,7 +76,7 @@ export class LinkedinService {
     /**
      * Trigger a LinkedIn profile synchronization scan
      */
-    async syncProfile(): Promise<any> {
+    async syncProfile(): Promise<unknown> {
         const response = await fetch(`${this.apiUrl}/profile-sync`, { headers: this.getHeaders() });
         if (!response.ok) {
             const body = await response.json().catch(() => null);
