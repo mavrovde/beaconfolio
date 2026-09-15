@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Two more owner-notification channels on the #263 seam, both free and self-hostable (#431)** —
+  **Matrix** (`MatrixChannel`: `PUT …/rooms/{roomId}/send/m.room.message/{txnId}` with a bearer
+  token, sent as `m.notice`, fresh `uuid4` transaction id per send so the homeserver cannot
+  deduplicate a second recruiter contact away) and **SMS via a self-hosted Android gateway**
+  (`SmsGatewayChannel`: JSON POST + HTTP Basic to **sms-gate.app** in local mode on the owner's
+  own phone and SIM — an alert that arrives with no data connection and no app installed. One
+  gateway's contract, named and dated, not a category: httpSMS and textbee authenticate with an
+  `x-api-key` header and take different bodies, so each would need its own class).
+  Seven `BEACONFOLIO_*`-namespaced knobs, wired into `backend/.env.example`, the root
+  `.env.example` and the backend service of **both** compose files. The #263 contract is
+  unchanged and re-pinned per channel: a channel exists only when **every** part of its config is
+  non-empty, empty config means zero outbound requests, one dead channel never blocks another,
+  and each failure path logs `type(e).__name__` only so neither the Matrix token nor the gateway
+  password can reach a log line.
 - **v1.14.3 release retrospective (rule 8)** — `docs/retrospectives/v1.14.3.md`, sixth in the
   series; trend table extended. Headlines: mean rounds 2.00 (best since v1.14.0) at a RISING
   median PR size; zero post-merge verdict back-fills for the first time; one rule-13 violation
@@ -16,6 +30,35 @@ All notable changes to this project will be documented in this file.
   cannot be re-run; single-SHA red with no error text is an upload fault).
 
 ### Changed
+- **The WhatsApp rationale was FALSE and is rewritten, dated (#431)** — `README.md` and
+  `backend/app/services/notifications.py` claimed the Cloud API "bills per conversation"; Meta
+  replaced conversation-based pricing with **per-message pricing on 2025-07-01**. The decision
+  (defer) stands and the real reason is stronger: an owner notification has **no open 24-hour
+  customer-service window**, so it could only be a pre-approved template with variable
+  substitution — the free-text summary this app sends cannot be delivered at all.
+- **Every remaining messenger now carries a written, dated verdict instead of silence (#431)** —
+  README's notification section became an 11-row table (verdict + onboarding + cost model +
+  the date the fact was checked, 2026-09-15) covering Telegram, the generic webhook, Matrix,
+  self-hosted SMS, CPaaS SMS, WhatsApp, Viber, Signal, Facebook Messenger, LINE and WeChat,
+  mirrored as a decision record in the module docstring. It also records two *findings*:
+  Slack/Discord/Mattermost/ntfy/Gotify need **no new channel** (the existing `WebhookChannel`
+  already serves them), and CPaaS SMS is declined because it buys **zero capability** over the
+  free gateway in exchange for a metered credential. Scope is outbound owner notification only;
+  two-way recruiter conversation is tracked separately (#432).
+- **A correctly-labelled PR stopped losing its integration evidence (#431, found while opening
+  #433)** — `pr-evidence.yml`'s `concurrency` cancelled in-progress runs unconditionally, and
+  `concurrency` is evaluated *before* a job's `if`, so each `labeled` event killed the run it then
+  skipped. Measured from the API at #433's pre-fix head: **5 runs — 2 cancelled + 3 skipped**
+  (one of the skipped runs sat *queued for 11m15s* before skipping), i.e. zero integration
+  evidence on a PR created with `gh pr create --label` — the labels-at-creation flow the issue
+  policy requires. Root cause: `on.pull_request.types` **cannot filter by label name**, so every
+  unrelated label started the integration tier's own workflow. The `run-e2e` browser tier is
+  therefore split into `.github/workflows/pr-evidence-e2e.yml` and `labeled` dropped from the
+  integration tier's triggers — no run, no cancellation, and no phantom `skipped` check-run
+  posting over the real one (which is the second half of the bug: `gh pr checks` reported the
+  tier as `skipping` while the passing run sat invisible in run history). A trigger-dependent job
+  `name:` was tried first and rejected on measurement — GitHub does not evaluate the expression
+  for a skipped job and published the raw `${{ … }}` text as the check-run name.
 - **The wiki statistics articles stop competing with the canonical record** — `docs/wiki/`'s
   `team-and-process.md` replaces its trend-table and KPI-baseline copies (and its restated
   cost figures) with links to `docs/retrospectives/`; `delivery-statistics.md` is banner-dated
