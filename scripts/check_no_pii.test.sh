@@ -252,5 +252,84 @@ rm -rf "$d"
 out="$(bash "$SCRIPT")"; rc=$?
 [ "$rc" -eq 0 ] && ok "the real repository satisfies both contracts" || bad "real repo" "$out"
 
+# ---------------------------------------------------------------------------
+# Mutation contract (#393): neuter ONE arm at a time in a COPY of the checker
+# and require the pinned case to go red. INVALID (rotted needle / no diff /
+# unparseable / assertion false on the unmodified script) counts separately
+# and fails the run (#388). PII fixtures are ASSEMBLED, never literal — this
+# file is scanned by the very check it tests.
+# ---------------------------------------------------------------------------
+if [ "${1:-}" = "--mutations" ]; then
+  KILLED=0; SURVIVED=0; INVALID=0
+  MDIR="$(mktemp -d)"
+  trap 'rm -rf "$MDIR"' EXIT   # no leak on early exit (#427 r1, nit 4)
+  runx() { ( cd "$2" && git add -A >/dev/null 2>&1; CLAUDE_PROJECT_DIR="$2" bash "$1" 2>&1 ); }
+  mutate() { # name needle replacement assert-fn
+    local name="$1" needle="$2" repl="$3" assertfn="$4" M="$MDIR/mut.sh"
+    python3 - "$SCRIPT" "$M" "$needle" "$repl" <<'PY'
+import sys
+src, dst, needle, repl = sys.argv[1:5]
+t = open(src).read()
+if needle not in t:
+    sys.exit(3)
+open(dst, "w").write(t.replace(needle, repl, 1))
+PY
+    case $? in 3) INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — needle not found (rotted)"; return ;; esac
+    cmp -s "$SCRIPT" "$M" && { INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — no change"; return; }
+    bash -n "$M" 2>/dev/null || { INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — not parseable"; return; }
+    if ! "$assertfn" "$SCRIPT"; then
+      INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — assertion fails on the UNMODIFIED script"; return
+    fi
+    if "$assertfn" "$M"; then
+      SURVIVED=$((SURVIVED+1)); echo "  ✗ SURVIVED: '$name' — the case stays green with the arm removed"
+    else
+      KILLED=$((KILLED+1)); echo "  ✓ killed: $name"
+    fi
+  }
+  assert_pii() { local d o; d="$(mktemp -d)"; skeleton "$d"
+    local pii; pii="serg"".mavrov@example.com"
+    echo "contact $pii" >> "$d/docs/DEPLOYMENT.md"
+    o="$(runx "$1" "$d")"; local rc=$?; rm -rf "$d"
+    [ "$rc" -eq 1 ] && printf '%s' "$o" | grep -q '✗ PII guard'; }
+  assert_brand() { local d o; d="$(mktemp -d)"; skeleton "$d"
+    echo "Point your DNS at mavrov.de and you are done." >> "$d/README.md"
+    o="$(runx "$1" "$d")"; local rc=$?; rm -rf "$d"
+    [ "$rc" -eq 1 ] && printf '%s' "$o" | grep -q 'De-brand guard'; }
+  assert_marker_ns() { local d o; d="$(mktemp -d)"; skeleton "$d"
+    echo "Set SSR to advertise mavrov.de as the canonical URL for every page." >> "$d/README.md"
+    o="$(runx "$1" "$d")"; local rc=$?; rm -rf "$d"; [ "$rc" -eq 1 ]; }
+  assert_docs_scope() { local d o; d="$(mktemp -d)"; skeleton "$d"
+    echo "Point your DNS at mavrov.de and you are done." >> "$d/docs/DEPLOYMENT.md"
+    o="$(runx "$1" "$d")"; local rc=$?; rm -rf "$d"
+    [ "$rc" -eq 1 ] && printf '%s' "$o" | grep -q 'De-brand guard'; }
+  assert_marker_case() { local d o; d="$(mktemp -d)"; skeleton "$d"
+    echo "mavrov.de is the instance <!-- DE-BRAND:CANONICAL --> — wrong case." >> "$d/README.md"
+    o="$(runx "$1" "$d")"; local rc=$?; rm -rf "$d"; [ "$rc" -eq 1 ]; }
+  assert_b_after_a() { local d o; d="$(mktemp -d)"; skeleton "$d"
+    local pii; pii="serg"".mavrov@example.com"
+    echo "contact $pii" >> "$d/docs/DEPLOYMENT.md"
+    o="$(runx "$1" "$d")"; local rc=$?; rm -rf "$d"
+    [ "$rc" -ne 0 ] && printf '%s' "$o" | grep -q '✓ De-brand guard'; }
+
+  mutate "check A detection removed (a PII hit passes silently)" \
+    'if [ -n "$hits" ]; then' 'if false; then' assert_pii
+  mutate "check A exclusions widened to everything (the allowlist swallows the repo)" \
+    "':(exclude)LICENSE' \\" "':(exclude)*' \\" assert_pii
+  mutate "check B detection removed (an unannotated domain passes)" \
+    'if [ -n "$brand" ]; then' 'if false; then' assert_brand
+  mutate "marker namespace debased to bare words (the #318 round-1 regression verbatim)" \
+    "GUIDANCE_ANNOTATIONS='de-brand:(canonical|historical)|ghcr\\.io/mavrovde/(mavrov\\.de|hirefolio)'" \
+    "GUIDANCE_ANNOTATIONS='(canonical|historical)|ghcr\\.io/mavrovde/(mavrov\\.de|hirefolio)'" assert_marker_ns
+  mutate "check B exclusions widened to all of docs/ (guidance surfaces exempted)" \
+    "':(exclude)docs/retrospectives/*' \\" "':(exclude)docs/*' \\" assert_docs_scope
+  mutate "marker match made case-insensitive (a wrong-case marker exempts)" \
+    '&& $0 !~ pat {' '&& tolower($0) !~ pat {' assert_marker_case
+  mutate "check A failure aborts the script (check B silently skipped)" \
+    '  rc=1' '  exit 1' assert_b_after_a
+
+  echo "check_no_pii mutations: $KILLED killed, $SURVIVED survived, $INVALID invalid"
+  [ "$SURVIVED" -eq 0 ] && [ "$INVALID" -eq 0 ] || fail=$((fail+1))
+fi
+
 printf '\ncheck_no_pii self-test: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

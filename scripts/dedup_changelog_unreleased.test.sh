@@ -459,5 +459,162 @@ if [ -f "$ROOT/CHANGELOG.md" ]; then
   rm -f "$f"
 fi
 
+# ---------------------------------------------------------------------------
+# Mutation contract (#393): neuter ONE arm at a time in a COPY of the script
+# and require the pinned behaviour to break. Four of this repo's five
+# fake-greens lived in THIS file's earlier drafts (#371), so the contract is
+# not optional here. INVALID (rotted needle / no diff / uncompilable /
+# assertion false on the unmodified script) counts separately and fails (#388).
+# ---------------------------------------------------------------------------
+if [ "${1:-}" = "--mutations" ]; then
+  KILLED=0; SURVIVED=0; INVALID=0
+  MDIR="$(mktemp -d)"; trap 'rm -rf "$MDIR"' EXIT
+  mutate() { # name needle replacement assert-fn
+    local name="$1" needle="$2" repl="$3" assertfn="$4" M="$MDIR/mut.py"
+    python3 - "$SCRIPT" "$M" "$needle" "$repl" <<'PY'
+import sys
+src, dst, needle, repl = sys.argv[1:5]
+t = open(src).read()
+if needle not in t:
+    sys.exit(3)
+open(dst, "w").write(t.replace(needle, repl, 1))
+PY
+    case $? in 3) INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — needle not found (rotted)"; return ;; esac
+    cmp -s "$SCRIPT" "$M" && { INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — no change"; return; }
+    python3 -m py_compile "$M" 2>/dev/null || { INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — does not compile; a syntax error is not a kill"; return; }
+    if ! "$assertfn" "$SCRIPT"; then
+      INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — assertion fails on the UNMODIFIED script"; return
+    fi
+    if "$assertfn" "$M"; then
+      SURVIVED=$((SURVIVED+1)); echo "  ✗ SURVIVED: '$name' — the behaviour holds with the arm removed"
+    else
+      KILLED=$((KILLED+1)); echo "  ✓ killed: $name"
+    fi
+  }
+  fix_dup() { cat > "$1" <<'MD'
+# Changelog
+
+## [Unreleased]
+
+### Fixed
+- **A (#1)** — first.
+
+### Added
+- **B (#2)** — second.
+
+### Fixed
+- **A (#1)** — first.
+- **C (#3)** — third.
+
+## [1.0.0] - 2026-01-01
+### Added
+- old release entry
+MD
+  }
+  assert_dedup() { local g="$MDIR/f"; fix_dup "$g"
+    python3 "$1" "$g" >/dev/null 2>&1 && [ "$(grep -c 'A (#1)' "$g")" = 1 ]; }
+  assert_released() { local g="$MDIR/f"; fix_dup "$g"
+    python3 "$1" "$g" >/dev/null 2>&1 && grep -q '^## \[1.0.0\] - 2026-01-01' "$g"; }
+  assert_whole_key() { local g="$MDIR/f"; cat > "$g" <<'MD'
+# Changelog
+
+## [Unreleased]
+
+### Fixed
+- **T (#9)** — same title.
+  continuation ONE.
+- **T (#9)** — same title.
+  continuation TWO.
+
+## [1.0.0] - 2026-01-01
+- old
+MD
+    python3 "$1" "$g" >/dev/null 2>&1 && grep -q 'continuation ONE' "$g" && grep -q 'continuation TWO' "$g"; }
+  assert_fenced_heading() { local g="$MDIR/f"; cat > "$g" <<'MD'
+# Changelog
+
+## [Unreleased]
+
+### Added
+- **fence entry** — carries a heading-shaped line:
+```
+### Fixed
+```
+
+## [1.0.0] - 2026-01-01
+- old
+MD
+    cp "$g" "$g.orig"
+    python3 "$1" "$g" >/dev/null 2>&1 || return 1
+    # No duplicates in the fixture, so the correct script round-trips it
+    # byte-identically; a torn-out fenced heading changes the bytes.
+    cmp -s "$g" "$g.orig"; }
+  assert_fenced_bullet() { local g="$MDIR/f"; cat > "$g" <<'MD'
+# Changelog
+
+## [Unreleased]
+
+### Added
+- **first (#1)** — with a fence:
+```
+- make build
+```
+- **second (#2)** — with the same fenced line:
+```
+- make build
+```
+
+## [1.0.0] - 2026-01-01
+- old
+MD
+    python3 "$1" "$g" >/dev/null 2>&1 && [ "$(grep -c '^- make build' "$g")" = 2 ]; }
+  assert_preamble() { local g="$MDIR/f"; cat > "$g" <<'MD'
+# Changelog
+
+## [Unreleased]
+Nothing released yet; see the sections below.
+
+### Added
+- **x** — y.
+
+## [1.0.0] - 2026-01-01
+- old
+MD
+    python3 "$1" "$g" >/dev/null 2>&1 && grep -q "Nothing released yet" "$g"; }
+  assert_nonstandard() { local g="$MDIR/f"; cat > "$g" <<'MD'
+# Changelog
+
+## [Unreleased]
+
+### Docs
+- **doc entry** — keep me.
+
+### Added
+- **added entry** — normal.
+
+## [1.0.0] - 2026-01-01
+- old
+MD
+    python3 "$1" "$g" >/dev/null 2>&1 && grep -q 'doc entry' "$g" && grep -qF '### Docs' "$g"; }
+
+  mutate "entry dedup removed (a rebase-duplicated entry ships doubled)" \
+    'if key in seen:' 'if False:' assert_dedup
+  mutate "whole-entry key becomes first-line key (the documented first-draft bug)" \
+    'key = "\n".join(rstrip_block(entry))' 'key = entry[0]' assert_whole_key
+  mutate "fence awareness dropped from the section splitter (a fenced ### is torn out)" \
+    'if line.startswith("### ") and not in_fence:' 'if line.startswith("### "):' assert_fenced_heading
+  mutate "fence awareness dropped from the entry splitter (a fenced bullet rips entries)" \
+    'if not in_fence and line.startswith("- "):' 'if line.startswith("- "):' assert_fenced_bullet
+  mutate "released history no longer byte-preserved (the first released heading is consumed)" \
+    'new = lines[:start + 1] + block + lines[end:]' 'new = lines[:start + 1] + block + lines[end + 1:]' assert_released
+  mutate "preamble dropped (text before the first heading is deleted)" \
+    '            preamble.append(line)' '            pass' assert_preamble
+  mutate "non-standard headings dropped (the #371 silent-deletion bug)" \
+    'ordered += [n for n in order if n not in KNOWN_ORDER]' 'ordered += []' assert_nonstandard
+
+  echo "dedup_changelog_unreleased mutations: $KILLED killed, $SURVIVED survived, $INVALID invalid"
+  [ "$SURVIVED" -eq 0 ] && [ "$INVALID" -eq 0 ] || fail=$((fail+1))
+fi
+
 printf '\ndedup_changelog_unreleased self-test: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

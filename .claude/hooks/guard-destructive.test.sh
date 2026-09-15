@@ -4,7 +4,7 @@
 # on stdin and asserts the emitted permissionDecision (deny = blocked, allow = pass-through).
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
-HOOK="$HERE/guard-destructive.sh"
+HOOK="${HOOK:-$HERE/guard-destructive.sh}"
 fails=0
 
 # Wall-clock assertion. Cost is a SECURITY property here, not ergonomics: the
@@ -938,6 +938,85 @@ check_within "cost: double-space destroy tail" "${MANYDBL}$DV $V"         deny 1
 # it does not depend on a sibling loop remembering to be bounded (§21.18) —
 # and the case above fails the moment that assumption is violated.
 check_within "cost: bulk + piped-shell payload" "${MANYSEMI}echo \"$DV $V\" | bash" deny 10
+
+# --- Mutation contract (#393) ------------------------------------------------
+# Neuter ONE enforcement arm of the hook at a time in a COPY and require the
+# plain suite above to go red against it (re-run via the HOOK override, the
+# same model as guard-stack-resources.test.sh). INVALID — rotted needle, no
+# diff, unparseable mutant, or a plain suite that is red against the UNMODIFIED
+# hook — counts separately and fails the run (#388).
+if [ "${1-}" = "--mutations" ]; then
+  echo
+  echo "== mutation contract =="
+  MPASS=0; MFAIL=0; MBAD=0
+  MDIR="$(mktemp -d)"; trap 'rm -rf "$MDIR"' EXIT
+  cp "$HERE/hook-parse-lib.sh" "$MDIR/" || {
+    echo "  ✗ HARNESS: cannot copy hook-parse-lib.sh"; exit 1; }
+  WORK="$MDIR/guard-destructive.sh"
+
+  # Identity control: the plain suite must be GREEN against a byte-identical
+  # copy, or every "kill" below means nothing.
+  cp "$HOOK" "$WORK"
+  if HOOK="$WORK" bash "$0" >/dev/null 2>&1; then
+    echo "  ✓ control survived: identity (byte-identical copy)"
+  else
+    echo "  ✗ HARNESS INVALID: the plain suite is red against the UNMODIFIED hook"; exit 1
+  fi
+
+  mutate() { # mutate <name> <needle> <replacement>
+    local name="$1" needle="$2" repl="$3"
+    if ! grep -qF "$needle" "$HOOK"; then
+      MBAD=$((MBAD+1)); echo "  ✗ INVALID mutant '$name' — needle not found (rotted)"; return
+    fi
+    python3 - "$HOOK" "$WORK" "$needle" "$repl" <<'PY'
+import sys
+src, dst, needle, repl = sys.argv[1:5]
+open(dst, "w").write(open(src).read().replace(needle, repl, 1))
+PY
+    cmp -s "$HOOK" "$WORK" && { MBAD=$((MBAD+1)); echo "  ✗ INVALID mutant '$name' — no change"; return; }
+    bash -n "$WORK" 2>/dev/null || { MBAD=$((MBAD+1)); echo "  ✗ INVALID mutant '$name' — not parseable"; return; }
+    # Keep the plain suite's output: a silent survivor is undiagnosable, and a
+    # kill whose ONLY failures are the wall-clock cost cases (`took=`) may be a
+    # timing flake of the nine sequential re-runs, not the mutant — re-run once
+    # and count a non-reproducing timing-only kill INVALID rather than killed
+    # (#427 review round 1, minor 2).
+    local out="$MDIR/plain-run.out"
+    if HOOK="$WORK" bash "$0" >"$out" 2>&1; then
+      MFAIL=$((MFAIL+1)); printf '  ✗ SURVIVED: %s\n' "$name"
+      printf '     needle: %s\n     suite tail: %s\n' "$needle" "$(tail -1 "$out")"
+      return
+    fi
+    if grep '^FAIL' "$out" | grep -qv 'took='; then
+      MPASS=$((MPASS+1)); printf '  ✓ killed: %s — %s\n' "$name" "$(grep -m1 '^FAIL' "$out")"
+      return
+    fi
+    if HOOK="$WORK" bash "$0" >"$out" 2>&1; then
+      MBAD=$((MBAD+1)); echo "  ✗ INVALID mutant '$name' — only cost-timing failures, and they did not reproduce"
+    else
+      MPASS=$((MPASS+1)); printf '  ✓ killed: %s — %s\n' "$name" "$(grep -m1 '^FAIL' "$out" || echo 'red on re-run')"
+    fi
+  }
+
+  mutate "deny() emits allow instead of deny" \
+    'permissionDecision\":\"deny' 'permissionDecision\":\"allow'
+  mutate "the docker volume rm/prune arm never fires (#91, the founding incident)" \
+    'grep -Eq '"'"'^docker +volume +(rm|prune)\b'"'"'; then' 'false; then'
+  mutate "the down -v/--volumes condition never fires" \
+    'grep -Eq '"'"'(-v\b|--volumes\b)'"'"'; then' 'false; then'
+  mutate "the system-prune arm never fires" \
+    'grep -Eq '"'"'^docker +system +prune\b'"'"'; then' 'false; then'
+  mutate "the image-prune -a condition never fires" \
+    'grep -Eq '"'"'(-a\b|--all\b)'"'"'; then' 'false; then'
+  mutate "the SQL DROP DATABASE/SCHEMA arm never fires" \
+    'grep -Eiq '"'"'DROP +(DATABASE|SCHEMA)\b'"'"'; then' 'false; then'
+  mutate "the recursive-rm arm never fires" \
+    'grep -Eq '"'"'^rm '"'"' \' 'false \'
+  mutate "the GUARD_DESTRUCTIVE=0 bypass token stops being recognised (top-level segment)" \
+    'GUARD_DESTRUCTIVE=0( |$)' 'GUARD_DESTRUCTIVE=0_NEVER( |$)'
+
+  echo "guard-destructive mutations: $MPASS killed, $MFAIL survived, $MBAD invalid"
+  [ "$MFAIL" -eq 0 ] && [ "$MBAD" -eq 0 ] || fails=$((fails+1))
+fi
 
 if [ "$fails" -eq 0 ]; then
   echo "All guard-destructive cases passed."

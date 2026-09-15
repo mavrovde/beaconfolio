@@ -449,23 +449,70 @@ deep "PREPUSH_DEEP=1 opts the push into every deep leg" \
 # proof: any emitted hook JSON would land in stdout and fail the comparison.
 
 # --- CI carries the mutation contracts (#404 review round 1, major 4) -------
-# The three `--mutations` flags live in deploy.yml, where no shell self-test
+# The four `--mutations` flags live in deploy.yml, where no shell self-test
 # used to see them — deleting one left every check green (a `.github/**` edit
 # selects docs+pii by design). This case is their executable guard: the
-# hook-mutation-contracts job must name all three hooks AND pass --mutations.
+# hook-mutation-contracts job must name all FOUR hooks AND pass --mutations.
 DEPLOY_YML="$HERE/../../.github/workflows/deploy.yml"
 ci_block="$(awk '/^  hook-mutation-contracts:/{f=1;print;next} f&&/^  [a-z][a-z-]*:$/{exit} f{print}' "$DEPLOY_YML")"
 ci_ok=1
-for h in pre-push-tests pre-merge-gate guard-stack-resources; do
+for h in pre-push-tests pre-merge-gate guard-stack-resources guard-destructive; do
   printf '%s\n' "$ci_block" | grep -q "$h" || ci_ok=0
 done
 printf '%s\n' "$ci_block" | grep -q -- '--mutations' || ci_ok=0
 if [ "$ci_ok" = "1" ]; then
-  printf 'PASS  [CI]  deploy.yml hook-mutation-contracts job covers all three hooks with --mutations\n'
+  printf 'PASS  [CI]  deploy.yml hook-mutation-contracts job covers all four hooks with --mutations\n'
 else
-  printf 'FAIL  deploy.yml no longer runs all three hook mutation contracts with --mutations\n'
+  printf 'FAIL  deploy.yml no longer runs all four hook mutation contracts with --mutations\n'
   fails=$((fails + 1))
 fi
+
+# --- CI carries the SCRIPTS mutation contracts too (#393 review round 1) ----
+# The ten scripts/*.test.sh --mutations dispatches live in deploy.yml's
+# version-consistency job — the same nobody-watches-the-flag class as above:
+# dropping ` --mutations` from one step (or the whole step) left every check
+# green. The guard matches the FULL dispatch line, not a bare --mutations grep,
+# so a flagless step cannot satisfy it — and the two mutated copies below prove
+# this case itself can go red (a guard added by the mutation-contract PR that
+# itself had no mutant would be the joke writing itself).
+# Derived from the FILESYSTEM, not hardcoded (#427 round 2): a fixed list
+# catches removal but not omission — a new scripts/*.test.sh harness would
+# ship unguarded. Deriving it makes every harness on disk require a CI
+# dispatch, so an unwired newcomer turns this red until deploy.yml carries it.
+SCRIPT_CONTRACTS="$(cd "$HERE/../../scripts" && ls ./*.test.sh 2>/dev/null | sed 's|^\./||; s/\.test\.sh$//')"
+ci_scripts_ok() { # ci_scripts_ok <deploy-yml> -> 0 iff every dispatch line is present
+  local y="$1" n
+  for n in $SCRIPT_CONTRACTS; do
+    grep -qE "run: bash scripts/${n}\.test\.sh --mutations" "$y" || return 1
+  done
+  return 0
+}
+if ci_scripts_ok "$DEPLOY_YML"; then
+  printf 'PASS  [CI]  deploy.yml dispatches all %d on-disk scripts/*.test.sh mutation contracts\n' \
+    "$(printf '%s\n' $SCRIPT_CONTRACTS | grep -c .)"
+else
+  printf 'FAIL  deploy.yml no longer dispatches every scripts mutation contract\n'
+  fails=$((fails + 1))
+fi
+MUTYML="$(mktemp)"
+sed 's|run: bash scripts/check_no_pii.test.sh --mutations|run: bash scripts/check_no_pii.test.sh|' \
+  "$DEPLOY_YML" > "$MUTYML"
+if cmp -s "$DEPLOY_YML" "$MUTYML"; then
+  printf 'FAIL  [CI-guard mutant] flag-strip produced no diff — the needle rotted\n'; fails=$((fails + 1))
+elif ci_scripts_ok "$MUTYML"; then
+  printf 'FAIL  [CI-guard mutant] a stripped --mutations flag still passes the guard\n'; fails=$((fails + 1))
+else
+  printf 'PASS  [CI-guard mutant] stripping one --mutations flag turns the guard red\n'
+fi
+grep -v 'run: bash scripts/check_aiconfig_map.test.sh --mutations' "$DEPLOY_YML" > "$MUTYML"
+if cmp -s "$DEPLOY_YML" "$MUTYML"; then
+  printf 'FAIL  [CI-guard mutant] step-delete produced no diff — the needle rotted\n'; fails=$((fails + 1))
+elif ci_scripts_ok "$MUTYML"; then
+  printf 'FAIL  [CI-guard mutant] a deleted contract step still passes the guard\n'; fails=$((fails + 1))
+else
+  printf 'PASS  [CI-guard mutant] deleting one contract step turns the guard red\n'
+fi
+rm -f "$MUTYML"
 
 # --- (b) end to end, through the hook, against REAL git repositories --------
 FIXTURES=()

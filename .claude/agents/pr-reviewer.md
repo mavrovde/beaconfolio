@@ -127,6 +127,21 @@ Never accept "coverage is 100%" at face value — a line being executed is not t
      the `- Placeholder for next release.` stub the release-manager seeds. For `CHANGELOG.md` the
      states are exactly three: **mid-cycle accumulation, the rotation, and the first entry after a
      rotation.** Ask which of the three the PR's fixtures cover.
+4c. **A new or modified CHECK must ship its mutation contract — measured, not promised (#393).**
+   A PR that adds or changes a repo-contract check (a `scripts/check_*`/lint, a hook's blocking
+   logic, a CI gate's pass/fail computation) is **REQUEST CHANGES** unless the PR body reports a
+   measured mutation result of the form **`N killed / 0 survived / 0 invalid`** from the check's
+   own `--mutations` harness — one mutant per enforcement arm, each neutering that arm in a COPY
+   of the script and requiring the matching case to go red. Why this is a gate and not advice:
+   **every fake-green in this repository's history was found by mutation, never by reading** —
+   #367 shipped a drift checker whose entire `lint` category could not fail, and #371 shipped
+   one self-test with four masked cases; both passed review by reading (v1.14.1 retro, class G).
+   Two structural requirements on the harness itself, both from measured failures: **`invalid`
+   is reported separately from `survived` and any `invalid > 0` fails the run** (#388: a
+   mutation's needle ROTS when the source line changes, and a needle-miss silently tested
+   nothing while reporting success), and each kill must be **attributable** — assert on the
+   check's own message, not exit code alone (overlapping checks keep rc=1 and make three
+   neutered checks look killed).
    - **A CI gate must be shown GREEN ON A REAL PR, not merely "wired".** SonarCloud was activated
      and was structurally red from that moment — the scanner ran with no test step, so
      `new_coverage` read `0.0` against a threshold of 80 on every PR touching one line of code.

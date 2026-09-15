@@ -108,5 +108,70 @@ rm -rf "$d"
 out="$(bash "$SCRIPT")"; rc=$?
 [ "$rc" -eq 0 ] && ok "the real repository satisfies the contract" || bad "real repo" "$out"
 
+# ---------------------------------------------------------------------------
+# Mutation contract (#393): neuter ONE arm of the checker at a time in a COPY
+# and require the pinned case to go red. INVALID (rotted needle / no diff /
+# unparseable / assertion false on the unmodified script) counts separately
+# and fails the run (#388).
+# ---------------------------------------------------------------------------
+if [ "${1:-}" = "--mutations" ]; then
+  KILLED=0; SURVIVED=0; INVALID=0
+  MT="$(mktemp -d)"; trap 'rm -rf "$MT"' EXIT
+  runx() { CLAUDE_PROJECT_DIR="$2" bash "$1" 2>&1; }
+  mutate() { # name needle replacement assert-fn
+    local name="$1" needle="$2" repl="$3" assertfn="$4" M="$MT/mut.sh"
+    if ! grep -qF "$needle" "$SCRIPT"; then
+      INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — needle not found (rotted)"; return
+    fi
+    python3 - "$SCRIPT" "$M" "$needle" "$repl" <<'PY'
+import sys
+src, dst, needle, repl = sys.argv[1:5]
+open(dst, "w").write(open(src).read().replace(needle, repl, 1))
+PY
+    cmp -s "$SCRIPT" "$M" && { INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — no change"; return; }
+    bash -n "$M" 2>/dev/null || { INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — not parseable"; return; }
+    if ! "$assertfn" "$SCRIPT"; then
+      INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — assertion fails on the UNMODIFIED script"; return
+    fi
+    if "$assertfn" "$M"; then
+      SURVIVED=$((SURVIVED+1)); echo "  ✗ SURVIVED: '$name' — the case stays green with the arm removed"
+    else
+      KILLED=$((KILLED+1)); echo "  ✓ killed: $name"
+    fi
+  }
+  # assert-fns rebuild their fixture each call and hold on the unmodified script.
+  assert_unforwarded() { local d o; d="$MT/f1"; rm -rf "$d"; mkdir -p "$d"
+    skeleton "$d" "# TRANSLATION_ENABLED=true" ""
+    o="$(runx "$1" "$d")"; [ $? -eq 1 ] && printf '%s' "$o" | grep -q 'never receives $TRANSLATION_ENABLED'; }
+  assert_prod_only() { local d o; d="$MT/f3"; rm -rf "$d"; mkdir -p "$d"
+    skeleton "$d" "# TRANSLATION_ENABLED=true" "      - TRANSLATION_ENABLED=\${TRANSLATION_ENABLED:-true}"
+    { echo "services:"; echo "  backend:"; echo "    environment:"
+      echo "      - SITE_NAME=\${SITE_NAME:-x}"; } > "$d/docker-compose.prod.yml"
+    o="$(runx "$1" "$d")"; [ $? -eq 1 ] && printf '%s' "$o" | grep -q 'docker-compose.prod.yml'; }
+  assert_readme_source() { local d o; d="$MT/f7"; rm -rf "$d"; mkdir -p "$d"
+    skeleton "$d" "" ""
+    printf 'Set TRANSLATION_ENABLED in your .env to disable it.\n' > "$d/README.md"
+    o="$(runx "$1" "$d")"; [ $? -eq 1 ] && printf '%s' "$o" | grep -q 'promised by: README.md'; }
+  assert_alias() { local d o; d="$MT/f4"; rm -rf "$d"; mkdir -p "$d"
+    skeleton "$d" "# BEACONFOLIO_GEMINI_API_KEY=x" ""
+    o="$(runx "$1" "$d")"; [ $? -eq 1 ] && printf '%s' "$o" | grep -q 'BEACONFOLIO_GEMINI_API_KEY'; }
+
+  mutate "missing-key detection removed (unforwarded knob passes)" \
+    'if ! printf '"'"'%s\n'"'"' "$present" | grep -qx "$key"; then' 'if false; then' assert_unforwarded
+  mutate "prod compose dropped from scope (dev-only forward passes)" \
+    'COMPOSE_FILES="docker-compose.yml docker-compose.prod.yml"' 'COMPOSE_FILES="docker-compose.yml"' assert_prod_only
+  mutate "doc sources narrowed to .env.example (the #297 README promise passes)" \
+    'DOC_FILES=".env.example README.md docs/DEPLOYMENT.md setup.sh"' 'DOC_FILES=".env.example"' assert_readme_source
+  mutate "validation_alias extraction removed (namespaced knobs leave the contract)" \
+    'grep -oE '"'"'validation_alias="[A-Z][A-Z0-9_]*"'"'"' "$CONFIG_PY" | cut -d'"'"'"'"'"' -f2' 'true' assert_alias
+  mutate "exemption match becomes blanket (every key exempt)" \
+    'printf '"'"'%s\n'"'"' "$EXEMPT_LIST" | grep -q "^$1:"' 'true' assert_unforwarded
+  mutate "Settings-field extraction removed (no field is ever in the contract)" \
+    'grep -oE '"'"'^ {4}[a-z][a-z0-9_]*[[:space:]]*:'"'"' "$CONFIG_PY" | tr -d '"'"' :'"'"' | tr '"'"'[:lower:]'"'"' '"'"'[:upper:]'"'"'' 'true' assert_unforwarded
+
+  echo "check_compose_env mutations: $KILLED killed, $SURVIVED survived, $INVALID invalid"
+  [ "$SURVIVED" -eq 0 ] && [ "$INVALID" -eq 0 ] || fail=$((fail+1))
+fi
+
 printf '\ncheck_compose_env self-test: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

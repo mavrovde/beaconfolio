@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **A mutation contract on EVERY repo-contract check (#393)** — the nine self-test harnesses
+  that had none now neuter one enforcement arm at a time in a copy and require their pinned
+  case to go red: `check_env_example_complete` (4 mutants), `check_live_freshness` (5),
+  `check_compose_env` (6), `run_frontend_suites` (7), `check_migration_heads` (7),
+  `check_no_pii` (7), `dedup_changelog_unreleased` (7), `check_aiconfig_map` (7) and the
+  `guard-destructive` hook (8 + identity control) — 58 new mutants, every contract measured
+  N killed / 0 survived / 0 invalid. Rotted needles, no-diff mutants, unparseable mutants and
+  assertions that fail on the unmodified script all count INVALID and fail the run (#388).
+  The `check_aiconfig_map` "lint sweep removed" mutant replays #367 verbatim: at that PR's
+  pre-review head the checker reports "✓ matches reality" with a rowless `scripts/` lint
+  present (measured rc=0 both ways) — the class of fake-green only a mutation run catches.
+  CI now runs every `--mutations` contract unconditionally: the ten `scripts/*.test.sh`
+  contracts inline in Version Consistency (the whole scripts sweep measured 39s) and
+  `guard-destructive` in the parallel hook-contract matrix; the local pre-push gate still
+  runs plain cases only (owner's 1-3-minute push budget). The `pr-reviewer` charter gains
+  §4c (a PR adding or modifying a check without a measured mutation contract is REQUEST
+  CHANGES) and lessons-learned gains §69.
 - **angular-eslint across the whole frontend workspace (#234)** — one flat `eslint.config.mjs`
   (eslint 10 + typescript-eslint 8 + angular-eslint 22, non-type-aware so the pre-push gate
   stays in seconds) lints all three projects and their templates. The #118 zoneless cd-safety
