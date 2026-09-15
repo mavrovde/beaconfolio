@@ -1,5 +1,16 @@
 # Delivery statistics — three releases measured
 
+> **Status (2026-09-15): this page is a dated snapshot and is kept as one.** Its
+> window ends at v1.14.1; **v1.14.2 and v1.14.3 have shipped since**, and the series —
+> including how the plan in the second half of this page actually scored — continues
+> ONLY in the canonical sites: the trend table in
+> [`docs/retrospectives/README.md`](../retrospectives/README.md) and the per-release
+> records ([v1.14.2](../retrospectives/v1.14.2.md), [v1.14.3](../retrospectives/v1.14.3.md)).
+> Figures are deliberately not refreshed here: restating series numbers outside the
+> canonical site is a counted defect class in this repository (the v1.14.1 retro PR
+> was blocked on 13 findings of exactly that shape —
+> [v1.14.2 §3](../retrospectives/v1.14.2.md)). See the outcome note at the end.
+
 What the last three releases actually cost, what moved, and why. Then the plan for
 the targets set on the next one.
 
@@ -286,8 +297,33 @@ Stated in advance so it cannot be rationalized afterwards.
 
 ---
 
+## Outcome (added 2026-09-15 — links, not restated figures)
+
+The plan above met two more releases. The short version, each claim sourced where the
+numbers live:
+
+- **The mechanisms shipped.** #377's scoped pre-push gate landed at v1.14.2 (a
+  docs-only push measured in seconds — timings in the
+  [v1.14.2 record](../retrospectives/v1.14.2.md)); #393's mutation contracts — the
+  gap this page measured as "of the seven `scripts/*.test.sh` self-tests, none" —
+  closed at v1.14.3 (#427), and the four hooks now all carry contracts in CI.
+- **The process targets largely came good one release late**: v1.14.2 went backwards
+  on the review targets amid its no-verdict-merge incident; v1.14.3 posted the best
+  rounds figure since v1.14.0 at a rising median PR size, with all of its posted
+  verdicts landing pre-merge — though one PR (#412) merged with none at all
+  — scored clause by clause in [v1.14.2 §6/§8](../retrospectives/v1.14.2.md) and
+  [v1.14.3 §7/§8](../retrospectives/v1.14.3.md).
+- **The telemetry meta-target ("zero runs with unrecorded cost") failed both times**,
+  so "the first honestly comparable token figure" this page promised for v1.14.2 does
+  not exist; #386 stays open on that criterion alone, and the v1.14.3 prediction makes
+  the clause binary.
+- **The falsifiers earned their keep**: the "merges stopped passing through the gate"
+  clause is exactly what fired at v1.14.2 (six merges) and again, once, at v1.14.3
+  (#412).
+
 ## Links
 
 [Team and process](team-and-process.md) · [`docs/retrospectives/`](../retrospectives/)
 (per-release records and counting conventions) · `CLAUDE.md` (the operative rules) ·
-Issues #386 (KPIs), #377 (scoped pre-push gate).
+Issues #386 (KPIs), #377 (scoped pre-push gate, shipped), #393 (mutation contracts,
+shipped), #409 (verdict-audit ordering/cadence, open).

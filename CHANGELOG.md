@@ -15,6 +15,15 @@ All notable changes to this project will be documented in this file.
   rotated entries are unrewordable in the rotation PR) and §71 (CodeQL default-setup runs
   cannot be re-run; single-SHA red with no error text is an upload fault).
 
+### Changed
+- **The wiki statistics articles stop competing with the canonical record** — `docs/wiki/`'s
+  `team-and-process.md` replaces its trend-table and KPI-baseline copies (and its restated
+  cost figures) with links to `docs/retrospectives/`; `delivery-statistics.md` is banner-dated
+  and frozen as the v1.13.0→v1.14.1 snapshot it is, with a links-only outcome note covering
+  v1.14.2/v1.14.3 (#377/#393 shipped, the telemetry meta-target missed twice, the gate
+  falsifier fired at six merges and then at one). Applies the v1.14.1-retro lesson: a release
+  figure is written once and linked everywhere else.
+
 ## [1.14.3] - 2026-09-15
 
 > Versioning note: by the committed SemVer-by-content rules this window is a MINOR (#333 ships
