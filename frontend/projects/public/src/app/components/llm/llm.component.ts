@@ -408,8 +408,11 @@ export class LlmComponent implements OnInit, AfterViewChecked {
     }
   }
 
+  // Angular's host-binding type-checker passes ['$event'] as Event, not
+  // KeyboardEvent — a narrower type fails ONLY in `ng build` (neither tsc
+  // --noEmit nor Vitest runs that checker; #423 review round 1, blocker 1).
   @HostListener('window:keydown.escape', ['$event'])
-  handleEsc(_event: KeyboardEvent) {
+  handleEsc(_event: Event) {
     if (this.isConfigVisible) {
       this.isConfigVisible = false;
     }

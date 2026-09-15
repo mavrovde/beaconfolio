@@ -66,7 +66,9 @@ export class LanguageService {
           // A leaf hit mid-path just walks to undefined, exactly as before.
           value = (value as TranslationTree | undefined)?.[k];
         }
-        return (value || key) as string;
+        // A branch-node hit (e.g. translate('NAV')) falls back to the key —
+        // the cast form typed the sub-tree object as string (#423, nit 7).
+        return typeof value === 'string' && value ? value : key;
       }),
     );
   }

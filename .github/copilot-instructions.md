@@ -75,7 +75,7 @@ Full stack: `./manage.sh start|stop|logs` · `./verify_all.sh` (full suite incl.
   returns `000`.
 - **Both browser apps are zoneless** (no zone.js at runtime) — public explicitly, admin by default
   (#276): async property mutations in `subscribe`/`setInterval` don't repaint — use the `async`
-  pipe, signals, or `markForCheck()`. `npm run lint:cd-safety` scans both roots; unit tests hide
+  pipe, signals, or `markForCheck()`. `npm run lint` (the #234 eslint cd-safety rule) scans both roots; unit tests hide
   this unless the TestBed opts into `provideZonelessChangeDetection()`.
 - **SSR URL rewrite lives in `SsrHttpBackend` delegating to `HttpXhrBackend`** — never an
   interceptor, never `FetchBackend`. Any SSR/HTTP/transfer-cache change must pass the full Docker

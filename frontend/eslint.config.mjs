@@ -22,8 +22,12 @@ import angular from "angular-eslint";
  * paren-balancing. Scope mirrors the heuristic exactly (public + admin src,
  * no *.spec.ts / *.server.ts; shared is a library with no view to repaint —
  * see the scope rationale preserved in git history of check-cd-safety.mjs).
- * KNOWN LIMIT carried over: an `await`-then-assign continuation has no
- * callback node, so it is still not flagged.
+ * KNOWN LIMITS, stated so the scope is a documented claim (#423 round 1):
+ * an `await`-then-assign continuation has no callback node, so it is still
+ * not flagged (carried over from the heuristic); and RxJS OPERATOR callbacks
+ * (`tap`/`catchError`/`map` inside `.pipe(...)`) are deliberately uncovered —
+ * their `this.*` writes surface through the stream, which the async pipe or
+ * the subscribe-side handlers (which ARE covered, in both shapes) repaint.
  * Suppress a justified case with
  * `// eslint-disable-next-line no-restricted-syntax -- cd-safety-ok: <reason>`.
  */
@@ -36,7 +40,13 @@ const THIS_ASSIGN =
 const CD_SAFETY_MESSAGE =
   "zoneless app: this.* assigned in an async callback with no markForCheck/detectChanges in that callback — the view never repaints (#94/#118). Use the async pipe, a signal, or ChangeDetectorRef.markForCheck(); or suppress with `// eslint-disable-next-line no-restricted-syntax -- cd-safety-ok: <reason>`.";
 const cdSafetySelectors = [
+  // direct callback: subscribe(cb) / then(cb)
   `CallExpression[callee.property.name=/^(subscribe|then)$/] > ${CALLBACK}${NO_REPAINT} ${THIS_ASSIGN}`,
+  // observer object: subscribe({ next: cb, error: cb, … }) — each handler is
+  // judged on its own repaint (#423 round 1, blocker 2: the direct-child
+  // selector alone silently skipped every `subscribe({…})` site — 40+ in the
+  // codebase — a coverage REGRESSION against the retired heuristic).
+  `CallExpression[callee.property.name=/^(subscribe|then)$/] > ObjectExpression > Property > ${CALLBACK}${NO_REPAINT} ${THIS_ASSIGN}`,
   `CallExpression[callee.name=/^(setInterval|setTimeout)$/] > ${CALLBACK}${NO_REPAINT} ${THIS_ASSIGN}`,
 ].map((selector) => ({ selector, message: CD_SAFETY_MESSAGE }));
 
@@ -82,7 +92,7 @@ export default tseslint.config(
       // sites. The fix is the official codemod (`ng generate
       // @angular/core:inject`) — a mechanical, whole-workspace migration that
       // belongs in its own PR (dependency-policy reasoning: big mechanical
-      // rewrites ride alone), tracked as a follow-up issue. New code should
+      // rewrites ride alone), tracked as issue #425. New code should
       // use inject(); flip this to "error" when the codemod lands.
       "@angular-eslint/prefer-inject": "off",
     },
@@ -119,8 +129,8 @@ export default tseslint.config(
       // BASELINED at adoption (#234): 217 pre-existing *ngIf/*ngFor sites.
       // The fix is the official codemod (`ng generate
       // @angular/core:control-flow`) — same reasoning as prefer-inject
-      // above: mechanical whole-workspace rewrite, own PR, tracked as a
-      // follow-up issue. Flip to "error" when the codemod lands.
+      // above: mechanical whole-workspace rewrite, own PR, tracked as
+      // issue #425. Flip to "error" when the codemod lands.
       "@angular-eslint/template/prefer-control-flow": "off",
     },
   },

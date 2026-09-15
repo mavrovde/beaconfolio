@@ -62,6 +62,16 @@ describe('LanguageService', () => {
     expect(t1).toBe('A.B.D');
   });
 
+  it('should fall back to the key when it resolves to a branch node', async () => {
+    const initReq = httpMock.expectOne('/assets/i18n/en.json');
+    initReq.flush({ NAV: { LLM: 'LLM Support' } });
+
+    // 'NAV' walks to the sub-tree object — must yield the key, never
+    // '[object Object]' (#423, nit 7: the old cast typed the branch as string).
+    const translation = await firstValueFrom(service.translate('NAV'));
+    expect(translation).toBe('NAV');
+  });
+
   it('should load translations when setting language', () => {
     const initReq = httpMock.expectOne('/assets/i18n/en.json');
     initReq.flush({});

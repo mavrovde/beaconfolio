@@ -114,15 +114,18 @@ export class BlogComponent implements OnInit {
       next: (response) => {
         const existingIds = new Set(this.posts.map(p => p.id));
         const newPosts = response.items.filter(p => !existingIds.has(p.id));
-        // cd-safety-ok: SSR-only path — the isPlatformBrowser branch above returns before this
-        // subscribe; SSR serializes after pending tasks settle, and the error path repaints via
-        // loadFallbackPosts()'s own markForCheck (#118).
         this.posts = [...this.posts, ...newPosts];
         this.hasMore = this.posts.length < response.total;
         this.isLoading = false;
+        // Only the server reaches this subscribe (the isPlatformBrowser branch
+        // above returns first) and SSR serializes after pending tasks settle —
+        // but markForCheck is free there, matches loadFallbackPosts, and keeps
+        // this correct if the platform guard is ever refactored.
+        this.cdr.markForCheck();
       },
       error: (err) => {
         console.error('Failed to load posts from API, using fallback', err);
+        // eslint-disable-next-line no-restricted-syntax -- cd-safety-ok: private field, nothing template-bound; loadFallbackPosts repaints via its own handlers.
         this.usingFallback = true;
         this.loadFallbackPosts(effectivePageSize);
       }

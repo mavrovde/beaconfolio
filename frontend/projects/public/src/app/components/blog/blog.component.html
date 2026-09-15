@@ -85,9 +85,15 @@
                 {{ post.language }}
               </span>
               {{ post.title }}
-              <!-- Tags Display -->
+              <!-- Tags Display. These chips sit INSIDE the row's role="button", whose
+                   children ARIA treats as presentational — a nested role/tabindex would be
+                   announced as plain text yet add N+1 tab stops per post (#423 round 1,
+                   finding 5). So the chips are a pointer-only refinement: keyboard users
+                   keep the row control and lose only this filter shortcut — a real
+                   keyboard path needs the chips re-homed OUTSIDE the row control, which
+                   is the larger restructure the review deferred. -->
+              <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -->
               <span *ngFor="let tag of post.tags" (click)="$event.stopPropagation(); filterByTag(tag)"
-                (keyup.enter)="$event.stopPropagation(); filterByTag(tag)" tabindex="0" role="button"
                 class="text-xs border border-terminal-dim text-secondary px-1 rounded hover:text-primary hover:border-primary transition-colors ml-1">
                 #{{ tag }}
               </span>
