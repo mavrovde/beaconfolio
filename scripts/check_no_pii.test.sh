@@ -262,6 +262,7 @@ out="$(bash "$SCRIPT")"; rc=$?
 if [ "${1:-}" = "--mutations" ]; then
   KILLED=0; SURVIVED=0; INVALID=0
   MDIR="$(mktemp -d)"
+  trap 'rm -rf "$MDIR"' EXIT   # no leak on early exit (#427 r1, nit 4)
   runx() { ( cd "$2" && git add -A >/dev/null 2>&1; CLAUDE_PROJECT_DIR="$2" bash "$1" 2>&1 ); }
   mutate() { # name needle replacement assert-fn
     local name="$1" needle="$2" repl="$3" assertfn="$4" M="$MDIR/mut.sh"
@@ -326,7 +327,6 @@ PY
   mutate "check A failure aborts the script (check B silently skipped)" \
     '  rc=1' '  exit 1' assert_b_after_a
 
-  rm -rf "$MDIR"
   echo "check_no_pii mutations: $KILLED killed, $SURVIVED survived, $INVALID invalid"
   [ "$SURVIVED" -eq 0 ] && [ "$INVALID" -eq 0 ] || fail=$((fail+1))
 fi

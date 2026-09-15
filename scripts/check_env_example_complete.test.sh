@@ -80,6 +80,17 @@ src, dst, needle, repl = sys.argv[1:5]
 open(dst, "w").write(open(src).read().replace(needle, repl, 1))
 PY
     cmp -s "$CHECK" "$M" && { INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — no change"; return; }
+    bash -n "$M" 2>/dev/null || { INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — not parseable"; return; }
+    # The mutants target Python embedded in the bash script, which bash -n
+    # cannot vet. "Green on the real pair" is the WRONG validity criterion —
+    # the alias mutant legitimately reds it (the real .env.example documents
+    # aliased fields by alias) — so vet runnability instead: broken Python
+    # announces itself as a traceback, and a traceback-kill is a kill for the
+    # wrong reason (#427 review round 1, nit 3).
+    if bash "$M" "$HERE/../backend/app/config.py" "$HERE/../backend/.env.example" 2>&1 >/dev/null \
+       | grep -q 'Traceback'; then
+      INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — raises a Python traceback (broken, not weakened)"; return
+    fi
     if ! "$assertfn" "$CHECK"; then
       INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — assertion fails on the UNMODIFIED script"; return
     fi

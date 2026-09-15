@@ -226,6 +226,7 @@ expect_rc 0 "the committed migration chain has exactly one head"
 if [ "${1:-}" = "--mutations" ]; then
   KILLED=0; SURVIVED=0; INVALID=0
   MDIR="$(mktemp -d)"
+  trap 'rm -rf "$TMP" "$MDIR"' EXIT   # extend the line-58 trap: no leak on early exit (#427 r1, nit 4)
   mutate() { # name needle replacement assert-fn
     local name="$1" needle="$2" repl="$3" assertfn="$4" M="$MDIR/mut.sh"
     python3 - "$CHECKER" "$M" "$needle" "$repl" <<'PY'
@@ -280,7 +281,6 @@ collect_worktree' 'collect_worktree
     'git -C "$ROOT" rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1 || {' \
     'true || {' assert_badref
 
-  rm -rf "$MDIR"
   echo "check_migration_heads mutations: $KILLED killed, $SURVIVED survived, $INVALID invalid"
   [ "$SURVIVED" -eq 0 ] && [ "$INVALID" -eq 0 ] || fail=$((fail+1))
 fi

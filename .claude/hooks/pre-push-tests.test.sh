@@ -467,6 +467,50 @@ else
   fails=$((fails + 1))
 fi
 
+# --- CI carries the SCRIPTS mutation contracts too (#393 review round 1) ----
+# The ten scripts/*.test.sh --mutations dispatches live in deploy.yml's
+# version-consistency job — the same nobody-watches-the-flag class as above:
+# dropping ` --mutations` from one step (or the whole step) left every check
+# green. The guard matches the FULL dispatch line, not a bare --mutations grep,
+# so a flagless step cannot satisfy it — and the two mutated copies below prove
+# this case itself can go red (a guard added by the mutation-contract PR that
+# itself had no mutant would be the joke writing itself).
+SCRIPT_CONTRACTS="audit_no_verdict_merges check_aiconfig_map check_changelog_merge \
+check_compose_env check_env_example_complete check_live_freshness \
+check_migration_heads check_no_pii dedup_changelog_unreleased run_frontend_suites"
+ci_scripts_ok() { # ci_scripts_ok <deploy-yml> -> 0 iff every dispatch line is present
+  local y="$1" n
+  for n in $SCRIPT_CONTRACTS; do
+    grep -qE "run: bash scripts/${n}\.test\.sh --mutations" "$y" || return 1
+  done
+  return 0
+}
+if ci_scripts_ok "$DEPLOY_YML"; then
+  printf 'PASS  [CI]  deploy.yml dispatches all ten scripts/*.test.sh mutation contracts\n'
+else
+  printf 'FAIL  deploy.yml no longer dispatches every scripts mutation contract\n'
+  fails=$((fails + 1))
+fi
+MUTYML="$(mktemp)"
+sed 's|run: bash scripts/check_no_pii.test.sh --mutations|run: bash scripts/check_no_pii.test.sh|' \
+  "$DEPLOY_YML" > "$MUTYML"
+if cmp -s "$DEPLOY_YML" "$MUTYML"; then
+  printf 'FAIL  [CI-guard mutant] flag-strip produced no diff — the needle rotted\n'; fails=$((fails + 1))
+elif ci_scripts_ok "$MUTYML"; then
+  printf 'FAIL  [CI-guard mutant] a stripped --mutations flag still passes the guard\n'; fails=$((fails + 1))
+else
+  printf 'PASS  [CI-guard mutant] stripping one --mutations flag turns the guard red\n'
+fi
+grep -v 'run: bash scripts/check_aiconfig_map.test.sh --mutations' "$DEPLOY_YML" > "$MUTYML"
+if cmp -s "$DEPLOY_YML" "$MUTYML"; then
+  printf 'FAIL  [CI-guard mutant] step-delete produced no diff — the needle rotted\n'; fails=$((fails + 1))
+elif ci_scripts_ok "$MUTYML"; then
+  printf 'FAIL  [CI-guard mutant] a deleted contract step still passes the guard\n'; fails=$((fails + 1))
+else
+  printf 'PASS  [CI-guard mutant] deleting one contract step turns the guard red\n'
+fi
+rm -f "$MUTYML"
+
 # --- (b) end to end, through the hook, against REAL git repositories --------
 FIXTURES=()
 cleanup_fixtures() { local d; for d in ${FIXTURES+"${FIXTURES[@]}"}; do [ -n "$d" ] && rm -rf "$d"; done; }

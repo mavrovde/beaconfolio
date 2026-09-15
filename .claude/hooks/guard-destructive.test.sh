@@ -975,10 +975,25 @@ open(dst, "w").write(open(src).read().replace(needle, repl, 1))
 PY
     cmp -s "$HOOK" "$WORK" && { MBAD=$((MBAD+1)); echo "  ✗ INVALID mutant '$name' — no change"; return; }
     bash -n "$WORK" 2>/dev/null || { MBAD=$((MBAD+1)); echo "  ✗ INVALID mutant '$name' — not parseable"; return; }
-    if HOOK="$WORK" bash "$0" >/dev/null 2>&1; then
+    # Keep the plain suite's output: a silent survivor is undiagnosable, and a
+    # kill whose ONLY failures are the wall-clock cost cases (`took=`) may be a
+    # timing flake of the nine sequential re-runs, not the mutant — re-run once
+    # and count a non-reproducing timing-only kill INVALID rather than killed
+    # (#427 review round 1, minor 2).
+    local out="$MDIR/plain-run.out"
+    if HOOK="$WORK" bash "$0" >"$out" 2>&1; then
       MFAIL=$((MFAIL+1)); printf '  ✗ SURVIVED: %s\n' "$name"
+      printf '     needle: %s\n     suite tail: %s\n' "$needle" "$(tail -1 "$out")"
+      return
+    fi
+    if grep '^FAIL' "$out" | grep -qv 'took='; then
+      MPASS=$((MPASS+1)); printf '  ✓ killed: %s — %s\n' "$name" "$(grep -m1 '^FAIL' "$out")"
+      return
+    fi
+    if HOOK="$WORK" bash "$0" >"$out" 2>&1; then
+      MBAD=$((MBAD+1)); echo "  ✗ INVALID mutant '$name' — only cost-timing failures, and they did not reproduce"
     else
-      MPASS=$((MPASS+1)); printf '  ✓ killed: %s\n' "$name"
+      MPASS=$((MPASS+1)); printf '  ✓ killed: %s — %s\n' "$name" "$(grep -m1 '^FAIL' "$out" || echo 'red on re-run')"
     fi
   }
 
