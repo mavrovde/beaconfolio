@@ -125,5 +125,90 @@ run_one public 'echo "Tests 3 failed | 334 passed"; exit 1'
   && ok "…and is not retried" || bad "CI real failure retried" "$(cat "$LAST_DIR/test:coverage:public" 2>/dev/null)"
 rm -rf "$LAST_DIR"
 
+# ---------------------------------------------------------------------------
+# Mutation contract (#393): neuter ONE arm of the wrapper at a time in a COPY
+# and require the pinned case to go red. Every assert runs against the FAKE
+# npm — no mutant ever invokes real Vitest. INVALID (rotted needle / no diff /
+# unparseable / assertion false on the unmodified script) counts separately
+# and fails the run (#388).
+# ---------------------------------------------------------------------------
+if [ "${1:-}" = "--mutations" ]; then
+  KILLED=0; SURVIVED=0; INVALID=0
+  MT="$(mktemp -d)"; trap 'rm -rf "$MT"' EXIT
+  runm() { # script npm-body [env: MPROJ, MCOV]
+    local d; d="$(mktemp -d "$MT/f.XXXXXX")"; mk_npm "$d" "$2"
+    OUT="$(FAKE_STATE_DIR="$d" NPM_BIN="$d/bin/npm" FRONTEND_DIR="$d" \
+      FRONTEND_PROJECTS="${MPROJ:-shared public admin}" bash "$1" ${MCOV:-} 2>&1)"
+    RC=$?; LAST_DIR="$d"
+  }
+  mutate() { # name needle replacement assert-fn
+    local name="$1" needle="$2" repl="$3" assertfn="$4" M="$MT/mut.sh"
+    if ! grep -qF -- "$(printf '%s' "$needle" | head -1)" "$SCRIPT"; then
+      INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — needle not found (rotted)"; return
+    fi
+    python3 - "$SCRIPT" "$M" "$needle" "$repl" <<'PY'
+import sys
+src, dst, needle, repl = sys.argv[1:5]
+t = open(src).read()
+if needle not in t:
+    sys.exit(3)
+open(dst, "w").write(t.replace(needle, repl, 1))
+PY
+    [ $? -eq 3 ] && { INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — full needle not found (rotted)"; return; }
+    cmp -s "$SCRIPT" "$M" && { INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — no change"; return; }
+    bash -n "$M" 2>/dev/null || { INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — not parseable"; return; }
+    if ! "$assertfn" "$SCRIPT"; then
+      INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — assertion fails on the UNMODIFIED script"; return
+    fi
+    if "$assertfn" "$M"; then
+      SURVIVED=$((SURVIVED+1)); echo "  ✗ SURVIVED: '$name' — the case stays green with the arm removed"
+    else
+      KILLED=$((KILLED+1)); echo "  ✓ killed: $name"
+    fi
+  }
+  assert_real_failure_fails() { runm "$1" 'if [ "$target" = "test:public" ]; then echo "1 failed | 9 passed"; exit 1; fi; echo ok; exit 0'
+    [ "$RC" -eq 1 ]; }
+  assert_all_run() { runm "$1" 'if [ "$target" = "test:public" ]; then echo "1 failed | 9 passed"; exit 1; fi; echo ok; exit 0'
+    [ "$RC" -eq 1 ] && printf '%s' "$OUT" | grep -q 'test:admin'; }
+  assert_failed_not_retried() { runm "$1" 'if [ "$target" = "test:public" ]; then
+      echo "Tests 3 failed | 334 passed"; echo "'"$TEARDOWN"'"; exit 1; fi; echo ok; exit 0'
+    [ "$RC" -eq 1 ] && [ "$(cat "$LAST_DIR/test:public" 2>/dev/null)" = "1" ]; }
+  assert_crash_not_retried() { runm "$1" 'if [ "$target" = "test:admin" ]; then echo "Error: Cannot find module x"; exit 2; fi; echo ok; exit 0'
+    [ "$RC" -eq 1 ] && [ "$(cat "$LAST_DIR/test:admin" 2>/dev/null)" = "1" ]; }
+  assert_recurring_flake_fails() { runm "$1" 'if [ "$target" = "test:public" ]; then
+      echo "Tests 337 passed (337)"; echo "'"$TEARDOWN"'"; exit 1; fi; echo ok; exit 0'
+    [ "$RC" -eq 1 ]; }
+  assert_flake_loud() { runm "$1" 'if [ "$target" = "test:public" ] && [ "$n" -eq 1 ]; then
+      echo "Tests 337 passed (337)"; echo "'"$TEARDOWN"'"; exit 1; fi; echo ok; exit 0'
+    [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'FLAKE SURVIVED'; }
+  assert_coverage_target() { MPROJ=public MCOV=--coverage runm "$1" 'echo "$target: 10 passed"; exit 0'
+    [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'test:coverage:public'; }
+
+  mutate "failure propagation removed (a failed project exits 0)" \
+    '  overall=1' '  overall=0' assert_real_failure_fails
+  mutate "loop exits on first failure (later projects hidden — the npm-test chain bug)" \
+    '  printf '"'"'  ✗ %s FAILED (exit %d)\n'"'"' "$target" "$rc"' \
+    '  printf '"'"'  ✗ %s FAILED (exit %d)\n'"'"' "$target" "$rc"; break' assert_all_run
+  mutate "zero-failed guard removed (a run WITH failures gets retried)" \
+    '     && ! printf '"'"'%s'"'"' "$out" | grep -qE '"'"'[1-9][0-9]* failed'"'"'; then' \
+    '     && true; then' assert_failed_not_retried
+  mutate "teardown signature widened to everything (any crash gets retried)" \
+    '  if printf '"'"'%s'"'"' "$out" | grep -qE "$TEARDOWN_RE" \' \
+    '  if true \' assert_crash_not_retried
+  mutate "retry-success requirement removed (a recurring flake passes)" \
+    '    if [ "$rc" -eq 0 ]; then
+      printf '"'"'  ⚠ FLAKE SURVIVED' \
+    '    if true; then
+      printf '"'"'  ⚠ FLAKE SURVIVED' assert_recurring_flake_fails
+  mutate "loud flake report removed (the retry absorbs silently)" \
+    "printf '  ⚠ FLAKE SURVIVED: %s passed on the retry. Not a code failure — record it, do not ignore it.\\n' \"\$target\"" \
+    ': "$target"' assert_flake_loud
+  mutate "--coverage routing removed (CI targets the bare script)" \
+    '[ "${1-}" = "--coverage" ] && SUFFIX="coverage:"' 'true' assert_coverage_target
+
+  echo "run_frontend_suites mutations: $KILLED killed, $SURVIVED survived, $INVALID invalid"
+  [ "$SURVIVED" -eq 0 ] && [ "$INVALID" -eq 0 ] || fail=$((fail+1))
+fi
+
 printf '\nrun_frontend_suites self-test: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

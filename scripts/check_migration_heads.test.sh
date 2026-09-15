@@ -217,6 +217,74 @@ fi
 echo "== the repository as it stands =="
 expect_rc 0 "the committed migration chain has exactly one head"
 
+# ---------------------------------------------------------------------------
+# Mutation contract (#393): neuter ONE arm of the checker at a time in a COPY
+# and require the pinned case to go red. Reuses the fixtures built above.
+# INVALID (rotted needle / no diff / unparseable / assertion false on the
+# unmodified script) counts separately and fails the run (#388).
+# ---------------------------------------------------------------------------
+if [ "${1:-}" = "--mutations" ]; then
+  KILLED=0; SURVIVED=0; INVALID=0
+  MDIR="$(mktemp -d)"
+  mutate() { # name needle replacement assert-fn
+    local name="$1" needle="$2" repl="$3" assertfn="$4" M="$MDIR/mut.sh"
+    python3 - "$CHECKER" "$M" "$needle" "$repl" <<'PY'
+import sys
+src, dst, needle, repl = sys.argv[1:5]
+t = open(src).read()
+if needle not in t:
+    sys.exit(3)
+open(dst, "w").write(t.replace(needle, repl, 1))
+PY
+    case $? in 3) INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — needle not found (rotted)"; return ;; esac
+    cmp -s "$CHECKER" "$M" && { INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — no change"; return; }
+    bash -n "$M" 2>/dev/null || { INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — not parseable"; return; }
+    chmod +x "$M"
+    if ! "$assertfn" "$CHECKER"; then
+      INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — assertion fails on the UNMODIFIED script"; return
+    fi
+    if "$assertfn" "$M"; then
+      SURVIVED=$((SURVIVED+1)); echo "  ✗ SURVIVED: '$name' — the case stays green with the arm removed"
+    else
+      KILLED=$((KILLED+1)); echo "  ✓ killed: $name"
+    fi
+  }
+  assert_fork() { local o; o="$("$1" --dir "$B" 2>&1)"
+    [ $? -eq 1 ] && printf '%s' "$o" | grep -q 'expected exactly 1 head'; }
+  assert_orphan() { local o; o="$("$1" --dir "$D" 2>&1)"
+    [ $? -eq 1 ] && printf '%s' "$o" | grep -q 'unknown parent'; }
+  assert_empty() { "$1" --dir "$F" 2>&1 | grep -q 'no revisions found'; }
+  assert_anchor() { local o; o="$("$1" --dir "$A" 2>&1)"
+    [ $? -eq 0 ] && printf '%s' "$o" | grep -q 'exactly one head'; }
+  assert_union() { local o; o="$(CLAUDE_PROJECT_DIR="$BASE_REPO" "$1" --dir "$BRANCH" --against HEAD 2>&1)"
+    [ $? -eq 1 ] && printf '%s' "$o" | grep -q 'expected exactly 1 head'; }
+  assert_worktree_wins() { CLAUDE_PROJECT_DIR="$FORKED_REPO" "$1" --dir "$BRANCH_RECHAIN" --against HEAD >/dev/null 2>&1; }
+  assert_badref() { CLAUDE_PROJECT_DIR="$BASE_REPO" "$1" --dir "$BRANCH_FIXED" --against no/such/ref 2>&1 \
+    | grep -q 'cannot resolve git ref'; }
+
+  mutate "multi-head arm removed (the #325 fork passes)" \
+    'if [ "${HEAD_COUNT:-0}" != "1" ]; then' 'if false; then' assert_fork
+  mutate "orphan arm removed (a down_revision to nowhere passes)" \
+    'if [ -n "$ORPHANS" ]; then' 'if false; then' assert_orphan
+  mutate "empty-directory guard removed (zero revisions has no verdict of its own)" \
+    'if [ ! -s "$TMP/edges" ]; then' 'if false; then' assert_empty
+  mutate "column-0 anchor dropped (down_revision lines are consumed as revision lines)" \
+    '/^revision[[:space:]]*(:[^=]*)?=/' '/revision[[:space:]]*(:[^=]*)?=/' assert_anchor
+  mutate "union with the base removed (--against silently becomes worktree-only)" \
+    '[ -n "$AGAINST" ] && collect_ref "$AGAINST"' ':' assert_union
+  mutate "collection order reversed (the ref beats the worktree — a re-chain fix is unmergeable)" \
+    '[ -n "$AGAINST" ] && collect_ref "$AGAINST"
+collect_worktree' 'collect_worktree
+[ -n "$AGAINST" ] && collect_ref "$AGAINST"' assert_worktree_wins
+  mutate "ref resolution check removed (a typo ref fails without saying why)" \
+    'git -C "$ROOT" rev-parse --verify --quiet "$ref^{commit}" >/dev/null 2>&1 || {' \
+    'true || {' assert_badref
+
+  rm -rf "$MDIR"
+  echo "check_migration_heads mutations: $KILLED killed, $SURVIVED survived, $INVALID invalid"
+  [ "$SURVIVED" -eq 0 ] && [ "$INVALID" -eq 0 ] || fail=$((fail+1))
+fi
+
 printf '\nmigration-heads self-test: %d passed, %d failed\n' "$pass" "$fail"
 
 # A FLOOR on the case count (#329 review, nit 8). Without it a suite that skipped

@@ -449,21 +449,21 @@ deep "PREPUSH_DEEP=1 opts the push into every deep leg" \
 # proof: any emitted hook JSON would land in stdout and fail the comparison.
 
 # --- CI carries the mutation contracts (#404 review round 1, major 4) -------
-# The three `--mutations` flags live in deploy.yml, where no shell self-test
+# The four `--mutations` flags live in deploy.yml, where no shell self-test
 # used to see them — deleting one left every check green (a `.github/**` edit
 # selects docs+pii by design). This case is their executable guard: the
-# hook-mutation-contracts job must name all three hooks AND pass --mutations.
+# hook-mutation-contracts job must name all FOUR hooks AND pass --mutations.
 DEPLOY_YML="$HERE/../../.github/workflows/deploy.yml"
 ci_block="$(awk '/^  hook-mutation-contracts:/{f=1;print;next} f&&/^  [a-z][a-z-]*:$/{exit} f{print}' "$DEPLOY_YML")"
 ci_ok=1
-for h in pre-push-tests pre-merge-gate guard-stack-resources; do
+for h in pre-push-tests pre-merge-gate guard-stack-resources guard-destructive; do
   printf '%s\n' "$ci_block" | grep -q "$h" || ci_ok=0
 done
 printf '%s\n' "$ci_block" | grep -q -- '--mutations' || ci_ok=0
 if [ "$ci_ok" = "1" ]; then
-  printf 'PASS  [CI]  deploy.yml hook-mutation-contracts job covers all three hooks with --mutations\n'
+  printf 'PASS  [CI]  deploy.yml hook-mutation-contracts job covers all four hooks with --mutations\n'
 else
-  printf 'FAIL  deploy.yml no longer runs all three hook mutation contracts with --mutations\n'
+  printf 'FAIL  deploy.yml no longer runs all four hook mutation contracts with --mutations\n'
   fails=$((fails + 1))
 fi
 

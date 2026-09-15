@@ -1946,6 +1946,26 @@ satisfies this?"; and when a spec creates data it later reads, gate on the DATA 
 poll), not on navigation. A blanket `retries: N` in the runner config buries exactly
 this class — remove it and let a red mean something.
 
+## 69. The mutation contract is a GATE, not a habit — every check must ship measured proof it can fail (#393)
+
+Every fake-green in this repository's history was found by mutation, never by reading:
+#367 shipped a drift checker whose entire `lint` category could not fail, #371 shipped a
+self-test with four masked cases, and both passed review by reading (v1.14.1 retro, class G).
+A check that cannot fail is worse than no check — it converts an unguarded surface into one
+everyone believes is guarded.
+
+So the rule, enforced by the `pr-reviewer` charter (§4c) rather than remembered: a PR that adds
+or modifies a repo-contract check is REQUEST CHANGES unless it reports a measured
+**`N killed / 0 survived / 0 invalid`** from the check's own `--mutations` harness. Every
+`scripts/*.test.sh` and hook self-test carries one; each mutant neuters ONE enforcement arm in a
+COPY of the script and the matching case must go red. Two structural requirements, both from
+measured failures: **report `invalid` separately and fail on `invalid > 0`** (#388 — a needle
+rots when the source line changes, and a needle-miss silently tests nothing), and **anchor each
+kill to the check's OWN message**, not exit code alone (overlapping checks keep rc=1 and make
+three neutered checks look killed — measured while writing `check_changelog_merge.test.sh`).
+Locally the pre-push gate runs plain cases only (§63's budget); CI runs the contracts
+unconditionally — that split is deliberate, keep it.
+
 ## Where the rules live (AI-config map)
 
 - **`CLAUDE.md`** — the authoritative numbered rules (engineering rules 1–13, issue-tracking flow,

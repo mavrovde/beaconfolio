@@ -459,5 +459,84 @@ if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q "no servers could be parsed"; t
 else bad "#400: empty mcpServers must fail" "rc=$rc $out"; fi
 rm -rf "$D"
 
+# ---------------------------------------------------------------------------
+# Mutation contract (#393): neuter ONE enforcement arm of the checker at a time
+# in a COPY and require the pinned case to go red. INVALID (rotted needle / no
+# diff / unparseable / assertion false on the unmodified script) counts
+# separately and fails the run (#388). The "lint sweep removed" mutant is the
+# #367 defect replayed on purpose: without that arm the whole lint category
+# could not fail, and only a mutation run would ever have noticed.
+# ---------------------------------------------------------------------------
+if [ "${1:-}" = "--mutations" ]; then
+  KILLED=0; SURVIVED=0; INVALID=0
+  MT="$(mktemp -d)"; trap 'rm -rf "$MT"' EXIT
+  runx() { CLAUDE_PROJECT_DIR="$2" bash "$1" 2>&1; }
+  mutate() { # name needle replacement assert-fn
+    local name="$1" needle="$2" repl="$3" assertfn="$4" M="$MT/mut.sh"
+    if ! grep -qF "$needle" "$SCRIPT"; then
+      INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — needle not found (rotted)"; return
+    fi
+    python3 - "$SCRIPT" "$M" "$needle" "$repl" <<'PY'
+import sys
+src, dst, needle, repl = sys.argv[1:5]
+open(dst, "w").write(open(src).read().replace(needle, repl, 1))
+PY
+    cmp -s "$SCRIPT" "$M" && { INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — no change"; return; }
+    bash -n "$M" 2>/dev/null || { INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — not parseable"; return; }
+    if ! "$assertfn" "$SCRIPT"; then
+      INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — assertion fails on the UNMODIFIED script"; return
+    fi
+    if "$assertfn" "$M"; then
+      SURVIVED=$((SURVIVED+1)); echo "  ✗ SURVIVED: '$name' — the case stays green with the arm removed"
+    else
+      KILLED=$((KILLED+1)); echo "  ✓ killed: $name"
+    fi
+  }
+  # assert-fns rebuild their fixture each call and hold on the unmodified script.
+  assert_lint_sweep() { local m o; m="$MT/f1"; rm -rf "$m"; mkdir -p "$m"
+    skeleton "$m"; : > "$m/scripts/check_ghost.sh"
+    o="$(runx "$1" "$m")"; [ $? -eq 1 ] && printf '%s' "$o" | grep -q 'NO lint/tooling row'; }
+  assert_map_to_real() { local m o; m="$MT/f2"; rm -rf "$m"; mkdir -p "$m"
+    skeleton "$m"; rm "$m/.claude/agents/backend-dev.md"
+    o="$(runx "$1" "$m")"; [ $? -eq 1 ] && printf '%s' "$o" | grep -q 'names a file that does not exist'; }
+  assert_mcp_fwd() { local m o; m="$MT/f3"; rm -rf "$m"; mkdir -p "$m"
+    skeleton "$m"
+    printf '{ "mcpServers": { "postgres": {}, "github": {}, "ghost": {} } }\n' > "$m/.mcp.json"
+    o="$(runx "$1" "$m")"; [ $? -eq 1 ] && printf '%s' "$o" | grep -q 'in .mcp.json but not in the map'; }
+  assert_mcp_rev() { local m o; m="$MT/f4"; rm -rf "$m"; mkdir -p "$m"
+    skeleton "$m"
+    sed -i.bak 's/`postgres`, `github`/`postgres`, `github`, `ghost`/' "$m/CLAUDE.md"
+    o="$(runx "$1" "$m")"; [ $? -eq 1 ] && printf '%s' "$o" | grep -q "MCP row but not in .mcp.json"; }
+  assert_rationale() { local m o; m="$MT/f5"; rm -rf "$m"; mkdir -p "$m"
+    skeleton "$m"
+    sed -i.bak '/`context7` — KEEP/d' "$m/CLAUDE.md"
+    o="$(runx "$1" "$m")"; [ $? -eq 1 ] && printf '%s' "$o" | grep -q 'no rationale line'; }
+  assert_prose() { local m o; m="$MT/f6"; rm -rf "$m"; mkdir -p "$m"
+    skeleton "$m"; : > "$m/.claude/agents/second-agent.md"
+    sed -i.bak 's/| agent | `backend-dev` | backend work |/| agent | `backend-dev` | backend work |\n| agent | `second-agent` | more work |/' "$m/CLAUDE.md"
+    o="$(runx "$1" "$m")"; [ $? -eq 1 ] && printf '%s' "$o" | grep -qi 'stale'; }
+  assert_no_mcpjson() { local m o; m="$MT/f7"; rm -rf "$m"; mkdir -p "$m"
+    skeleton "$m"; rm "$m/.mcp.json"
+    o="$(runx "$1" "$m")"; [ $? -eq 1 ] && printf '%s' "$o" | grep -q 'NO .mcp.json'; }
+
+  mutate "REAL->MAP lint sweep removed (the #367 hole: a rowless scripts/ lint passes)" \
+    '{ map_names lint; map_names tooling; } | grep -qxF "$name" \' 'true \' assert_lint_sweep
+  mutate "map->real miss fold removed (a row naming a deleted file exits 0)" \
+    'problems=$((problems + missing_files))' 'problems=$((problems + 0))' assert_map_to_real
+  mutate "MCP forward check removed (a server absent from the row passes)" \
+    'printf '"'"'%s'"'"' "$mcp_row" | grep -qF "${BT}${m}${BT}" \' 'true \' assert_mcp_fwd
+  mutate "MCP reverse check removed (the #378 BSD/GNU anchor defect replayed)" \
+    'printf '"'"'%s\n'"'"' "$mcp_real" | grep -qxF "$m" \' 'true \' assert_mcp_rev
+  mutate "plugin rationale check removed (an enabled plugin needs no prose)" \
+    'grep -qE "^ *- +(${BT}[a-z0-9-]+${BT} */ *)*${BT}${p}${BT}" "$MAP" \' 'true \' assert_rationale
+  mutate "prose-count comparison removed (a stale 'all one' passes)" \
+    '[ "$want" -eq "$have" ] \' 'true \' assert_prose
+  mutate "no-.mcp.json arm removed (deleting the file uninspects the MCP row)" \
+    'grep -qE '"'"'^\| *MCP *\|'"'"' "$MAP" \' 'false \' assert_no_mcpjson
+
+  echo "check_aiconfig_map mutations: $KILLED killed, $SURVIVED survived, $INVALID invalid"
+  [ "$SURVIVED" -eq 0 ] && [ "$INVALID" -eq 0 ] || fail=$((fail+1))
+fi
+
 printf '\ncheck_aiconfig_map self-test: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ]

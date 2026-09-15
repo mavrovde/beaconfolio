@@ -393,7 +393,7 @@ jobs:
       - name: PII guard (demo persona anonymous) + de-brand guard (#313)
         run: bash scripts/check_no_pii.sh
       - name: Self-test the PII/de-brand checker itself
-        run: bash scripts/check_no_pii.test.sh
+        run: bash scripts/check_no_pii.test.sh --mutations
       # Documented-knob contract (v1.13.0 retrospective): a Settings key the docs
       # promise must actually reach the backend container in BOTH compose files.
       # Three blocker-level review findings in one release (#296, #297, #298) were
@@ -401,7 +401,7 @@ jobs:
       - name: Compose env contract (documented knobs reach the container)
         run: bash scripts/check_compose_env.sh
       - name: Self-test the compose-env checker itself
-        run: bash scripts/check_compose_env.test.sh
+        run: bash scripts/check_compose_env.test.sh --mutations
       # Env-sample contract (#61, PR #418 review): backend/.env.example documents
       # EXACTLY the Settings knobs config.py consumes — the 74/74 state was
       # hand-verified once and would decay silently on the next field without
@@ -411,12 +411,20 @@ jobs:
       - name: Env-sample contract (config.py knobs all documented)
         run: bash scripts/check_env_example_complete.sh
       - name: Self-test the env-sample checker itself
-        run: bash scripts/check_env_example_complete.test.sh
+        run: bash scripts/check_env_example_complete.test.sh --mutations
       # Freshness contract (#280): one verdict script feeds the Live Freshness
       # workflow and the post-rollout gate — its self-test proves the 3-way
       # verdict (fresh/stale/down) and the staleness-beats-outage precedence.
       - name: Self-test the live-freshness checker
-        run: bash scripts/check_live_freshness.test.sh
+        run: bash scripts/check_live_freshness.test.sh --mutations
+      # Frontend-suite wrapper contract (#319): the retry is signature-narrow —
+      # its self-test runs against a FAKE npm, so it is hermetic and cheap here.
+      - name: Self-test the frontend-suites wrapper
+        run: bash scripts/run_frontend_suites.test.sh --mutations
+      # CHANGELOG dedup contract (#354/#362): the merger must round-trip a clean
+      # file byte-identically and drop duplicated entries, not just headings.
+      - name: Self-test the CHANGELOG dedup tool
+        run: bash scripts/dedup_changelog_unreleased.test.sh --mutations
       # Shared-edge apply contract (#338/#420): apply.sh is the only sanctioned
       # writer of /etc/caddy/Caddyfile on the multi-tenant host, so its
       # fail-closed behaviors (read-only default, stdin refusal, diff-and-
@@ -451,7 +459,7 @@ jobs:
       - name: AI-config map matches reality
         run: bash scripts/check_aiconfig_map.sh
       - name: Self-test the AI-config drift checker
-        run: bash scripts/check_aiconfig_map.test.sh
+        run: bash scripts/check_aiconfig_map.test.sh --mutations
       # Alembic single-head contract (v1.14.0 retrospective): #323 and #325 both
       # chained onto `trans0009`. Each branch was single-head in isolation, so
       # the Backend Migrations job passed on both — the fork existed only in the
@@ -476,7 +484,7 @@ jobs:
             bash scripts/check_migration_heads.sh
           fi
       - name: Self-test the migration-heads checker itself
-        run: bash scripts/check_migration_heads.test.sh
+        run: bash scripts/check_migration_heads.test.sh --mutations
       # Merged-CHANGELOG contract (#391, v1.14.1 retro change A): the
       # [Unreleased] collision exists only in the MERGED result — 5 of 16
       # reviewed v1.14.1 PRs hit it at blocker level, and #365's variant
@@ -527,7 +535,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        hook: [pre-push-tests, pre-merge-gate, guard-stack-resources]
+        hook: [pre-push-tests, pre-merge-gate, guard-stack-resources, guard-destructive]
     steps:
       - uses: actions/checkout@v7
       - name: Run ${{ matrix.hook }} self-test with its mutation contract
