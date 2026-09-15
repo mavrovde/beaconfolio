@@ -475,9 +475,11 @@ fi
 # so a flagless step cannot satisfy it — and the two mutated copies below prove
 # this case itself can go red (a guard added by the mutation-contract PR that
 # itself had no mutant would be the joke writing itself).
-SCRIPT_CONTRACTS="audit_no_verdict_merges check_aiconfig_map check_changelog_merge \
-check_compose_env check_env_example_complete check_live_freshness \
-check_migration_heads check_no_pii dedup_changelog_unreleased run_frontend_suites"
+# Derived from the FILESYSTEM, not hardcoded (#427 round 2): a fixed list
+# catches removal but not omission — a new scripts/*.test.sh harness would
+# ship unguarded. Deriving it makes every harness on disk require a CI
+# dispatch, so an unwired newcomer turns this red until deploy.yml carries it.
+SCRIPT_CONTRACTS="$(cd "$HERE/../../scripts" && ls ./*.test.sh 2>/dev/null | sed 's|^\./||; s/\.test\.sh$//')"
 ci_scripts_ok() { # ci_scripts_ok <deploy-yml> -> 0 iff every dispatch line is present
   local y="$1" n
   for n in $SCRIPT_CONTRACTS; do
@@ -486,7 +488,8 @@ ci_scripts_ok() { # ci_scripts_ok <deploy-yml> -> 0 iff every dispatch line is p
   return 0
 }
 if ci_scripts_ok "$DEPLOY_YML"; then
-  printf 'PASS  [CI]  deploy.yml dispatches all ten scripts/*.test.sh mutation contracts\n'
+  printf 'PASS  [CI]  deploy.yml dispatches all %d on-disk scripts/*.test.sh mutation contracts\n' \
+    "$(printf '%s\n' $SCRIPT_CONTRACTS | grep -c .)"
 else
   printf 'FAIL  deploy.yml no longer dispatches every scripts mutation contract\n'
   fails=$((fails + 1))

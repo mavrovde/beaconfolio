@@ -86,9 +86,13 @@ PY
     # the alias mutant legitimately reds it (the real .env.example documents
     # aliased fields by alias) — so vet runnability instead: broken Python
     # announces itself as a traceback, and a traceback-kill is a kill for the
-    # wrong reason (#427 review round 1, nit 3).
-    if bash "$M" "$HERE/../backend/app/config.py" "$HERE/../backend/.env.example" 2>&1 >/dev/null \
-       | grep -q 'Traceback'; then
+    # wrong reason (#427 round 1 nit 3). Capture-then-match, NOT a pipeline:
+    # under this file's `set -o pipefail` a `bash | grep -q` condition is
+    # false whenever the mutant exits non-zero — i.e. in every reachable
+    # case — which made round 1's version of this guard inert (#427 round 2
+    # blocker; the harness-check mutant below is the executable proof).
+    local tb; tb="$(bash "$M" "$HERE/../backend/app/config.py" "$HERE/../backend/.env.example" 2>&1 >/dev/null)"
+    if printf '%s' "$tb" | grep -q 'Traceback'; then
       INVALID=$((INVALID+1)); echo "  ✗ INVALID mutant '$name' — raises a Python traceback (broken, not weakened)"; return
     fi
     if ! "$assertfn" "$CHECK"; then
@@ -118,6 +122,22 @@ PY
     'expected[alias or field.upper()] = field' 'expected[field.upper()] = field' assert_alias
   mutate "failure exit removed (findings print but the check passes)" \
     'if missing or orphans:' 'if False:' assert_exit
+
+  # Harness self-check (#427 round 2): a DELIBERATELY broken-Python mutant
+  # (NameError: documnted) must be classified INVALID by the traceback guard,
+  # never counted a kill — round 1's inert pipeline guard counted exactly this
+  # mutant "killed". The expected INVALID is then reclassified as a pass; any
+  # other outcome is a SURVIVED harness defect.
+  k0=$KILLED; inv0=$INVALID
+  mutate "HARNESS-CHECK: broken-Python mutant must be INVALID" \
+    'missing = sorted(set(expected) - documented)' 'missing = sorted(set(expected) - documnted)' assert_missing
+  if [ "$INVALID" -eq $((inv0 + 1)) ] && [ "$KILLED" -eq "$k0" ]; then
+    INVALID=$inv0
+    echo "  ✓ harness-check: the broken-Python mutant was classified INVALID (guard is live)"
+  else
+    SURVIVED=$((SURVIVED+1))
+    echo "  ✗ harness-check: the broken-Python mutant was NOT classified INVALID — the traceback guard is inert"
+  fi
 
   echo "check_env_example_complete mutations: $KILLED killed, $SURVIVED survived, $INVALID invalid"
   [ "$SURVIVED" -eq 0 ] && [ "$INVALID" -eq 0 ] || fails=$((fails+1))
