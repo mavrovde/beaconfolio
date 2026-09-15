@@ -196,11 +196,18 @@ Never, on this host, without explicit authorization naming the resource:
 - `docker system prune` / `docker image prune -a` — reaches every project.
 - Any container, network, volume or compose project **you did not deploy**.
 - The edge configuration and its certificates (`/etc/caddy`, `/var/lib/caddy`,
-  `/etc/letsencrypt`) — coordinate first; the edge is everyone's.
+  `/etc/letsencrypt`) — coordinate first; the edge is everyone's. **This item is
+  NOT covered by any hook**: `guard-destructive.sh` patterns Docker/database
+  destruction, not host paths — and it runs in the local Claude Code session,
+  so nothing fires inside an SSH shell anyway. The enforced path for
+  `/etc/caddy/Caddyfile` is `infra/edge/apply.sh` (#338): read-only `--check`
+  by default, validate-before-install, diff-and-confirm before overwriting,
+  restore on a failed or inactive reload.
 - Another tenant's `.env`, or a `DROP`/recreate of any non-`test_*` database.
 
-All of the above are blocked by `.claude/hooks/guard-destructive.sh:365-383` (rule
-9). **A backup is not authorization.** Deliberate gap, and the one you actually
+The Docker and database items are blocked locally by
+`.claude/hooks/guard-destructive.sh` (rule 9) — defense-in-depth for commands
+composed here, no protection once you are typing directly on the host. **A backup is not authorization.** Deliberate gap, and the one you actually
 need: **`docker image prune` WITHOUT `-a` passes** — dangling images only. When
 the disk is full, escalate `df -h` → `du -sh /var/lib/docker/containers` →
 `docker image prune` → `docker image prune --filter 'until=720h'` →

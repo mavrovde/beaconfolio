@@ -381,41 +381,30 @@ A cleaner long-term fix — making the tenant's port-80 redirect conditional on
 `proxy/default.conf.template` that must be validated by the Docker E2E, and it is
 not needed for the topology to work.
 
-### Edge configuration (the shape, to be applied at cutover)
+### Edge configuration (committed as code — #338)
 
-```caddyfile
-# /etc/caddy/Caddyfile — the ONLY component on this host that terminates TLS.
-{
-    email ops@example.com          # ACME account contact
-}
+The edge Caddyfile is **committed at [`infra/edge/Caddyfile`](../../infra/edge/Caddyfile)**;
+that file is the single source of truth, and `infra/edge/apply.sh` (default
+`--check`, read-only; explicit `--apply` to change the host) is the only
+sanctioned way to touch `/etc/caddy/Caddyfile`. An earlier revision of this
+page embedded a planning-phase sketch of the config here; it drifted from what
+shipped, so it is gone. The three deltas between that sketch and the committed
+file, reconciled:
 
-(tenant_tls) {
-    # Tenants present the internal self-signed cert; this hop is loopback-only.
-    transport http {
-        tls
-        tls_insecure_skip_verify
-    }
-}
-
-example.com, www.example.com {
-    reverse_proxy https://127.0.0.1:18443 {
-        import tenant_tls
-        header_up X-Forwarded-For {remote_host}
-    }
-}
-
-admin.example.com {
-    reverse_proxy https://127.0.0.1:18443 {
-        import tenant_tls
-        header_up X-Forwarded-For {remote_host}
-    }
-}
-
-# Second tenant — four lines, no beaconfolio involvement.
-other-project.example {
-    reverse_proxy 127.0.0.1:18081
-}
-```
+- **`header_up Host {host}`, not `header_up X-Forwarded-For {remote_host}`.**
+  Caddy's `reverse_proxy` sets `X-Forwarded-For` automatically, so the sketch's
+  line was redundant — while preserving `Host` is *required*, because the
+  tenant's admin server block matches by name (see the measured table above:
+  rewriting Host to `localhost` turns admin routing into the wrong block).
+- **No `(tenant_tls)` snippet.** With one tenant the inlined `transport http`
+  block reads clearer; factor a snippet out when a second tenant makes it
+  repetitive — via PR against the committed file.
+- **No global ACME `email` block is committed.** Caddy issues certificates
+  without one. Before the FIRST `--apply` on the host, run
+  `bash infra/edge/apply.sh --check`: if the running config carries an `email`
+  (or anything else the committed file lacks), port it into
+  `infra/edge/Caddyfile` via PR first — apply.sh prints the exact diff and
+  refuses to drop running-only lines without `EDGE_APPLY_CONFIRM=1`.
 
 Two consequences for beaconfolio's own configuration:
 
@@ -430,7 +419,8 @@ Two consequences for beaconfolio's own configuration:
   and this is a runtime check that cannot be reproduced locally). Narrow the CIDR
   to the exact observed gateway only if you want to tighten it; a trusted hop can
   spoof the header, so trust as little as works.
-- `REAL_IP_HEADER` stays `X-Forwarded-For`; the Caddyfile above sets it.
+- `REAL_IP_HEADER` stays `X-Forwarded-For`; Caddy's `reverse_proxy` sets that
+  header automatically on the loopback hop.
 
 ### Network and volume naming convention
 

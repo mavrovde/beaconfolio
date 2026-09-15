@@ -417,6 +417,13 @@ jobs:
       # verdict (fresh/stale/down) and the staleness-beats-outage precedence.
       - name: Self-test the live-freshness checker
         run: bash scripts/check_live_freshness.test.sh
+      # Shared-edge apply contract (#338/#420): apply.sh is the only sanctioned
+      # writer of /etc/caddy/Caddyfile on the multi-tenant host, so its
+      # fail-closed behaviors (read-only default, stdin refusal, diff-and-
+      # confirm, restore on failed/inactive reload) stay pinned here as well as
+      # in the pre-push gate. Hermetic: stubbed caddy/systemctl, no sudo.
+      - name: Self-test the edge apply script
+        run: bash infra/edge/apply.test.sh
       # HOOK self-tests, in CI and not only in the pre-push gate (#253 review).
       # The gate runs on the AUTHOR's machine; a PR that changes a hook otherwise
       # arrives with green CI that never executed a single hook case, so the

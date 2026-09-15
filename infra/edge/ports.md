@@ -10,11 +10,16 @@ tenant binds only `127.0.0.1:<port>` inside its allocated block, and the edge
 |---------------|---------------|------------------------------------------------------------------------------|
 | 18000–18099   | beaconfolio   | 18080 (proxy HTTP, redirect-only), 18443* (proxy HTTPS, the edge upstream)   |
 | 18100–18999   | *unallocated* | — claim the next free 100-block per tenant via PR against this file          |
+| 5433**        | beaconfolio   | Postgres (`127.0.0.1:5433`, compose `db` publish — local pytest + tooling)   |
 
 \* 18443 sits outside the nominal 100-block for historical reasons (the #310
 cutover bound HTTPS before the block convention settled). It is beaconfolio's
 and is listed here so no future tenant claims it; new tenants keep all bindings
 inside their block.
+
+\** 5433 predates the block convention entirely (it is what `TEST_DATABASE_URL`
+and every doc in the repo point at). Registered so no tenant binds it; like all
+tenant ports it is loopback-only and never reachable through the edge.
 
 ## Claiming a range (second-tenant onboarding)
 
@@ -24,5 +29,7 @@ inside their block.
 3. The tenant's compose publishes ONLY `127.0.0.1:<its ports>` (see
    `.env.example` → `PROXY_HTTP_PUBLISH` / `PROXY_HTTPS_PUBLISH` for how
    beaconfolio does it).
-4. PR + review (rule 13), then `bash infra/edge/apply.sh` over SSH — validate
-   happens before reload; an invalid config never replaces the running one.
+4. PR + review (rule 13), then on the host: `bash infra/edge/apply.sh` (read-only
+   check) and `bash infra/edge/apply.sh --apply` — validate happens before
+   reload; an invalid config never replaces the running one, and a diff that
+   removes running-only lines refuses without `EDGE_APPLY_CONFIRM=1`.

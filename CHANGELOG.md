@@ -41,13 +41,20 @@ All notable changes to this project will be documented in this file.
 - **The shared Caddy edge is committed as code (#338)** — `infra/edge/Caddyfile` (the real
   running config: hostnames + loopback upstreams, no secrets), `infra/edge/ports.md` (the
   tenant port registry as the single source of truth — the wiki table is now a pointer), and
-  `infra/edge/apply.sh` (`--check` diffs committed vs running; apply = `caddy validate` →
-  install with backup → graceful `systemctl reload`, refusing on invalid config with the
-  running edge untouched). Deliberately NOT in the rollout job: the edge serves every tenant
-  and must not roll on one tenant's cadence (#310 option A). Verified on the live host:
-  drift detected → broken copy refused (running config untouched, measured) → apply →
+  `infra/edge/apply.sh` (READ-ONLY `--check` is the default; explicit `--apply` =
+  `caddy validate` → print the diff and refuse to drop running-only lines without
+  `EDGE_APPLY_CONFIRM=1` → install with backup → graceful `systemctl reload` → restore the
+  backup LOUDLY if the reload fails or caddy is inactive after it; unknown args and
+  checkout-less `bash -s` stdin invocation are refused before anything resolves).
+  `infra/edge/apply.test.sh` pins that contract with stubbed caddy/systemctl (27 cases,
+  ~1s, hermetic) and runs in the pre-push gate (new diff-scoped `edge` leg, with selection
+  cases + a mutation) and in CI. Deliberately NOT in the rollout job: the edge serves every
+  tenant and must not roll on one tenant's cadence (#310 option A). Verified on the live
+  host: drift detected → broken copy refused (running config untouched, measured) → apply →
   byte-identical → live probe HTTP 200. Second-tenant onboarding is now a PR (template block
-  committed) plus one apply.
+  committed) plus one apply. The wiki's planning-phase edge sketch is replaced by a pointer
+  to the committed file with its three deltas reconciled, and the port registry gains
+  beaconfolio's `127.0.0.1:5433` Postgres binding.
 - **Certificate-expiry alarm in the Live Freshness workflow (#310)** — a daily "Certificate
   expiry" step measures `notAfter` for every hostname in the `TLS_HOSTNAMES` repository variable
   (default: the maintainer's three) and goes red under 21 days remaining — Caddy renews at ~30

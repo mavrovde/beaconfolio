@@ -1896,6 +1896,30 @@ intended mutant). The fix here is exempt-one-exact-string plus a `stub exemption
 mutation, because an exemption wide enough to be convenient is an exemption wide enough to hide a
 real loss.
 
+## 67. `bash -s < script` unsets BASH_SOURCE — and under `set -u` a `$(dirname …)` failure is CONTAINED, so "script dir" silently becomes the CWD (#420)
+
+`infra/edge/apply.sh` resolved its sibling Caddyfile with the standard idiom
+`HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"`. Run normally, fine. Run as
+`ssh host 'bash -s' < apply.sh` — a completely natural way to run a remote script —
+`BASH_SOURCE[0]` is **unset**, and the failure does not stop the script even with
+`set -euo pipefail`: the error happens inside a **command substitution**, whose non-zero
+exit is swallowed by the assignment context, so `HERE` quietly resolves to the **current
+directory**. The reviewer's sandbox repro then validated and installed whatever
+`./Caddyfile` happened to be lying in the cwd — on the real host, a config-overwriting
+script one directory away from doing that to the shared edge.
+
+The rule: **a script that locates sibling files via BASH_SOURCE must refuse to run when
+BASH_SOURCE is empty** — an explicit `[ -z "${BASH_SOURCE[0]:-}" ] && exit 1` guard at the
+top, before anything resolves. Corollary: never trust `set -u`/`set -e` to catch a
+resolution failure that happens inside `$( … )` — test the *result* (`[ -f "$SRC" ]`), not
+the machinery. And a script whose failure mode is "installs a file over a shared resource"
+gets a stub-based self-test pinning the refusal (`apply.test.sh` case 4: stdin mode is
+refused, nothing installed).
+
+Related: §59 (a guard nobody proved can fire is not a guard); the same PR's other blocker —
+an open `case` fall-through treating any unknown argument as "apply" — is the same shape:
+the DEFAULT path of an ops script must be the read-only one.
+
 ## Where the rules live (AI-config map)
 
 - **`CLAUDE.md`** — the authoritative numbered rules (engineering rules 1–13, issue-tracking flow,
