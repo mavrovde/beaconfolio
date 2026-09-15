@@ -400,10 +400,12 @@ fine; the session link is not.
 **Validated on every applicable layer.** Backend unit, frontend unit ×3 projects, E2E in
 a real browser for any user-facing surface, the WireMock integration tier for any
 composed API/AI path. "The units are green" is not validation — one release shipped
-three screens at 100% unit coverage that had never rendered in a browser. CI runs E2E
-and the integration tier on **push only**, so a PR cannot carry CI evidence for them:
-run them locally and state the measured result. If a layer does not apply, say *which*
-and *why*.
+three screens at 100% unit coverage that had never rendered in a browser. Since #380 a
+PR's own CI carries this evidence: the **PR Stack Evidence** workflow runs the WireMock
+integration tier automatically on every stack-touching PR, and the **`run-e2e` label**
+summons the full browser E2E into PR CI. A local run with measured output remains valid
+where the label isn't used; the push-time tiers in `deploy.yml` stay the backstop. If a
+layer does not apply, say *which* and *why*.
 
 **Commit durable lessons; don't hoard them.** A hard-won lesson goes into the in-repo
 `.claude/skills/lessons-learned/` as part of the change — not only into machine-local

@@ -21,9 +21,15 @@ name: PR Stack Evidence
 #   - Docs-only PRs pay NOTHING: the `paths:` filter below means this workflow
 #     does not even start for them (AC2).
 #   - Option 1 (unconditional E2E on path-touching PRs) was rejected on cost:
-#     the push-side E2E job measures ~15-20 min and each PR synchronize would
-#     pay it; the integration tier buys most of the composed-path coverage for
-#     a fraction of that.
+#     measured on this PR's own runs, the E2E job took 7m35s-9m19s per run
+#     while the integration tier took 2m05s-3m00s, and every PR synchronize
+#     would pay the E2E price; the integration tier buys most of the
+#     composed-path coverage for roughly a third of it.
+#
+# NOT a branch-protection candidate as-is: the `paths:` filter means docs-only
+# PRs never start this workflow, so naively requiring its checks would leave
+# such PRs waiting forever on a status that never reports. Promote it only
+# with a paths-aware required-check strategy.
 #
 # Cost mitigation: image builds read `cache-from: type=gha` — the SAME layer
 # cache `deploy.yml`'s push builds populate with mode=max — so a PR that
@@ -70,7 +76,13 @@ permissions:
 jobs:
   integration-evidence:
     name: PR Integration Evidence (WireMock Stack)
+    # `labeled` fires once PER label — measured at this PR's creation: 8
+    # labeled events + opened = 9 runs, 8 cancelled by the concurrency group,
+    # and an unlucky late label can cancel IN-FLIGHT evidence. Only the one
+    # label this workflow consumes may (re)start it.
+    if: github.event.action != 'labeled' || github.event.label.name == 'run-e2e'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
 
@@ -144,6 +156,9 @@ jobs:
             sleep 3
           done
           echo "Backend healthy through the proxy."
+          # Same proxy-root smoke the push-side job runs: the health path can
+          # be green while the SSR root 502s.
+          curl -s -f -o /dev/null http://localhost/ && echo "Proxy serves the public root."
 
       - name: Seed the integration admin user
         run: docker compose -f docker-compose.prod.yml -f docker-compose.inttest.yml exec -T backend python scripts/seed_e2e_user.py
@@ -180,8 +195,13 @@ jobs:
     name: PR E2E Evidence (run-e2e label)
     # Summoned, not automatic: a reviewer (or the author) adds the `run-e2e`
     # label when the PR's failure mode needs a real browser (#380 option 3).
-    if: contains(github.event.pull_request.labels.*.name, 'run-e2e')
+    # The second clause keeps non-run-e2e labels from restarting (and, via
+    # cancel-in-progress, killing) the evidence runs — same reasoning as above.
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'run-e2e') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'run-e2e')
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
 
