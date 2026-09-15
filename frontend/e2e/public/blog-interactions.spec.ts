@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { config } from '../config';
+import { waitForPostQueryable } from '../helpers';
 
 test.describe('Blog Interactions', () => {
     test.beforeEach(async ({ page }) => {
@@ -32,13 +33,21 @@ test.describe('Blog Interactions', () => {
 
         // Click Publish to ensure it appears on the public site
         await page.click('button:has-text("[ Publish ]")');
-        await page.waitForURL(/\/posts/);
+        // ANCHORED (#337): /posts/new matched the old unanchored form, so this
+        // never gated on the create POST completing (see blog-display.spec.ts).
+        await page.waitForURL(/\/posts$/);
 
-        // 3. Logout to view as guest
+        // 3. Logout to view as guest. Wait for the logout to settle on the
+        // admin origin before the cross-origin navigation, so the goto below
+        // isn't interrupted mid-flight (same pattern as blog-display).
         await page.click('.logout-btn');
-        await expect(page).toHaveURL(/\/login/);
+        await page.waitForURL(/\/login/, { timeout: 15000 });
 
-        // 4. Navigate to home
+        // 4. The just-published post is not queryable the instant Publish
+        // returns (#107 propagation race) — under full-suite load that gap is
+        // what made this spec flaky (#337): the home page rendered before the
+        // post existed in the public list. Gate on the API first.
+        await waitForPostQueryable(page.request, slug);
         await page.goto('/');
     });
 

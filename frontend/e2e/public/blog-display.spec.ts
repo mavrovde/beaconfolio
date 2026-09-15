@@ -1,24 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { config, API_PREFIX } from '../config';
-
-/**
- * Poll the PUBLIC posts API until a freshly-created post is queryable by slug.
- * A just-published post is not in the SSR/transfer-cached list immediately; this
- * decouples the create→view tests from that propagation race (tracked in #107)
- * so they exercise the actual render/hydration behavior, not eventual
- * consistency, and stop flaking against the tight per-assertion timeout.
- */
-async function waitForPostQueryable(
-    request: { get: (url: string) => Promise<{ status: () => number }> },
-    slug: string,
-): Promise<void> {
-    await expect
-        .poll(async () => (await request.get(`${config.baseUrl}${API_PREFIX}/posts/${slug}`)).status(), {
-            timeout: 20000,
-            intervals: [200, 500, 1000],
-        })
-        .toBe(200);
-}
+import { config } from '../config';
+import { waitForPostQueryable } from '../helpers';
 
 test.describe('Blog Display on Page Load', () => {
     test.beforeEach(async ({ page }) => {
@@ -72,9 +54,15 @@ test.describe('Blog Display on Page Load', () => {
             await page.fill('textarea[id="content"]', `Content for blog display test ${i}`);
             await page.fill('textarea[id="summary"]', `Summary for post ${i}`);
 
-            // Publish the post (uses the Publish button, not a checkbox)
+            // Publish the post (uses the Publish button, not a checkbox).
+            // The URL wait is ANCHORED (#337): the editor lives at /posts/new,
+            // which the old unanchored /\/posts/ matched instantly — so the loop
+            // never waited for the POST (whose synchronous embedding takes
+            // seconds per post on a busy Ollama) and 15 creations queued a
+            // backlog the 20s queryable-poll then raced. /posts$ is only
+            // reached via router.navigate after the create response lands.
             await page.click('button:has-text("[ Publish ]")');
-            await page.waitForURL(/\/posts/);
+            await page.waitForURL(/\/posts$/);
         }
 
         // Logout and visit the blog page as a visitor
@@ -154,7 +142,7 @@ test.describe('Blog Display on Page Load', () => {
         await page.fill('textarea[id="content"]', 'Title check content');
         await page.fill('textarea[id="summary"]', 'Title check summary');
         await page.click('button:has-text("[ Publish ]")');
-        await page.waitForURL(/\/posts/);
+        await page.waitForURL(/\/posts$/);
 
         // Logout and visit blog
         await page.click('.logout-btn');
@@ -190,7 +178,7 @@ test.describe('Blog Display on Page Load', () => {
         await page.fill('textarea[id="content"]', 'Direct URL load content');
         await page.fill('textarea[id="summary"]', 'Direct URL load summary');
         await page.click('button:has-text("[ Publish ]")');
-        await page.waitForURL(/\/posts/);
+        await page.waitForURL(/\/posts$/);
 
         await page.click('.logout-btn');
         // Wait for logout to settle (admin origin → /login) before the cross-origin
@@ -249,7 +237,7 @@ test.describe('Blog post SSR/hydration (#25) — no retry tolerance', () => {
         await page.fill('textarea[id="content"]', 'No flash content body');
         await page.fill('textarea[id="summary"]', 'No flash summary');
         await page.click('button:has-text("[ Publish ]")');
-        await page.waitForURL(/\/posts/);
+        await page.waitForURL(/\/posts$/);
         await page.click('.logout-btn');
         await page.waitForURL(/\/login/, { timeout: 15000 });
 

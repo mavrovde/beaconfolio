@@ -21,7 +21,13 @@ import { API_PREFIX } from '../config';
  * back to the in-stack Ollama. No paid API is reachable.
  */
 test.describe('Multi-Agent Conversation — unmocked contract', () => {
-  test.setTimeout(90_000);
+  // 180s, not 90s (#337): Ollama serializes requests (OLLAMA_NUM_PARALLEL
+  // default), so under full-suite load this generation queues behind whatever
+  // embedding/generation requests earlier specs left in flight. This is a
+  // CONTRACT test, not a latency benchmark — the budget must absorb the queue,
+  // and the issue's proposed action sanctions exactly this ("serialize or
+  // extend timeout").
+  test.setTimeout(180_000);
 
   test('streams well-formed NDJSON and terminates with done:true', async ({ request }) => {
     const response = await request.post(`${API_PREFIX}/ai/multi-chat`, {
@@ -32,7 +38,7 @@ test.describe('Multi-Agent Conversation — unmocked contract', () => {
         ],
         max_turns: 1,
       },
-      timeout: 80_000,
+      timeout: 170_000,
     });
 
     // A pre-yield crash also returns 200, so the status proves nothing on its own

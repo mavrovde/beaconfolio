@@ -147,6 +147,16 @@ All notable changes to this project will be documented in this file.
   that shipped, and it is the class the retro spends §3 counting.
 
 ### Fixed
+- **The two load-contention-flaky public-e2e specs are stabilized at their root causes (#337)** —
+  the create→view specs' `waitForURL(/\/posts/)` was VACUOUS (the editor lives at `/posts/new`,
+  which the unanchored regex matches instantly), so post creations never waited for their POST —
+  whose synchronous Ollama embedding serializes seconds per post — and the queryable-poll raced a
+  ~40s commit backlog; all five sites are now anchored to `/posts$`. `blog-interactions` gains the
+  `waitForPostQueryable` propagation gate (now a shared `e2e/helpers.ts`). The unmocked NDJSON
+  contract spec no longer degrades on the CPU-only stack's model cold-load: the e2e overlay raises
+  `LLM_STREAM_TIMEOUT_SECONDS` to 120s and pins `OLLAMA_KEEP_ALIVE=1h` (prod keeps the tight
+  defaults). The blanket Playwright `retries: 2` — which masked these for months — is REMOVED:
+  a red run means something again (AC 2).
 - **The importer's processed-URN ledger is per-target (#334)** — one global `state.json`
   remembered *that* a post was imported, not *where to*, so a brand-new server silently got a
   partial first import (measured 2026-09-10: 21 of 25 posts "skip (unchanged)" against an empty
