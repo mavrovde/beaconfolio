@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Voice channel, backend half: browser voice messages → LOCAL Whisper transcription into the
+  inbox (#264)** — public `POST /interactions/voice` (multipart `audio` + `duration_s`, optional
+  `name`/`email`/`company`) stores the recording in a new `voice_messages` table
+  (migration `voice0012`) and creates an `Interaction` with `source=voice_message`,
+  `source_ref` → the audio row and a JSON payload carrying the audio reference, sizes, the
+  claimed duration and the transcription status/model — **no change to the #69 inbox schema**,
+  which was that design's bet. Transcription runs **in-process on the CPU via `faster-whisper`
+  1.2.1** (rule 10: no key, no endpoint, no metered call; the only network access is a one-time
+  anonymous model download into the new `whisper_models` volume, so a restart never re-downloads
+  it). Three background tasks in a contractual order — transcribe → notify → translate — so the
+  owner gets ONE #263 ping that already contains the transcript, and #248's translation applies
+  to it like any other message because the transcript is written to `Interaction.message`.
+  Caps and budgets: bounded read against `VOICE_MESSAGE_MAX_BYTES` (2 MB → `413`), duration
+  checked BOTH against the browser's claim (`413`) and against the DECODED audio before any
+  segment is decoded (a client lying about length cannot buy unbounded CPU), `415` for anything
+  but `audio/webm`/`audio/ogg`, and a per-client-IP limiter at 3/60s — tighter than the contact
+  form's 5/60s because a voice message costs storage *and* seconds of CPU. Admin-only
+  `GET /admin/interactions/{id}/voice` streams the audio for playback. Flag-gated and **OFF by
+  default** (`VOICE_MESSAGES_ENABLED`): off means the public endpoint 404s and no model is ever
+  fetched — while already-received recordings stay playable, because the flag governs sending.
+  Eight knobs wired into `backend/.env.example`, the root `.env.example` and the backend service
+  of **both** compose files (`WHISPER_MODEL_DIR` deliberately exempted as a volume mount target,
+  the `LINKEDIN_COOKIES_DIR` precedent). Measured on an 8-core arm64 host: 20.6 s first-ever cold
+  start incl. download, 0.31 s warm load, 1.09 s to transcribe 14.6 s of speech. The recording
+  widget and the admin player are a separate frontend PR.
+- **PSTN / telephony is documented-deferred with a dated verdict (#264)** — README's new voice
+  section records why a phone number, voicemail-to-inbox via Twilio/SIP and voice-**call**
+  escalation are not implemented (metered credential, public webhook ingress, per-jurisdiction
+  recording consent) and which seams they would plug into, in the same
+  verdict-with-a-date form the #263 notification table uses.
 - **v1.14.3 release retrospective (rule 8)** — `docs/retrospectives/v1.14.3.md`, sixth in the
   series; trend table extended. Headlines: mean rounds 2.00 (best since v1.14.0) at a RISING
   median PR size; zero post-merge verdict back-fills for the first time; one rule-13 violation

@@ -18,6 +18,13 @@ email-validator==2.3.0
 python-multipart==0.0.32
 Pillow==12.3.0
 setuptools==84.0.0
+# Local speech-to-text for the voice channel (#264). CTranslate2 inference on
+# the CPU, in-process — RULE 10: no key, no endpoint, no metered call. The only
+# network access is Hugging Face's anonymous, one-time model download into
+# WHISPER_MODEL_DIR (a mounted volume, so it never repeats). Imported LAZILY
+# inside app/services/transcription.py::_load_model, so nothing about it is
+# loaded unless a voice message is actually transcribed.
+faster-whisper==1.2.1
 
 
 google-genai==2.23.0
