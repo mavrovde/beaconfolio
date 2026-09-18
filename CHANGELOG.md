@@ -242,6 +242,24 @@ All notable changes to this project will be documented in this file.
   that the measured 39-PR-per-fortnight rate would have tripped within one, and #425's correction
   landed on one of two surfaces. The entry gives the three greps that find the second instance.
 
+### Fixed
+- **A blog post's structured data could publish the placeholder identity instead of the site's.**
+  `BlogPostComponent` held the runtime site config in a private field filled by one HTTP request
+  (`SiteConfigService.config$`) while the JSON-LD that consumes it was emitted by a *different*
+  one (`BlogService.getPost`), and nothing ordered the two. When the post settled first — the
+  ordinary case for a cached post beside a cold config — the schema was built from
+  `DEFAULT_SITE_CONFIG` and shipped `"Portfolio Owner"`, an empty `author.url` and a **relative**
+  `mainEntityOfPage.@id` (`siteUrl` is `''`), which schema.org forbids; nothing ever corrected it,
+  and under SSR the wrong value is baked into the served HTML, so a crawler that never runs
+  JavaScript sees only that. The view model now composes both streams
+  (`combineLatest([config$, getPost(slug)])`) and builds the schema from the emitted config, so
+  the ordering is structural rather than incidental — the same treatment `project-detail` already
+  gives its own schema — and the field, along with its cd-safety suppression, is gone. The SSR
+  branch of the share URL reads the same resolved config. Pinned by
+  `blog-post.component.config-ordering.spec.ts`, which drives the two streams by hand: it asserts
+  both orderings produce the identical schema with an absolute `@id`, and three of its four cases
+  fail against the field-latched code.
+
 ## [1.15.2] - 2026-09-18
 
 ### Changed
