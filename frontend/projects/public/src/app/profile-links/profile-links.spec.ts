@@ -104,13 +104,17 @@ describe('toProfileLinks (#93)', () => {
         );
     });
 
-    // The `typeof` guard, pinned by the only input that can reach it: a
-    // non-string whose `toString()` IS a valid URL. Without the guard the
-    // WHATWG parser coerces it and this object renders as a live link — which
-    // is why the guard survives while the blank-check did not.
-    it('drops a non-string member even when it stringifies to a valid URL', () => {
-        const smuggled = { toString: () => 'https://github.com/janedoe' } as unknown as string;
-        expect(toProfileLinks([smuggled])).toEqual([]);
+    // The `typeof` guard, pinned by an input that actually REACHES it. The
+    // first attempt used `{ toString: () => '<url>' }` and passed without the
+    // guard too — round 2 measured it: that object has no `.trim`, so
+    // `raw.trim()` throws INSIDE the try and the catch drops it before the
+    // parser is involved. A test that green-lights for an unrelated reason is
+    // worse than no test. A boxed `String` has a working `trim()`, so it walks
+    // straight past the catch and the parser accepts it: delete the guard and
+    // this renders a live GITHUB row.
+    it('drops a non-string member that survives .trim() and parses', () => {
+        const boxed = new String('https://github.com/janedoe') as unknown as string;
+        expect(toProfileLinks([boxed])).toEqual([]);
     });
 
     // An output contract, stated as one: a blank entry never renders a row.

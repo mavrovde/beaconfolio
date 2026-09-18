@@ -117,9 +117,13 @@ export function toProfileLinks(urls: readonly string[] | undefined): ProfileLink
         // `typeof` only. A `!raw.trim()` blank-check was here and it was
         // UNREACHABLE as behavior: `new URL('   ')` throws, so the catch below
         // already drops a blank entry, and deleting the check left the whole
-        // suite green. The typeof guard is a different matter and stays — a
-        // non-string member whose `toString()` yields a valid URL would
-        // otherwise be coerced into a rendered link by the parser.
+        // suite green. The typeof guard is a different matter and stays, but
+        // NOT for the reason first written here: an object without `.trim`
+        // throws inside the try and the catch handles it. What this guard
+        // actually stops is a non-string that survives `raw.trim()` and then
+        // parses — a boxed `String`, or anything carrying a `trim` method that
+        // returns a URL. Measured: without this line, `new String('https://…')`
+        // renders a live link.
         if (typeof raw !== 'string') {
             continue;
         }
