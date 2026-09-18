@@ -7,7 +7,7 @@ import { ProjectsComponent } from './projects.component';
 import { Profile, ProfileService } from '../../services/profile.service';
 import { Project } from '../../projects-model/projects';
 import { TranslatePipe } from '@beaconfolio/shared';
-import { MockTranslatePipe } from '@beaconfolio/shared/testing';
+import { MockTranslatePipe, provideTestBrand } from '@beaconfolio/shared/testing';
 
 const PROJECTS: Project[] = [
     {
@@ -43,7 +43,15 @@ async function render(options: {
     const getProfile = vi.fn().mockReturnValue(of(options.served ?? profileWith(PROJECTS)));
     await TestBed.configureTestingModule({
         imports: [ProjectsComponent],
-        providers: [provideRouter([]), { provide: ProfileService, useValue: { getProfile } }],
+        providers: [
+            // `<app-header>` is embedded here, and since #67 its chrome comes
+            // from `ShellChromeService` -> `SiteBrandService`, which needs
+            // `SHARED_ENVIRONMENT`. The brand source is supplied synchronously
+            // so no spec in this file makes an HTTP request for the site config.
+            ...provideTestBrand(),
+            provideRouter([]),
+            { provide: ProfileService, useValue: { getProfile } },
+        ],
     })
         // House idiom (see `education.component.spec.ts`): without this the real
         // pipe fetches `/assets/i18n/en.json`, which has no origin under the

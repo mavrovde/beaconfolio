@@ -5,7 +5,7 @@ import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/route
 import { BehaviorSubject, Observable, ReplaySubject, Subject, of } from 'rxjs';
 
 import { TranslatePipe } from '@beaconfolio/shared';
-import { MockTranslatePipe } from '@beaconfolio/shared/testing';
+import { MockTranslatePipe, provideTestBrand } from '@beaconfolio/shared/testing';
 
 import { ProjectDetailComponent } from './project-detail.component';
 import { Profile, ProfileService } from '../../../services/profile.service';
@@ -82,6 +82,11 @@ async function render(
     await TestBed.configureTestingModule({
         imports: [ProjectDetailComponent],
         providers: [
+            // `<app-header>` is embedded here, and since #67 its chrome comes
+            // from `ShellChromeService` -> `SiteBrandService`, which needs
+            // `SHARED_ENVIRONMENT`. The brand source is supplied synchronously
+            // so no spec in this file makes an HTTP request for the site config.
+            ...provideTestBrand(),
             provideRouter([]),
             {
                 provide: ProfileService,
