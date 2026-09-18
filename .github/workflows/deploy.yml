@@ -540,6 +540,37 @@ jobs:
   # Consistency they took the deploy critical path from 2m00s to 12m28s).
   # pre-push-tests.test.sh asserts these invocations exist (major 4), so
   # deleting one of them turns that self-test red locally AND here.
+  # Importer suite (#417). Until this job existed it ran on NO automated
+  # surface: no CI job invoked it, verify_all.sh skipped it, and `importer/**`
+  # was unmapped in the pre-push selector — so an importer push paid the FULL
+  # local round and still never ran the one suite covering the diff. PR #415
+  # shipped five regression tests for a MEASURED prod incident straight onto
+  # that blind spot, where they only ran when someone remembered to type the
+  # command.
+  #
+  # A standalone job rather than a step in `version-consistency`, deliberately:
+  # four build jobs `needs:` that one, so it is on the prod-deploy critical
+  # path, and adding a Python setup there would pay the push saving back where
+  # it hurts most (the same reasoning that moved the hook mutation contracts
+  # out of it). This runs in parallel and blocks nothing.
+  #
+  # Rule 10 clean: the importer's own requirements pin httpx + pytest only, and
+  # every HTTP call in the suite is mocked — no network, no credential, nothing
+  # billable.
+  importer-tests:
+    name: Importer Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install importer dependencies
+        run: python -m pip install --disable-pip-version-check -r importer/requirements.txt
+      - name: Run the importer suite
+        run: python -m pytest importer/tests -q
+
   hook-mutation-contracts:
     name: Hook Mutation Contract (${{ matrix.hook }})
     runs-on: ubuntu-latest

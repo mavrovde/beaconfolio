@@ -830,6 +830,22 @@ run_checks() {
         return 1
       }
     fi
+    # Importer suite (#417). A FAST leg deliberately: 15 tests in 0.04s, httpx
+    # fully mocked (no network, rule 10 clean), so it costs nothing against the
+    # owner's one-minute push budget and does not belong behind PREPUSH_DEEP.
+    # Before #417 `importer/**` was unmapped, so an importer push paid the FULL
+    # round and still never ran these tests — slow AND blind. Prefer the backend
+    # venv's interpreter (where pytest is known to exist) and fall back to
+    # python3; if neither can import pytest the leg FAILS with the command to
+    # run, because a leg that silently skips is a leg that cannot gate.
+    if leg importer && [ -d "$ROOT/importer/tests" ]; then
+      _imp_py="python3"
+      [ -x "$ROOT/backend/venv/bin/python" ] && _imp_py="$ROOT/backend/venv/bin/python"
+      ( cd "$ROOT" && "$_imp_py" -m pytest importer/tests -q -p no:cacheprovider >/dev/null 2>&1 ) || {
+        echo "  ✗ importer suite failed — run '$_imp_py -m pytest importer/tests -q' to see which case"
+        return 1
+      }
+    fi
   fi
 
   # Hook self-tests. Selected PER HOOK (#377) — except that a change to
