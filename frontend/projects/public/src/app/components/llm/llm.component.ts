@@ -1,5 +1,5 @@
 import { Component, ElementRef, ViewChild, AfterViewChecked, OnInit, ChangeDetectorRef, PLATFORM_ID, Input, HostListener, inject } from '@angular/core';
-import { CommonModule, isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { LlmService, ChatMessage } from '@beaconfolio/shared';
@@ -28,7 +28,7 @@ interface LlmState {
 @Component({
   selector: 'app-llm',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, HeaderComponent],
+  imports: [FormsModule, RouterModule, HeaderComponent],
   templateUrl: './llm.component.html',
   styleUrls: ['./llm.component.css']
 })

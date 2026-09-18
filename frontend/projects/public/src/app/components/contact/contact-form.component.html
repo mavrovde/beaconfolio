@@ -11,9 +11,11 @@
       <input id="contact-name" type="text" formControlName="name"
         class="w-full bg-black border border-secondary/40 focus:border-primary text-primary p-2 font-mono outline-none"
         [attr.placeholder]="'CONTACT.NAME_PLACEHOLDER' | translate" />
-      <p *ngIf="contactForm.get('name')?.touched && contactForm.get('name')?.invalid" class="text-red-400 text-sm mt-1">
-        {{ 'CONTACT.NAME_ERROR' | translate }}
-      </p>
+      @if (contactForm.get('name')?.touched && contactForm.get('name')?.invalid) {
+        <p class="text-red-400 text-sm mt-1">
+          {{ 'CONTACT.NAME_ERROR' | translate }}
+        </p>
+      }
     </div>
 
     <div>
@@ -21,10 +23,12 @@
       <input id="contact-email" type="email" formControlName="email"
         class="w-full bg-black border border-secondary/40 focus:border-primary text-primary p-2 font-mono outline-none"
         placeholder="you@company.com" />
-      <p *ngIf="contactForm.get('email')?.touched && contactForm.get('email')?.invalid"
-        class="text-red-400 text-sm mt-1">
-        {{ 'CONTACT.EMAIL_ERROR' | translate }}
-      </p>
+      @if (contactForm.get('email')?.touched && contactForm.get('email')?.invalid) {
+        <p
+          class="text-red-400 text-sm mt-1">
+          {{ 'CONTACT.EMAIL_ERROR' | translate }}
+        </p>
+      }
     </div>
 
     <div>
@@ -38,22 +42,32 @@
       <label for="contact-message" class="block text-secondary text-sm mb-1">{{ 'CONTACT.MESSAGE' | translate }}</label>
       <textarea id="contact-message" rows="5" formControlName="message"
         class="w-full bg-black border border-secondary/40 focus:border-primary text-primary p-2 font-mono outline-none"
-        [attr.placeholder]="'CONTACT.MESSAGE_PLACEHOLDER' | translate"></textarea>
-      <p *ngIf="contactForm.get('message')?.touched && contactForm.get('message')?.invalid"
-        class="text-red-400 text-sm mt-1">
-        {{ 'CONTACT.MESSAGE_ERROR' | translate }}
-      </p>
+      [attr.placeholder]="'CONTACT.MESSAGE_PLACEHOLDER' | translate"></textarea>
+      @if (contactForm.get('message')?.touched && contactForm.get('message')?.invalid) {
+        <p
+          class="text-red-400 text-sm mt-1">
+          {{ 'CONTACT.MESSAGE_ERROR' | translate }}
+        </p>
+      }
     </div>
 
     <p class="text-secondary/70 text-xs">{{ 'CONTACT.PRIVACY_NOTE' | translate }}</p>
 
     <button type="submit" [disabled]="contactForm.invalid || isLoading"
       class="border border-primary text-primary px-6 py-2 font-mono hover:bg-primary hover:text-black transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
-      <span *ngIf="!isLoading">{{ 'CONTACT.SUBMIT' | translate }}</span>
-      <span *ngIf="isLoading">{{ 'CONTACT.SUBMITTING' | translate }}</span>
+      @if (!isLoading) {
+        <span>{{ 'CONTACT.SUBMIT' | translate }}</span>
+      }
+      @if (isLoading) {
+        <span>{{ 'CONTACT.SUBMITTING' | translate }}</span>
+      }
     </button>
 
-    <p *ngIf="successMessage" class="text-primary" role="status">{{ successMessage | translate }}</p>
-    <p *ngIf="errorMessage" class="text-red-400" role="alert">{{ errorMessage | translate }}</p>
+    @if (successMessage) {
+      <p class="text-primary" role="status">{{ successMessage | translate }}</p>
+    }
+    @if (errorMessage) {
+      <p class="text-red-400" role="alert">{{ errorMessage | translate }}</p>
+    }
   </form>
 </div>

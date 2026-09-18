@@ -60,94 +60,100 @@ export interface TailoredVm {
     template: `
     <div class="bg-black min-h-screen text-primary selection:bg-primary selection:text-black font-mono">
       <app-header></app-header>
-
-      <ng-container *ngIf="vm$ | async as vm">
-        <main *ngIf="vm.status === 'found'" class="pb-16">
-          <!-- The personal note: the first thing the recruiter reads -->
-          <section
-            class="max-w-4xl mx-auto px-6 pt-8"
-            data-testid="tailored-banner"
-          >
-            <div class="border border-dashed border-terminal-dim rounded p-6 space-y-4">
-              <p class="text-sm text-secondary">
-                <span class="text-terminal-highlight">$</span>
-                prepared for
-                <span class="text-primary font-bold" data-testid="tailored-company">{{ vm.view!.company }}</span>
-                ·
-                <span data-testid="tailored-role">{{ vm.view!.role_title }}</span>
-              </p>
-
-              <p
-                *ngIf="vm.view!.headline_note"
-                class="text-primary whitespace-pre-wrap"
-                data-testid="tailored-note"
-              >{{ vm.view!.headline_note }}</p>
-
-              <div *ngIf="vm.view!.highlighted_skills.length" class="flex flex-wrap gap-2">
-                <span class="text-xs text-secondary self-center">relevant:</span>
-                <span
-                  *ngFor="let skill of vm.view!.highlighted_skills"
-                  class="text-xs border border-terminal-highlight text-terminal-highlight px-2 py-1 rounded"
-                  data-testid="tailored-skill"
-                >{{ skill }}</span>
+    
+      @if (vm$ | async; as vm) {
+        @if (vm.status === 'found') {
+          <main class="pb-16">
+            <!-- The personal note: the first thing the recruiter reads -->
+            <section
+              class="max-w-4xl mx-auto px-6 pt-8"
+              data-testid="tailored-banner"
+              >
+              <div class="border border-dashed border-terminal-dim rounded p-6 space-y-4">
+                <p class="text-sm text-secondary">
+                  <span class="text-terminal-highlight">$</span>
+                  prepared for
+                  <span class="text-primary font-bold" data-testid="tailored-company">{{ vm.view!.company }}</span>
+                  ·
+                  <span data-testid="tailored-role">{{ vm.view!.role_title }}</span>
+                </p>
+                @if (vm.view!.headline_note) {
+                  <p
+                    class="text-primary whitespace-pre-wrap"
+                    data-testid="tailored-note"
+                  >{{ vm.view!.headline_note }}</p>
+                }
+                @if (vm.view!.highlighted_skills.length) {
+                  <div class="flex flex-wrap gap-2">
+                    <span class="text-xs text-secondary self-center">relevant:</span>
+                    @for (skill of vm.view!.highlighted_skills; track skill) {
+                      <span
+                        class="text-xs border border-terminal-highlight text-terminal-highlight px-2 py-1 rounded"
+                        data-testid="tailored-skill"
+                      >{{ skill }}</span>
+                    }
+                  </div>
+                }
+                @if (vm.view!.highlighted_projects.length) {
+                  <ul class="text-sm text-secondary space-y-1">
+                    @for (project of vm.view!.highlighted_projects; track project) {
+                      <li data-testid="tailored-project">
+                        <span class="text-terminal-highlight">&gt;</span> {{ project }}
+                      </li>
+                    }
+                  </ul>
+                }
+                <!-- Variant-aware CV CTA: the pinned variant when there is one, the
+                site's normal CV flow when there is not. -->
+                @if (vm.cvUrl) {
+                  <a
+                    [href]="vm.cvUrl"
+                    class="inline-block text-terminal-highlight hover:text-white hover:underline decoration-dashed"
+                    data-testid="tailored-cv-cta"
+                  >[ download CV{{ vm.view!.cv_version ? ' · ' + vm.view!.cv_version : '' }} ]</a>
+                } @else {
+                  <a
+                    routerLink="/cv"
+                    class="inline-block text-terminal-highlight hover:text-white hover:underline decoration-dashed"
+                    data-testid="tailored-cv-cta"
+                  >[ request the CV ]</a>
+                }
               </div>
-
-              <ul *ngIf="vm.view!.highlighted_projects.length" class="text-sm text-secondary space-y-1">
-                <li *ngFor="let project of vm.view!.highlighted_projects" data-testid="tailored-project">
-                  <span class="text-terminal-highlight">&gt;</span> {{ project }}
-                </li>
-              </ul>
-
-              <!-- Variant-aware CV CTA: the pinned variant when there is one, the
-                   site's normal CV flow when there is not. -->
-              <a
-                *ngIf="vm.cvUrl; else standardCv"
-                [href]="vm.cvUrl"
-                class="inline-block text-terminal-highlight hover:text-white hover:underline decoration-dashed"
-                data-testid="tailored-cv-cta"
-              >[ download CV{{ vm.view!.cv_version ? ' · ' + vm.view!.cv_version : '' }} ]</a>
-              <ng-template #standardCv>
-                <a
-                  routerLink="/cv"
-                  class="inline-block text-terminal-highlight hover:text-white hover:underline decoration-dashed"
-                  data-testid="tailored-cv-cta"
-                >[ request the CV ]</a>
-              </ng-template>
-            </div>
-          </section>
-
-          <ng-container *ngIf="vm.profile as profile">
-            <app-hero [profile]="profile"></app-hero>
-            <app-about [profile]="profile"></app-about>
-            <app-experience [profile]="profile"></app-experience>
-            <app-skills [profile]="profile"></app-skills>
-            <app-education [profile]="profile"></app-education>
-            <app-contact [profile]="profile"></app-contact>
-          </ng-container>
-        </main>
-
+            </section>
+            @if (vm.profile; as profile) {
+              <app-hero [profile]="profile"></app-hero>
+              <app-about [profile]="profile"></app-about>
+              <app-experience [profile]="profile"></app-experience>
+              <app-skills [profile]="profile"></app-skills>
+              <app-education [profile]="profile"></app-education>
+              <app-contact [profile]="profile"></app-contact>
+            }
+          </main>
+        }
         <!-- Unknown, disabled or expired — one indistinguishable outcome -->
-        <div
-          *ngIf="vm.status === 'notfound'"
-          class="max-w-4xl mx-auto px-6 py-16 text-center space-y-6"
-          data-testid="tailored-not-found"
-        >
-          <div class="text-terminal-highlight text-lg">$ cat ~/for/{{ slug }}: No such file or directory</div>
-          <h1 class="text-2xl md:text-3xl font-bold text-primary">404 — this link is no longer available</h1>
-          <p class="text-secondary">
-            The tailored link you opened does not exist, was disabled, or has expired.
-          </p>
-          <a routerLink="/" class="text-terminal-highlight hover:text-white hover:underline decoration-dashed">
-            [ cd ~ ] go to the portfolio
-          </a>
-        </div>
-
-        <div *ngIf="vm.status === 'loading'" class="max-w-4xl mx-auto px-6 py-16 text-secondary animate-pulse">
-          $ loading resource...
-        </div>
-      </ng-container>
+        @if (vm.status === 'notfound') {
+          <div
+            class="max-w-4xl mx-auto px-6 py-16 text-center space-y-6"
+            data-testid="tailored-not-found"
+            >
+            <div class="text-terminal-highlight text-lg">$ cat ~/for/{{ slug }}: No such file or directory</div>
+            <h1 class="text-2xl md:text-3xl font-bold text-primary">404 — this link is no longer available</h1>
+            <p class="text-secondary">
+              The tailored link you opened does not exist, was disabled, or has expired.
+            </p>
+            <a routerLink="/" class="text-terminal-highlight hover:text-white hover:underline decoration-dashed">
+              [ cd ~ ] go to the portfolio
+            </a>
+          </div>
+        }
+        @if (vm.status === 'loading') {
+          <div class="max-w-4xl mx-auto px-6 py-16 text-secondary animate-pulse">
+            $ loading resource...
+          </div>
+        }
+      }
     </div>
-  `,
+    `,
 })
 export class TailoredComponent implements OnInit {
     private route = inject(ActivatedRoute);

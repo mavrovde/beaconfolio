@@ -1,5 +1,5 @@
 import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { CvService } from '../../services/cv.service';
 import { HeaderComponent } from '../header/header.component';
@@ -9,7 +9,7 @@ import { SeoService } from '../../services/seo.service';
 @Component({
     selector: 'app-cv',
     standalone: true,
-    imports: [CommonModule, ReactiveFormsModule, TranslatePipe, HeaderComponent],
+    imports: [ReactiveFormsModule, TranslatePipe, HeaderComponent],
     templateUrl: './cv.component.html',
     styleUrl: './cv.component.css'
 })

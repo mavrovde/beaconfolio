@@ -16,11 +16,13 @@ import { ViewportScroller } from '@angular/common';
   standalone: true,
   imports: [CommonModule, RouterOutlet, CookieConsentComponent, SystemStatsComponent],
   template: `
-    <div *ngIf="jsonLd$ | async as jsonLd" [innerHTML]="jsonLd"></div>
+    @if (jsonLd$ | async; as jsonLd) {
+      <div [innerHTML]="jsonLd"></div>
+    }
     <router-outlet></router-outlet>
     <app-cookie-consent></app-cookie-consent>
     <app-system-stats></app-system-stats>
-  `,
+    `,
 })
 export class AppComponent implements OnInit {
   private googleAnalyticsService = inject(GoogleAnalyticsService);

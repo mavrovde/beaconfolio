@@ -1,61 +1,71 @@
 <div class="container mx-auto p-4">
-    <h2 class="text-2xl font-bold mb-4">{{ 'ADMIN.SQL_PANEL' | translate }}</h2>
+  <h2 class="text-2xl font-bold mb-4">{{ 'ADMIN.SQL_PANEL' | translate }}</h2>
 
-    <div class="mb-4">
-        <label for="query" class="block text-sm font-medium text-primary">{{ 'ADMIN.QUERY_PLACEHOLDER' | translate
-            }}</label>
-        <textarea id="query" [(ngModel)]="query" rows="5"
-            class="mt-1 block w-full rounded-md border-primary bg-black text-primary shadow-sm focus:border-terminal-highlight focus:ring-terminal-highlight sm:text-sm"
-            placeholder="SELECT * FROM users;"></textarea>
+  <div class="mb-4">
+    <label for="query" class="block text-sm font-medium text-primary">{{ 'ADMIN.QUERY_PLACEHOLDER' | translate
+    }}</label>
+    <textarea id="query" [(ngModel)]="query" rows="5"
+      class="mt-1 block w-full rounded-md border-primary bg-black text-primary shadow-sm focus:border-terminal-highlight focus:ring-terminal-highlight sm:text-sm"
+    placeholder="SELECT * FROM users;"></textarea>
+  </div>
+
+  <div class="flex flex-wrap gap-4 mb-4">
+    <button (click)="executeQuery()" [disabled]="loading || !query"
+      class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-secondary hover:bg-terminal-highlight focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50">
+      {{ loading ? ('ADMIN.PROCESSING' | translate) : ('ADMIN.EXECUTE' | translate) }}
+    </button>
+
+    <button (click)="backup()" [disabled]="loading"
+      class="inline-flex justify-center py-2 px-4 border border-terminal shadow-sm text-sm font-medium rounded-md text-terminal hover:bg-terminal-dim focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-terminal disabled:opacity-50">
+      ⬇️ BACKUP DATABASE
+    </button>
+
+    <div class="relative">
+      <input type="file" id="restoreFile" (change)="onFileSelected($event)" accept=".sql" class="hidden"
+        #fileInput>
+      <button (click)="fileInput.click()" [disabled]="loading"
+        class="inline-flex justify-center py-2 px-4 border border-red-600 shadow-sm text-sm font-medium rounded-md text-red-500 hover:bg-red-900/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50">
+        ⬆️ RESTORE DATABASE
+      </button>
     </div>
+  </div>
 
-    <div class="flex flex-wrap gap-4 mb-4">
-        <button (click)="executeQuery()" [disabled]="loading || !query"
-            class="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-secondary hover:bg-terminal-highlight focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50">
-            {{ loading ? ('ADMIN.PROCESSING' | translate) : ('ADMIN.EXECUTE' | translate) }}
-        </button>
-
-        <button (click)="backup()" [disabled]="loading"
-            class="inline-flex justify-center py-2 px-4 border border-terminal shadow-sm text-sm font-medium rounded-md text-terminal hover:bg-terminal-dim focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-terminal disabled:opacity-50">
-            ⬇️ BACKUP DATABASE
-        </button>
-
-        <div class="relative">
-            <input type="file" id="restoreFile" (change)="onFileSelected($event)" accept=".sql" class="hidden"
-                #fileInput>
-            <button (click)="fileInput.click()" [disabled]="loading"
-                class="inline-flex justify-center py-2 px-4 border border-red-600 shadow-sm text-sm font-medium rounded-md text-red-500 hover:bg-red-900/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50">
-                ⬆️ RESTORE DATABASE
-            </button>
-        </div>
+  @if (error) {
+    <div class="mt-4 p-4 border border-terminal text-primary rounded-md">
+      {{ error | translate }}
     </div>
+  }
 
-    <div *ngIf="error" class="mt-4 p-4 border border-terminal text-primary rounded-md">
-        {{ error | translate }}
+  @if (result) {
+    <div class="mt-4">
+      <h3 class="text-lg font-medium mb-2 font-mono text-primary">{{ 'ADMIN.QUERY_EXECUTED' | translate }} ({{
+      result.length }} rows)</h3>
+      <div class="overflow-x-auto border border-terminal">
+        <table class="min-w-full divide-y divide-terminal">
+          <thead class="bg-black/50">
+            <tr>
+              @for (col of columns; track col) {
+                <th
+                  class="px-6 py-3 text-left text-xs font-medium text-terminal-dim uppercase tracking-wider">
+                  {{ col }}
+                </th>
+              }
+            </tr>
+          </thead>
+          <tbody class="bg-black divide-y divide-terminal">
+            @for (row of result; track row) {
+              <tr>
+                @for (col of columns; track col) {
+                  <td
+                    class="px-6 py-4 whitespace-nowrap text-sm text-primary font-mono">
+                    {{ row[col] }}
+                  </td>
+                }
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
     </div>
-
-    <div *ngIf="result" class="mt-4">
-        <h3 class="text-lg font-medium mb-2 font-mono text-primary">{{ 'ADMIN.QUERY_EXECUTED' | translate }} ({{
-            result.length }} rows)</h3>
-        <div class="overflow-x-auto border border-terminal">
-            <table class="min-w-full divide-y divide-terminal">
-                <thead class="bg-black/50">
-                    <tr>
-                        <th *ngFor="let col of columns"
-                            class="px-6 py-3 text-left text-xs font-medium text-terminal-dim uppercase tracking-wider">
-                            {{ col }}
-                        </th>
-                    </tr>
-                </thead>
-                <tbody class="bg-black divide-y divide-terminal">
-                    <tr *ngFor="let row of result">
-                        <td *ngFor="let col of columns"
-                            class="px-6 py-4 whitespace-nowrap text-sm text-primary font-mono">
-                            {{ row[col] }}
-                        </td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
+  }
 </div>

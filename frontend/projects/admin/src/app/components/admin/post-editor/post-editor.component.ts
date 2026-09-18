@@ -1,5 +1,5 @@
 import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
 import { BlogService } from '@beaconfolio/shared';
@@ -18,7 +18,7 @@ interface PostData {
 @Component({
   selector: 'app-post-editor',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [FormsModule],
   templateUrl: './post-editor.component.html',
   styleUrls: ['./post-editor.component.css'],
 })

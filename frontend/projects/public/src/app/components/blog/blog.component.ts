@@ -262,10 +262,6 @@ export class BlogComponent implements OnInit {
     return this.expandedPostId === String(id);
   }
 
-  trackByPostId(index: number, post: BlogPost): number {
-    return post.id;
-  }
-
   async sharePost(post: BlogPost) {
     const url = `${isPlatformBrowser(this.platformId) ? window.location.origin : this.site.siteUrl}/blog/${post.slug}`;
     if (isPlatformBrowser(this.platformId) && navigator.share) {

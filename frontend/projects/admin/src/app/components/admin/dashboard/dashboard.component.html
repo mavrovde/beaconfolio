@@ -2,15 +2,19 @@
   <h2 class="font-semibold mb-2">Public availability</h2>
   <p class="text-sm text-gray-500 mb-3">Shown on the public hero next to the hire-me CTA. Takes effect immediately — no redeploy.</p>
   <div class="flex gap-2 items-center flex-wrap">
-    <button *ngFor="let state of availabilityStates" type="button"
-      class="px-3 py-1 border rounded font-mono text-sm"
-      [class.bg-black]="availability === state"
-      [class.text-white]="availability === state"
-      [disabled]="availabilitySaving"
-      (click)="setAvailability(state)">
-      {{ state }}
-    </button>
-    <span class="text-sm text-red-600" *ngIf="availabilityError">{{ availabilityError }}</span>
+    @for (state of availabilityStates; track state) {
+      <button type="button"
+        class="px-3 py-1 border rounded font-mono text-sm"
+        [class.bg-black]="availability === state"
+        [class.text-white]="availability === state"
+        [disabled]="availabilitySaving"
+        (click)="setAvailability(state)">
+        {{ state }}
+      </button>
+    }
+    @if (availabilityError) {
+      <span class="text-sm text-red-600">{{ availabilityError }}</span>
+    }
   </div>
 </section>
 
@@ -18,70 +22,72 @@
   <h1 class="page-title">&gt; Dashboard</h1>
 
   @if (loading) {
-  <div class="loading">Loading stats...</div>
+    <div class="loading">Loading stats...</div>
   } @else if (error) {
-  <div class="error-state">
-    <p class="error-text">&gt; Error: {{ error }}</p>
-    <button (click)="loadStats()" class="btn-primary">Retry</button>
-  </div>
+    <div class="error-state">
+      <p class="error-text">&gt; Error: {{ error }}</p>
+      <button (click)="loadStats()" class="btn-primary">Retry</button>
+    </div>
   } @else {
-  <div class="stats-grid" *ngIf="stats">
-    <!-- Posts Stats -->
-    <div class="stat-card">
-      <div class="stat-value">{{ stats.posts.total }}</div>
-      <div class="stat-label">Total Posts</div>
-      <div class="stat-subtext">
-        <span class="text-green-400">{{ stats.posts.published }} Pub</span> /
-        <span class="text-yellow-400">{{ stats.posts.drafts }} Draft</span>
-      </div>
-    </div>
-
-    <!-- Language Breakdown -->
-    <div class="stat-card">
-      <div class="stat-label mb-2">Languages</div>
-      <div class="flex flex-col gap-1 text-sm">
-        <div *ngFor="let lang of getLanguages()" class="flex justify-between">
-          <span class="uppercase font-bold text-terminal-highlight">{{ lang }}</span>
-          <span>{{ stats.posts.by_language[lang] }}</span>
+    @if (stats) {
+      <div class="stats-grid">
+        <!-- Posts Stats -->
+        <div class="stat-card">
+          <div class="stat-value">{{ stats.posts.total }}</div>
+          <div class="stat-label">Total Posts</div>
+          <div class="stat-subtext">
+            <span class="text-green-400">{{ stats.posts.published }} Pub</span> /
+            <span class="text-yellow-400">{{ stats.posts.drafts }} Draft</span>
+          </div>
         </div>
-        <span *ngIf="getLanguages().length === 0" class="text-terminal-dim">None</span>
+        <!-- Language Breakdown -->
+        <div class="stat-card">
+          <div class="stat-label mb-2">Languages</div>
+          <div class="flex flex-col gap-1 text-sm">
+            @for (lang of getLanguages(); track lang) {
+              <div class="flex justify-between">
+                <span class="uppercase font-bold text-terminal-highlight">{{ lang }}</span>
+                <span>{{ stats.posts.by_language[lang] }}</span>
+              </div>
+            }
+            @if (getLanguages().length === 0) {
+              <span class="text-terminal-dim">None</span>
+            }
+          </div>
+        </div>
+        <!-- Users -->
+        <div class="stat-card">
+          <div class="stat-value">{{ stats.users }}</div>
+          <div class="stat-label">Admins</div>
+        </div>
+        <!-- Visitors/Subs (Placeholders) -->
+        <div class="stat-card">
+          <div class="stat-value">{{ stats.subscribers }}</div>
+          <div class="stat-label">Subscribers</div>
+        </div>
+        <div class="stat-card col-span-full md:col-span-2">
+          <div class="stat-label">Visitor Stats</div>
+          <div class="text-lg text-terminal-highlight mt-1">{{ stats.visitors }}</div>
+        </div>
+      </div>
+    }
+
+    <div class="quick-actions">
+      <h2>&gt; Quick Actions</h2>
+      <div class="action-buttons">
+        <a routerLink="/posts/new" class="action-btn">
+          <span class="icon">➕</span>
+          <span>Create New Post</span>
+        </a>
+        <a routerLink="/posts" class="action-btn">
+          <span class="icon">📝</span>
+          <span>Manage Posts</span>
+        </a>
+        <a routerLink="/" class="action-btn">
+          <span class="icon">👁️</span>
+          <span>View Site</span>
+        </a>
       </div>
     </div>
-
-    <!-- Users -->
-    <div class="stat-card">
-      <div class="stat-value">{{ stats.users }}</div>
-      <div class="stat-label">Admins</div>
-    </div>
-
-    <!-- Visitors/Subs (Placeholders) -->
-    <div class="stat-card">
-      <div class="stat-value">{{ stats.subscribers }}</div>
-      <div class="stat-label">Subscribers</div>
-    </div>
-
-    <div class="stat-card col-span-full md:col-span-2">
-      <div class="stat-label">Visitor Stats</div>
-      <div class="text-lg text-terminal-highlight mt-1">{{ stats.visitors }}</div>
-    </div>
-  </div>
-
-  <div class="quick-actions">
-    <h2>&gt; Quick Actions</h2>
-    <div class="action-buttons">
-      <a routerLink="/posts/new" class="action-btn">
-        <span class="icon">➕</span>
-        <span>Create New Post</span>
-      </a>
-      <a routerLink="/posts" class="action-btn">
-        <span class="icon">📝</span>
-        <span>Manage Posts</span>
-      </a>
-      <a routerLink="/" class="action-btn">
-        <span class="icon">👁️</span>
-        <span>View Site</span>
-      </a>
-    </div>
-  </div>
   }
 </div>

@@ -1,24 +1,25 @@
-<div *ngIf="isVisible"
+@if (isVisible) {
+  <div
     class="fixed bottom-0 left-0 right-0 bg-black border-t border-primary p-6 z-[100] shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.5)] font-mono animate-slide-up">
     <div class="container mx-auto max-w-6xl flex flex-col md:flex-row items-center justify-between gap-6">
-        <div class="flex-1">
-            <h3 class="text-xl font-bold text-primary mb-2 flex items-center gap-2">
-
-                {{ 'COOKIES.TITLE' | translate }}
-            </h3>
-            <p class="text-terminal-dim text-sm md:text-base leading-relaxed">
-                {{ 'COOKIES.MESSAGE' | translate }}
-            </p>
-        </div>
-        <div class="flex gap-4 shrink-0">
-            <button (click)="decline()"
-                class="px-6 py-2 border border-secondary text-secondary hover:bg-secondary hover:text-black transition-colors rounded-none font-bold text-sm uppercase tracking-wider">
-                {{ 'COOKIES.DECLINE' | translate }}
-            </button>
-            <button (click)="accept()"
-                class="px-6 py-2 bg-primary text-black border border-primary hover:bg-white hover:border-white transition-colors rounded-none font-bold text-sm uppercase tracking-wider shadow-[0_0_10px_rgba(0,255,0,0.3)]">
-                {{ 'COOKIES.ACCEPT' | translate }}
-            </button>
-        </div>
+      <div class="flex-1">
+        <h3 class="text-xl font-bold text-primary mb-2 flex items-center gap-2">
+          {{ 'COOKIES.TITLE' | translate }}
+        </h3>
+        <p class="text-terminal-dim text-sm md:text-base leading-relaxed">
+          {{ 'COOKIES.MESSAGE' | translate }}
+        </p>
+      </div>
+      <div class="flex gap-4 shrink-0">
+        <button (click)="decline()"
+          class="px-6 py-2 border border-secondary text-secondary hover:bg-secondary hover:text-black transition-colors rounded-none font-bold text-sm uppercase tracking-wider">
+          {{ 'COOKIES.DECLINE' | translate }}
+        </button>
+        <button (click)="accept()"
+          class="px-6 py-2 bg-primary text-black border border-primary hover:bg-white hover:border-white transition-colors rounded-none font-bold text-sm uppercase tracking-wider shadow-[0_0_10px_rgba(0,255,0,0.3)]">
+          {{ 'COOKIES.ACCEPT' | translate }}
+        </button>
+      </div>
     </div>
-</div>
+  </div>
+}

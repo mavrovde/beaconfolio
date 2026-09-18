@@ -2,76 +2,88 @@
   <header class="calendar-head">
     <h2>Interview calendar</h2>
     <div class="window-picker">
-      <button
-        *ngFor="let days of windows"
-        type="button"
-        class="window-option"
-        [class.active]="days === windowDays"
-        (click)="changeWindow(days)"
-      >
-        {{ days }} days
-      </button>
+      @for (days of windows; track days) {
+        <button
+          type="button"
+          class="window-option"
+          [class.active]="days === windowDays"
+          (click)="changeWindow(days)"
+          >
+          {{ days }} days
+        </button>
+      }
     </div>
   </header>
 
-  <p class="status-bar" *ngIf="error">{{ error }}</p>
-  <p class="loading" *ngIf="loading">Loading the calendar…</p>
+  @if (error) {
+    <p class="status-bar">{{ error }}</p>
+  }
+  @if (loading) {
+    <p class="loading">Loading the calendar…</p>
+  }
 
-  <p class="empty" *ngIf="!loading && !error && total === 0">
-    Nothing scheduled in the next {{ windowDays }} days.
-  </p>
+  @if (!loading && !error && total === 0) {
+    <p class="empty">
+      Nothing scheduled in the next {{ windowDays }} days.
+    </p>
+  }
 
-  <section class="day" *ngFor="let day of days">
-    <h3 class="day-heading">{{ day.date | date: 'EEEE, d MMMM' }}</h3>
-
-    <article
-      class="interview"
-      *ngFor="let interview of day.interviews"
-      [class.in-progress]="isInProgress(interview)"
-    >
-      <div class="when">
-        <span class="time">{{ interview.scheduled_at | date: 'HH:mm' }}</span>
-        <span class="dash">–</span>
-        <span class="time">{{ endsAt(interview) | date: 'HH:mm' }}</span>
-        <span class="live" *ngIf="isInProgress(interview)">in progress</span>
-      </div>
-
-      <div class="what">
-        <span class="company">{{ interview.company }}</span>
-        <span class="role">{{ interview.role_title }}</span>
-        <span class="kind">{{ interview.kind }}</span>
-        <span class="stage">{{ interview.stage }}</span>
-      </div>
-
-      <div class="who" *ngIf="interview.interviewer">
-        with {{ interview.interviewer }}
-      </div>
-
-      <div class="where" *ngIf="interview.location_or_link">
-        {{ interview.location_or_link }}
-      </div>
-
-      <div class="actions">
-        <label class="outcome-label" [attr.for]="'outcome-' + interview.id">Outcome</label>
-        <select
-          class="outcome"
-          [id]="'outcome-' + interview.id"
-          [ngModel]="interview.outcome"
-          (ngModelChange)="setOutcome(interview, $event)"
-          [name]="'outcome-' + interview.id"
-        >
-          <option *ngFor="let outcome of outcomes" [value]="outcome">{{ outcome }}</option>
-        </select>
-
-        <button
-          type="button"
-          class="ics"
-          (click)="downloadIcs(interview)"
-          [disabled]="downloadingId === interview.id"
-        >
-          {{ downloadingId === interview.id ? 'Downloading…' : 'Add to calendar (.ics)' }}
-        </button>
-      </div>
-    </article>
-  </section>
+  @for (day of days; track day) {
+    <section class="day">
+      <h3 class="day-heading">{{ day.date | date: 'EEEE, d MMMM' }}</h3>
+      @for (interview of day.interviews; track interview) {
+        <article
+          class="interview"
+          [class.in-progress]="isInProgress(interview)"
+          >
+          <div class="when">
+            <span class="time">{{ interview.scheduled_at | date: 'HH:mm' }}</span>
+            <span class="dash">–</span>
+            <span class="time">{{ endsAt(interview) | date: 'HH:mm' }}</span>
+            @if (isInProgress(interview)) {
+              <span class="live">in progress</span>
+            }
+          </div>
+          <div class="what">
+            <span class="company">{{ interview.company }}</span>
+            <span class="role">{{ interview.role_title }}</span>
+            <span class="kind">{{ interview.kind }}</span>
+            <span class="stage">{{ interview.stage }}</span>
+          </div>
+          @if (interview.interviewer) {
+            <div class="who">
+              with {{ interview.interviewer }}
+            </div>
+          }
+          @if (interview.location_or_link) {
+            <div class="where">
+              {{ interview.location_or_link }}
+            </div>
+          }
+          <div class="actions">
+            <label class="outcome-label" [attr.for]="'outcome-' + interview.id">Outcome</label>
+            <select
+              class="outcome"
+              [id]="'outcome-' + interview.id"
+              [ngModel]="interview.outcome"
+              (ngModelChange)="setOutcome(interview, $event)"
+              [name]="'outcome-' + interview.id"
+              >
+              @for (outcome of outcomes; track outcome) {
+                <option [value]="outcome">{{ outcome }}</option>
+              }
+            </select>
+            <button
+              type="button"
+              class="ics"
+              (click)="downloadIcs(interview)"
+              [disabled]="downloadingId === interview.id"
+              >
+              {{ downloadingId === interview.id ? 'Downloading…' : 'Add to calendar (.ics)' }}
+            </button>
+          </div>
+        </article>
+      }
+    </section>
+  }
 </div>

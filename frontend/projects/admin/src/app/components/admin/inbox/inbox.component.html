@@ -5,108 +5,140 @@
       <select [(ngModel)]="statusFilter" (ngModelChange)="onFilterChange()" aria-label="filter by status"
         class="border rounded px-3 py-2 bg-white">
         <option value="">All statuses</option>
-        <option *ngFor="let s of statuses" [value]="s">{{ s }}</option>
+        @for (s of statuses; track s) {
+          <option [value]="s">{{ s }}</option>
+        }
       </select>
       <select [(ngModel)]="sourceFilter" (ngModelChange)="onFilterChange()" aria-label="filter by source"
         class="border rounded px-3 py-2 bg-white">
         <option value="">All sources</option>
-        <option *ngFor="let s of sources" [value]="s">{{ s }}</option>
+        @for (s of sources; track s) {
+          <option [value]="s">{{ s }}</option>
+        }
       </select>
     </div>
   </div>
 
-  <p *ngIf="error" class="text-red-600 mb-4" role="alert">{{ error }}</p>
-  <p *ngIf="loading" class="text-gray-500 mb-4">Loading…</p>
+  @if (error) {
+    <p class="text-red-600 mb-4" role="alert">{{ error }}</p>
+  }
+  @if (loading) {
+    <p class="text-gray-500 mb-4">Loading…</p>
+  }
 
-  <p *ngIf="!loading && items.length === 0 && !error" class="text-gray-500">
-    No interactions yet — contact-form submissions and CV requests land here.
-  </p>
+  @if (!loading && items.length === 0 && !error) {
+    <p class="text-gray-500">
+      No interactions yet — contact-form submissions and CV requests land here.
+    </p>
+  }
 
-  <div *ngIf="items.length > 0" class="overflow-x-auto">
-    <table class="min-w-full border divide-y">
-      <thead class="bg-gray-50">
-        <tr>
-          <th class="px-4 py-2 text-left text-sm font-semibold">When</th>
-          <th class="px-4 py-2 text-left text-sm font-semibold">From</th>
-          <th class="px-4 py-2 text-left text-sm font-semibold">Company</th>
-          <th class="px-4 py-2 text-left text-sm font-semibold">Source</th>
-          <th class="px-4 py-2 text-left text-sm font-semibold">Status</th>
-        </tr>
-      </thead>
-      <tbody class="divide-y">
-        <ng-container *ngFor="let i of items">
-          <tr (click)="toggleExpand(i.id)" class="cursor-pointer hover:bg-gray-50"
-            [attr.data-testid]="'row-' + i.id">
-            <td class="px-4 py-2 text-sm whitespace-nowrap">{{ i.created_at | date: 'medium' }}</td>
-            <td class="px-4 py-2 text-sm">
-              <span class="font-medium">{{ i.name }}</span>
-              <span class="text-gray-500 block">{{ i.email }}</span>
-            </td>
-            <td class="px-4 py-2 text-sm">{{ i.company || '—' }}</td>
-            <td class="px-4 py-2 text-sm"><span class="rounded bg-gray-100 px-2 py-1">{{ i.source }}</span></td>
-            <td class="px-4 py-2 text-sm" (click)="$event.stopPropagation()">
-              <select [ngModel]="i.status" (ngModelChange)="setStatus(i, $event)"
-                [attr.aria-label]="'status of ' + i.name" class="border rounded px-2 py-1 bg-white">
-                <option *ngFor="let s of statuses" [value]="s">{{ s }}</option>
-              </select>
-            </td>
+  @if (items.length > 0) {
+    <div class="overflow-x-auto">
+      <table class="min-w-full border divide-y">
+        <thead class="bg-gray-50">
+          <tr>
+            <th class="px-4 py-2 text-left text-sm font-semibold">When</th>
+            <th class="px-4 py-2 text-left text-sm font-semibold">From</th>
+            <th class="px-4 py-2 text-left text-sm font-semibold">Company</th>
+            <th class="px-4 py-2 text-left text-sm font-semibold">Source</th>
+            <th class="px-4 py-2 text-left text-sm font-semibold">Status</th>
           </tr>
-          <tr *ngIf="expandedId === i.id">
-            <td colspan="5" class="px-4 py-3 bg-gray-50 text-sm">
-<!-- #298 review blocker 3: both backend failure paths leave detected_language
-     NULL, so gating the bar on it alone hid "translation failed" AND the only
-     re-translate affordance. Any translation signal shows the bar. -->
-              <div *ngIf="i.detected_language || i.translation_status || i.translated_message"
-                class="mb-2 flex items-center gap-2 flex-wrap" data-testid="translation-bar">
-                <span *ngIf="i.detected_language" class="rounded bg-gray-200 px-2 py-0.5 text-xs font-mono uppercase"
-                  [attr.aria-label]="'detected language ' + i.detected_language">{{ i.detected_language }}</span>
-                <span *ngIf="showingTranslation(i)" class="text-xs text-gray-500 italic">
-                  machine-translated to {{ i.translated_to }} — original in {{ i.detected_language }}
-                </span>
-                <button *ngIf="i.translated_message" type="button"
-                  (click)="toggleOriginal(i)"
-                  class="text-xs underline text-blue-700"
-                  [attr.aria-label]="'toggle original for ' + i.name">
-                  {{ showOriginal[i.id] ? 'show translation' : 'show original' }}
-                </button>
-                <span *ngIf="i.translation_status === 'failed'" class="text-xs text-red-600">
-                  translation failed
-                </span>
-                <span *ngIf="i.translation_status === 'pending'" class="text-xs text-gray-500">
-                  translating…
-                </span>
-<!-- 'pending' included deliberately: only the re-run endpoint writes 'pending'
-     (intake leaves the field NULL until the task lands), so a 'pending' row the
-     operator actually sees is one whose re-run was interrupted — a backend
-     restart between the 200 and the task strands it there forever, and this
-     button IS the recovery path (#298 round 2, minor B). Re-running an
-     actually-in-flight translation is harmless — the task only rewrites
-     translated_* columns. -->
-                <button *ngIf="i.translation_status === 'failed' || i.translation_status === 'pending' || i.translated_message" type="button"
-                  (click)="retranslate(i)" [disabled]="retranslatingId === i.id"
-                  class="text-xs underline text-blue-700 disabled:opacity-40"
-                  [attr.aria-label]="'re-run translation for ' + i.name">
-                  {{ retranslatingId === i.id ? 're-running…' : 're-translate' }}
-                </button>
-              </div>
-              <p class="whitespace-pre-wrap mb-3" data-testid="message-text">{{ displayedMessage(i) }}</p>
-              <button (click)="promote(i)" [disabled]="promotingId === i.id"
-                class="border rounded px-3 py-1 bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                [attr.aria-label]="'promote ' + i.name + ' to pipeline'">
-                {{ promotingId === i.id ? '↗ Promoting…' : '↗ Promote to pipeline' }}
-              </button>
-            </td>
-          </tr>
-        </ng-container>
-      </tbody>
-    </table>
-  </div>
+        </thead>
+        <tbody class="divide-y">
+          @for (i of items; track i) {
+            <tr (click)="toggleExpand(i.id)" class="cursor-pointer hover:bg-gray-50"
+              [attr.data-testid]="'row-' + i.id">
+              <td class="px-4 py-2 text-sm whitespace-nowrap">{{ i.created_at | date: 'medium' }}</td>
+              <td class="px-4 py-2 text-sm">
+                <span class="font-medium">{{ i.name }}</span>
+                <span class="text-gray-500 block">{{ i.email }}</span>
+              </td>
+              <td class="px-4 py-2 text-sm">{{ i.company || '—' }}</td>
+              <td class="px-4 py-2 text-sm"><span class="rounded bg-gray-100 px-2 py-1">{{ i.source }}</span></td>
+              <td class="px-4 py-2 text-sm" (click)="$event.stopPropagation()">
+                <select [ngModel]="i.status" (ngModelChange)="setStatus(i, $event)"
+                  [attr.aria-label]="'status of ' + i.name" class="border rounded px-2 py-1 bg-white">
+                  @for (s of statuses; track s) {
+                    <option [value]="s">{{ s }}</option>
+                  }
+                </select>
+              </td>
+            </tr>
+            @if (expandedId === i.id) {
+              <tr>
+                <td colspan="5" class="px-4 py-3 bg-gray-50 text-sm">
+                  <!-- #298 review blocker 3: both backend failure paths leave detected_language
+                  NULL, so gating the bar on it alone hid "translation failed" AND the only
+                  re-translate affordance. Any translation signal shows the bar. -->
+                  @if (i.detected_language || i.translation_status || i.translated_message) {
+                    <div
+                      class="mb-2 flex items-center gap-2 flex-wrap" data-testid="translation-bar">
+                      @if (i.detected_language) {
+                        <span class="rounded bg-gray-200 px-2 py-0.5 text-xs font-mono uppercase"
+                        [attr.aria-label]="'detected language ' + i.detected_language">{{ i.detected_language }}</span>
+                      }
+                      @if (showingTranslation(i)) {
+                        <span class="text-xs text-gray-500 italic">
+                          machine-translated to {{ i.translated_to }} — original in {{ i.detected_language }}
+                        </span>
+                      }
+                      @if (i.translated_message) {
+                        <button type="button"
+                          (click)="toggleOriginal(i)"
+                          class="text-xs underline text-blue-700"
+                          [attr.aria-label]="'toggle original for ' + i.name">
+                          {{ showOriginal[i.id] ? 'show translation' : 'show original' }}
+                        </button>
+                      }
+                      @if (i.translation_status === 'failed') {
+                        <span class="text-xs text-red-600">
+                          translation failed
+                        </span>
+                      }
+                      @if (i.translation_status === 'pending') {
+                        <span class="text-xs text-gray-500">
+                          translating…
+                        </span>
+                      }
+                      <!-- 'pending' included deliberately: only the re-run endpoint writes 'pending'
+                      (intake leaves the field NULL until the task lands), so a 'pending' row the
+                      operator actually sees is one whose re-run was interrupted — a backend
+                      restart between the 200 and the task strands it there forever, and this
+                      button IS the recovery path (#298 round 2, minor B). Re-running an
+                      actually-in-flight translation is harmless — the task only rewrites
+                      translated_* columns. -->
+                      @if (i.translation_status === 'failed' || i.translation_status === 'pending' || i.translated_message) {
+                        <button type="button"
+                          (click)="retranslate(i)" [disabled]="retranslatingId === i.id"
+                          class="text-xs underline text-blue-700 disabled:opacity-40"
+                          [attr.aria-label]="'re-run translation for ' + i.name">
+                          {{ retranslatingId === i.id ? 're-running…' : 're-translate' }}
+                        </button>
+                      }
+                    </div>
+                  }
+                  <p class="whitespace-pre-wrap mb-3" data-testid="message-text">{{ displayedMessage(i) }}</p>
+                  <button (click)="promote(i)" [disabled]="promotingId === i.id"
+                    class="border rounded px-3 py-1 bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                    [attr.aria-label]="'promote ' + i.name + ' to pipeline'">
+                    {{ promotingId === i.id ? '↗ Promoting…' : '↗ Promote to pipeline' }}
+                  </button>
+                </td>
+              </tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+  }
 
-  <div *ngIf="pages > 1" class="flex items-center gap-3 mt-4">
-    <button (click)="goToPage(page - 1)" [disabled]="page <= 1"
+  @if (pages > 1) {
+    <div class="flex items-center gap-3 mt-4">
+      <button (click)="goToPage(page - 1)" [disabled]="page <= 1"
       class="border rounded px-3 py-1 disabled:opacity-40">Prev</button>
-    <span class="text-sm text-gray-600">Page {{ page }} / {{ pages }} · {{ total }} total</span>
-    <button (click)="goToPage(page + 1)" [disabled]="page >= pages"
+      <span class="text-sm text-gray-600">Page {{ page }} / {{ pages }} · {{ total }} total</span>
+      <button (click)="goToPage(page + 1)" [disabled]="page >= pages"
       class="border rounded px-3 py-1 disabled:opacity-40">Next</button>
-  </div>
+    </div>
+  }
 </div>

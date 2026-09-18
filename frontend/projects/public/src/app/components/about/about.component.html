@@ -5,9 +5,11 @@
     </h2>
 
     <div class="max-w-4xl mx-auto p-8 border border-terminal bg-black">
-      <div *ngIf="profile" class="space-y-6 text-primary text-lg leading-relaxed whitespace-pre-line font-mono">
-        {{ profile.about }}
-      </div>
+      @if (profile) {
+        <div class="space-y-6 text-primary text-lg leading-relaxed whitespace-pre-line font-mono">
+          {{ profile.about }}
+        </div>
+      }
     </div>
   </div>
 </section>

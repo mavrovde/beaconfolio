@@ -225,7 +225,7 @@ describe('HeaderComponent', () => {
     // fixture is already rendered with a full slider. Mutating `component.years = []` after
     // that first render and re-running change detection does not re-render the frozen fixture
     // view under the Angular 22 test harness. Build a fresh fixture whose YearsService yields
-    // an empty list to assert the real behaviour: `*ngIf="years.length > 0"` hides the slider.
+    // an empty list to assert the real behaviour: `@if (years.length > 0)` hides the slider.
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [HeaderComponent],

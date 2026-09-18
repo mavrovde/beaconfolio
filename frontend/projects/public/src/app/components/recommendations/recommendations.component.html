@@ -5,44 +5,44 @@
     </h2>
 
     <div class="relative max-w-7xl mx-auto overflow-hidden">
-      <div
-        *ngIf="profile"
-        class="flex overflow-x-auto pb-8 gap-6 snap-x snap-mandatory scrollbar-hide"
-      >
+      @if (profile) {
         <div
-          *ngFor="let rec of (profile.recommendations || [])"
-          class="min-w-[350px] md:min-w-[450px] snap-center p-8 border border-terminal bg-black hover:border-primary transition-all duration-300 flex flex-col"
-        >
-          <div class="flex items-center mb-6 border-b border-terminal pb-4">
-            <div
-              class="w-12 h-12 flex items-center justify-center text-primary font-bold text-xl mr-4 shrink-0 border border-primary"
-            >
-              {{ rec.author.charAt(0) }}
-            </div>
-            <div>
-              <h4 class="font-bold text-primary text-lg leading-tight font-mono">
-                {{ rec.author }}
-              </h4>
-              <p class="text-muted text-sm mt-1 font-mono">{{ rec.authorTitle }}</p>
-            </div>
-          </div>
-
-          <div class="relative flex-grow">
-            <span class="absolute top-0 left-0 text-4xl text-terminal opacity-50 font-mono">"</span>
-            <p class="text-secondary text-sm leading-relaxed pl-6 font-mono italic">
-              {{ rec.text }}
-            </p>
-          </div>
-
-          <a
-            [href]="rec.authorLinkedInUrl"
-            target="_blank"
-            class="mt-6 text-xs text-muted hover:text-primary transition-colors flex items-center self-end font-mono"
+          class="flex overflow-x-auto pb-8 gap-6 snap-x snap-mandatory scrollbar-hide"
           >
-            {{ 'COMMON.VIEW_LINKEDIN' | translate }}
-          </a>
+          @for (rec of (profile.recommendations || []); track rec) {
+            <div
+              class="min-w-[350px] md:min-w-[450px] snap-center p-8 border border-terminal bg-black hover:border-primary transition-all duration-300 flex flex-col"
+              >
+              <div class="flex items-center mb-6 border-b border-terminal pb-4">
+                <div
+                  class="w-12 h-12 flex items-center justify-center text-primary font-bold text-xl mr-4 shrink-0 border border-primary"
+                  >
+                  {{ rec.author.charAt(0) }}
+                </div>
+                <div>
+                  <h4 class="font-bold text-primary text-lg leading-tight font-mono">
+                    {{ rec.author }}
+                  </h4>
+                  <p class="text-muted text-sm mt-1 font-mono">{{ rec.authorTitle }}</p>
+                </div>
+              </div>
+              <div class="relative flex-grow">
+                <span class="absolute top-0 left-0 text-4xl text-terminal opacity-50 font-mono">"</span>
+                <p class="text-secondary text-sm leading-relaxed pl-6 font-mono italic">
+                  {{ rec.text }}
+                </p>
+              </div>
+              <a
+                [href]="rec.authorLinkedInUrl"
+                target="_blank"
+                class="mt-6 text-xs text-muted hover:text-primary transition-colors flex items-center self-end font-mono"
+                >
+                {{ 'COMMON.VIEW_LINKEDIN' | translate }}
+              </a>
+            </div>
+          }
         </div>
-      </div>
+      }
     </div>
   </div>
 </section>

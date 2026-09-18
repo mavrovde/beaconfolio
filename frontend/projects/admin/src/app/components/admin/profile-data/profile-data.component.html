@@ -27,8 +27,12 @@
       </button>
     </form>
 
-    <div *ngIf="successMessage" class="status-bar status-success">{{ successMessage | translate }}</div>
-    <div *ngIf="errorMessage" class="status-bar status-error">{{ errorMessage | translate }}</div>
+    @if (successMessage) {
+      <div class="status-bar status-success">{{ successMessage | translate }}</div>
+    }
+    @if (errorMessage) {
+      <div class="status-bar status-error">{{ errorMessage | translate }}</div>
+    }
   </div>
 
   <!-- Language filter -->
@@ -52,30 +56,37 @@
         </tr>
       </thead>
       <tbody>
-        <tr *ngFor="let v of versionsTable.items">
-          <td>{{ v.version }}</td>
-          <td>{{ v.language.toUpperCase() }}</td>
-          <td>{{ v.created_at | date: 'short' }}</td>
-          <td>
-            <span [class]="v.is_active ? 'status-active' : 'status-inactive'">
-              {{ (v.is_active ? 'ADMIN.PROFILE_DATA_ACTIVE' : 'ADMIN.PROFILE_DATA_INACTIVE') | translate }}
-            </span>
-          </td>
-          <td>
-            <button
-              *ngIf="!v.is_active"
-              class="btn-secondary"
-              [disabled]="loading"
-              (click)="onActivate(v)"
-            >
-              {{ 'ADMIN.PROFILE_DATA_ACTIVATE' | translate }}
-            </button>
-            <span *ngIf="v.is_active">—</span>
-          </td>
-        </tr>
-        <tr *ngIf="versionsTable.items.length === 0">
-          <td colspan="5" class="empty-row">{{ 'ADMIN.PROFILE_DATA_EMPTY' | translate }}</td>
-        </tr>
+        @for (v of versionsTable.items; track v) {
+          <tr>
+            <td>{{ v.version }}</td>
+            <td>{{ v.language.toUpperCase() }}</td>
+            <td>{{ v.created_at | date: 'short' }}</td>
+            <td>
+              <span [class]="v.is_active ? 'status-active' : 'status-inactive'">
+                {{ (v.is_active ? 'ADMIN.PROFILE_DATA_ACTIVE' : 'ADMIN.PROFILE_DATA_INACTIVE') | translate }}
+              </span>
+            </td>
+            <td>
+              @if (!v.is_active) {
+                <button
+                  class="btn-secondary"
+                  [disabled]="loading"
+                  (click)="onActivate(v)"
+                  >
+                  {{ 'ADMIN.PROFILE_DATA_ACTIVATE' | translate }}
+                </button>
+              }
+              @if (v.is_active) {
+                <span>—</span>
+              }
+            </td>
+          </tr>
+        }
+        @if (versionsTable.items.length === 0) {
+          <tr>
+            <td colspan="5" class="empty-row">{{ 'ADMIN.PROFILE_DATA_EMPTY' | translate }}</td>
+          </tr>
+        }
       </tbody>
     </table>
   </div>

@@ -1,39 +1,45 @@
 <div class="h-full flex flex-col p-4 bg-terminal-dark font-mono text-terminal-text">
-    <div class="mb-4">
-        <h2 class="text-xl font-bold text-terminal-highlight">> Admin Chat with Gemini</h2>
-    </div>
+  <div class="mb-4">
+    <h2 class="text-xl font-bold text-terminal-highlight">> Admin Chat with Gemini</h2>
+  </div>
 
-    <div #scrollContainer
-        class="flex-1 overflow-y-auto mb-4 bg-black border border-terminal-dim p-4 rounded-md space-y-4">
-        <div *ngFor="let msg of messages" class="flex flex-col">
-            <div [ngClass]="{'items-end': msg.role === 'user', 'items-start': msg.role !== 'user'}"
-                class="flex flex-col">
-                <span class="text-xs text-secondary opacity-70 mb-1">{{ msg.role === 'user' ? 'You' : 'Gemini' }}</span>
-                <div [ngClass]="{'bg-terminal-primary/20 border-terminal-primary': msg.role === 'user', 'bg-terminal-dim border-secondary': msg.role !== 'user'}"
-                    class="max-w-[80%] rounded-lg p-3 border text-sm whitespace-pre-wrap">
-                    {{ msg.content }}
-                </div>
-            </div>
+  <div #scrollContainer
+    class="flex-1 overflow-y-auto mb-4 bg-black border border-terminal-dim p-4 rounded-md space-y-4">
+    @for (msg of messages; track msg) {
+      <div class="flex flex-col">
+        <div [ngClass]="{'items-end': msg.role === 'user', 'items-start': msg.role !== 'user'}"
+          class="flex flex-col">
+          <span class="text-xs text-secondary opacity-70 mb-1">{{ msg.role === 'user' ? 'You' : 'Gemini' }}</span>
+          <div [ngClass]="{'bg-terminal-primary/20 border-terminal-primary': msg.role === 'user', 'bg-terminal-dim border-secondary': msg.role !== 'user'}"
+            class="max-w-[80%] rounded-lg p-3 border text-sm whitespace-pre-wrap">
+            {{ msg.content }}
+          </div>
         </div>
+      </div>
+    }
 
-        <div *ngIf="isLoading" class="flex justify-start">
-            <div class="bg-terminal-dim border border-secondary rounded-lg p-3 text-sm animate-pulse">
-                Generating response...
-            </div>
+    @if (isLoading) {
+      <div class="flex justify-start">
+        <div class="bg-terminal-dim border border-secondary rounded-lg p-3 text-sm animate-pulse">
+          Generating response...
         </div>
+      </div>
+    }
 
-        <div *ngIf="messages.length === 0 && !isLoading" class="text-center text-secondary opacity-50 mt-10">
-            Start a conversation...
-        </div>
-    </div>
+    @if (messages.length === 0 && !isLoading) {
+      <div class="text-center text-secondary opacity-50 mt-10">
+        Start a conversation...
+      </div>
+    }
+  </div>
 
-    <div class="flex gap-2">
-        <input [(ngModel)]="userInput" (keydown.enter)="sendMessage()" [disabled]="isLoading" type="text"
-            placeholder="Type a message..."
-            class="flex-1 bg-black border border-terminal-dim rounded-md px-4 py-2 text-terminal-text focus:outline-none focus:border-terminal-highlight disabled:opacity-50" />
-        <button (click)="sendMessage()" [disabled]="isLoading || !userInput.trim()"
-            class="bg-terminal-primary text-black font-bold px-6 py-2 rounded-md hover:bg-terminal-highlight disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-            Send
-        </button>
-    </div>
+  <div class="flex gap-2">
+    <input [(ngModel)]="userInput" (keydown.enter)="sendMessage()" [disabled]="isLoading" type="text"
+      placeholder="Type a message..."
+      class="flex-1 bg-black border border-terminal-dim rounded-md px-4 py-2 text-terminal-text focus:outline-none focus:border-terminal-highlight disabled:opacity-50" />
+    <button (click)="sendMessage()" [disabled]="isLoading || !userInput.trim()"
+      class="bg-terminal-primary text-black font-bold px-6 py-2 rounded-md hover:bg-terminal-highlight disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+      Send
+    </button>
+  </div>
 </div>

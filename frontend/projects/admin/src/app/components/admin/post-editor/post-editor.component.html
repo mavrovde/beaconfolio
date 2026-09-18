@@ -2,182 +2,210 @@
   <h1 class="page-title">&gt; {{ isEditMode ? 'Edit Post' : 'New Post' }}</h1>
 
   @if (loading) {
-  <div class="loading-overlay">
-    <span class="animate-pulse">Fetching post data...</span>
-  </div>
+    <div class="loading-overlay">
+      <span class="animate-pulse">Fetching post data...</span>
+    </div>
   } @else {
-  <form (ngSubmit)="onSubmit()" #postForm="ngForm">
-    <div class="form-row">
-      <div class="form-group">
-        <div class="flex items-center justify-between mb-1">
-          <label for="title" [class.field-changed]="isChanged('title')" class="mb-0">Title *</label>
-          <button type="button" (click)="suggestTitle()" [disabled]="saving || suggestingTitle"
-            class="text-[10px] text-terminal-dim hover:text-secondary flex items-center gap-1 border border-terminal-dim/30 rounded px-2 py-0.5 hover:border-secondary transition-all"
-            title="Suggest title from content">
-            <span *ngIf="!suggestingTitle">✨ Suggest</span>
-            <span *ngIf="suggestingTitle" class="flex items-center gap-1">
-              <span class="animate-spin h-2 w-2 border border-current border-t-transparent rounded-full"></span>
-              Thinking...
-            </span>
-          </button>
-        </div>
-        <input type="text" id="title" name="title" [(ngModel)]="post.title" (input)="onTitleChange()" required
-          [disabled]="saving" />
-      </div>
-
-      <div class="form-group">
-        <div class="flex items-center justify-between mb-1">
-          <label for="slug" [class.field-changed]="isChanged('slug')" class="mb-0">Slug *</label>
-          <button type="button" (click)="suggestSlug()" [disabled]="saving || suggestingSlug"
-            class="text-[10px] text-terminal-dim hover:text-secondary flex items-center gap-1 border border-terminal-dim/30 rounded px-2 py-0.5 hover:border-secondary transition-all"
-            title="Suggest slug from content">
-            <span *ngIf="!suggestingSlug">✨ Suggest</span>
-            <span *ngIf="suggestingSlug" class="flex items-center gap-1">
-              <span class="animate-spin h-2 w-2 border border-current border-t-transparent rounded-full"></span>
-              Thinking...
-            </span>
-          </button>
-        </div>
-        <input type="text" id="slug" name="slug" [(ngModel)]="post.slug" required [disabled]="saving" />
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="form-group">
-        <label for="image_file" [class.field-changed]="isChanged('image_url')">Post Image</label>
-        <div class="flex flex-col gap-2">
-          <input type="file" id="image_file" (change)="onFileSelected($event)" accept="image/*" [disabled]="saving"
-            class="file-input text-sm text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-terminal-dim file:text-primary hover:file:bg-terminal-dim/80" />
-
-          <div *ngIf="imagePreview || post.image_url" class="mt-2 relative inline-block">
-            <img [src]="imagePreview || post.image_url" alt="Preview"
-              class="h-32 rounded border border-terminal-dim object-cover">
-            <div *ngIf="imagePreview" class="text-xs text-yellow-500 mt-1">New image selected (will upload on save)
-            </div>
+    <form (ngSubmit)="onSubmit()" #postForm="ngForm">
+      <div class="form-row">
+        <div class="form-group">
+          <div class="flex items-center justify-between mb-1">
+            <label for="title" [class.field-changed]="isChanged('title')" class="mb-0">Title *</label>
+            <button type="button" (click)="suggestTitle()" [disabled]="saving || suggestingTitle"
+              class="text-[10px] text-terminal-dim hover:text-secondary flex items-center gap-1 border border-terminal-dim/30 rounded px-2 py-0.5 hover:border-secondary transition-all"
+              title="Suggest title from content">
+              @if (!suggestingTitle) {
+                <span>✨ Suggest</span>
+              }
+              @if (suggestingTitle) {
+                <span class="flex items-center gap-1">
+                  <span class="animate-spin h-2 w-2 border border-current border-t-transparent rounded-full"></span>
+                  Thinking...
+                </span>
+              }
+            </button>
           </div>
+          <input type="text" id="title" name="title" [(ngModel)]="post.title" (input)="onTitleChange()" required
+            [disabled]="saving" />
+        </div>
 
-          <!-- Fallback URL input if needed, or hidden -->
-          <details class="text-xs text-terminal-dim">
-            <summary class="cursor-pointer hover:text-secondary">Advanced: Use External URL</summary>
-            <input type="text" id="image_url" name="image_url" [(ngModel)]="post.image_url" [disabled]="saving"
-              placeholder="https://example.com/image.jpg"
-              class="mt-2 w-full bg-black border border-terminal-dim rounded px-2 py-1 text-primary focus:border-primary outline-none" />
-          </details>
+        <div class="form-group">
+          <div class="flex items-center justify-between mb-1">
+            <label for="slug" [class.field-changed]="isChanged('slug')" class="mb-0">Slug *</label>
+            <button type="button" (click)="suggestSlug()" [disabled]="saving || suggestingSlug"
+              class="text-[10px] text-terminal-dim hover:text-secondary flex items-center gap-1 border border-terminal-dim/30 rounded px-2 py-0.5 hover:border-secondary transition-all"
+              title="Suggest slug from content">
+              @if (!suggestingSlug) {
+                <span>✨ Suggest</span>
+              }
+              @if (suggestingSlug) {
+                <span class="flex items-center gap-1">
+                  <span class="animate-spin h-2 w-2 border border-current border-t-transparent rounded-full"></span>
+                  Thinking...
+                </span>
+              }
+            </button>
+          </div>
+          <input type="text" id="slug" name="slug" [(ngModel)]="post.slug" required [disabled]="saving" />
         </div>
       </div>
-    </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="image_file" [class.field-changed]="isChanged('image_url')">Post Image</label>
+          <div class="flex flex-col gap-2">
+            <input type="file" id="image_file" (change)="onFileSelected($event)" accept="image/*" [disabled]="saving"
+              class="file-input text-sm text-secondary file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-terminal-dim file:text-primary hover:file:bg-terminal-dim/80" />
 
-    <div class="form-row">
+            @if (imagePreview || post.image_url) {
+              <div class="mt-2 relative inline-block">
+                <img [src]="imagePreview || post.image_url" alt="Preview"
+                  class="h-32 rounded border border-terminal-dim object-cover">
+                @if (imagePreview) {
+                  <div class="text-xs text-yellow-500 mt-1">New image selected (will upload on save)
+                  </div>
+                }
+              </div>
+            }
+
+            <!-- Fallback URL input if needed, or hidden -->
+            <details class="text-xs text-terminal-dim">
+              <summary class="cursor-pointer hover:text-secondary">Advanced: Use External URL</summary>
+              <input type="text" id="image_url" name="image_url" [(ngModel)]="post.image_url" [disabled]="saving"
+                placeholder="https://example.com/image.jpg"
+                class="mt-2 w-full bg-black border border-terminal-dim rounded px-2 py-1 text-primary focus:border-primary outline-none" />
+            </details>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="language" [class.field-changed]="isChanged('language')">Language</label>
+          <select id="language" name="language" [(ngModel)]="post.language" [disabled]="saving">
+            <option value="en">English</option>
+            <option value="de">German</option>
+          </select>
+        </div>
+
+        <div class="form-group checkbox-group">
+          <label class="status-badge" [class.published]="post.published">
+            <input type="checkbox" name="published" [checked]="post.published" disabled />
+            <span class="status-text">{{ post.published ? '✓ Published' : '○ Draft' }}</span>
+          </label>
+        </div>
+      </div>
+
       <div class="form-group">
-        <label for="language" [class.field-changed]="isChanged('language')">Language</label>
-        <select id="language" name="language" [(ngModel)]="post.language" [disabled]="saving">
-          <option value="en">English</option>
-          <option value="de">German</option>
-        </select>
-      </div>
-
-      <div class="form-group checkbox-group">
-        <label class="status-badge" [class.published]="post.published">
-          <input type="checkbox" name="published" [checked]="post.published" disabled />
-          <span class="status-text">{{ post.published ? '✓ Published' : '○ Draft' }}</span>
-        </label>
-      </div>
-    </div>
-
-    <div class="form-group">
-      <label for="post-tag-input" [class.field-changed]="isChanged('tags')">Tags (Max 5)</label>
-      <div class="flex gap-2 mb-2">
-        <input id="post-tag-input" type="text" [(ngModel)]="newTag" name="newTag" placeholder="add tag..."
-          (keydown.enter)="$event.preventDefault(); addTag()" [disabled]="post.tags.length >= 5 || saving"
-          class="tag-input" />
-        <button type="button" (click)="addTag()" [disabled]="post.tags.length >= 5 || saving"
-          class="btn-secondary text-xs px-2">
-          +
-        </button>
-        <button type="button" (click)="suggestTags()" [disabled]="saving || !post.content || generatingTags"
-          class="text-[10px] text-terminal-dim hover:text-secondary flex items-center gap-1 border border-terminal-dim/30 rounded px-2 py-0.5 hover:border-secondary transition-all ml-auto"
-          title="Generate tags with AI">
-          <span *ngIf="!generatingTags">✨ Suggest Tags</span>
-          <span *ngIf="generatingTags" class="flex items-center gap-1">
-            <span class="animate-spin h-2 w-2 border border-current border-t-transparent rounded-full"></span>
-            Thinking...
-          </span>
-        </button>
-      </div>
-      <div class="tags-list flex flex-wrap gap-2">
-        <span *ngFor="let tag of post.tags"
-          class="tag-chip bg-terminal-dim text-secondary px-2 py-1 rounded text-sm flex items-center gap-1">
-          {{ tag }}
-          <button type="button" (click)="removeTag(tag)" class="hover:text-red-500 font-bold">
-            ×
+        <label for="post-tag-input" [class.field-changed]="isChanged('tags')">Tags (Max 5)</label>
+        <div class="flex gap-2 mb-2">
+          <input id="post-tag-input" type="text" [(ngModel)]="newTag" name="newTag" placeholder="add tag..."
+            (keydown.enter)="$event.preventDefault(); addTag()" [disabled]="post.tags.length >= 5 || saving"
+            class="tag-input" />
+          <button type="button" (click)="addTag()" [disabled]="post.tags.length >= 5 || saving"
+            class="btn-secondary text-xs px-2">
+            +
           </button>
-        </span>
+          <button type="button" (click)="suggestTags()" [disabled]="saving || !post.content || generatingTags"
+            class="text-[10px] text-terminal-dim hover:text-secondary flex items-center gap-1 border border-terminal-dim/30 rounded px-2 py-0.5 hover:border-secondary transition-all ml-auto"
+            title="Generate tags with AI">
+            @if (!generatingTags) {
+              <span>✨ Suggest Tags</span>
+            }
+            @if (generatingTags) {
+              <span class="flex items-center gap-1">
+                <span class="animate-spin h-2 w-2 border border-current border-t-transparent rounded-full"></span>
+                Thinking...
+              </span>
+            }
+          </button>
+        </div>
+        <div class="tags-list flex flex-wrap gap-2">
+          @for (tag of post.tags; track tag) {
+            <span
+              class="tag-chip bg-terminal-dim text-secondary px-2 py-1 rounded text-sm flex items-center gap-1">
+              {{ tag }}
+              <button type="button" (click)="removeTag(tag)" class="hover:text-red-500 font-bold">
+                ×
+              </button>
+            </span>
+          }
+        </div>
       </div>
-    </div>
 
-    <div class="form-group">
-      <div class="flex items-center justify-between mb-1">
-        <label for="summary" [class.field-changed]="isChanged('summary')" class="mb-0">Summary</label>
-        <button type="button" (click)="suggestSummary()" [disabled]="saving || suggestingSummary"
-          class="text-[10px] text-terminal-dim hover:text-secondary flex items-center gap-1 border border-terminal-dim/30 rounded px-2 py-0.5 hover:border-secondary transition-all"
-          title="Suggest summary from content">
-          <span *ngIf="!suggestingSummary">✨ Suggest</span>
-          <span *ngIf="suggestingSummary" class="flex items-center gap-1">
-            <span class="animate-spin h-2 w-2 border border-current border-t-transparent rounded-full"></span>
-            Thinking...
-          </span>
-        </button>
-      </div>
-      <textarea id="summary" name="summary" [(ngModel)]="post.summary" rows="3" [disabled]="saving"
+      <div class="form-group">
+        <div class="flex items-center justify-between mb-1">
+          <label for="summary" [class.field-changed]="isChanged('summary')" class="mb-0">Summary</label>
+          <button type="button" (click)="suggestSummary()" [disabled]="saving || suggestingSummary"
+            class="text-[10px] text-terminal-dim hover:text-secondary flex items-center gap-1 border border-terminal-dim/30 rounded px-2 py-0.5 hover:border-secondary transition-all"
+            title="Suggest summary from content">
+            @if (!suggestingSummary) {
+              <span>✨ Suggest</span>
+            }
+            @if (suggestingSummary) {
+              <span class="flex items-center gap-1">
+                <span class="animate-spin h-2 w-2 border border-current border-t-transparent rounded-full"></span>
+                Thinking...
+              </span>
+            }
+          </button>
+        </div>
+        <textarea id="summary" name="summary" [(ngModel)]="post.summary" rows="3" [disabled]="saving"
         placeholder="Brief description of the post..."></textarea>
-    </div>
-
-    <div class="form-group">
-      <div class="flex items-center justify-between mb-1">
-        <label for="content" [class.field-changed]="isChanged('content')" class="mb-0">Content *</label>
-        <button type="button" (click)="suggestAll()" [disabled]="saving || suggestingAll"
-          class="text-[10px] text-terminal-dim hover:text-secondary flex items-center gap-1 border border-terminal-dim/30 rounded px-2 py-0.5 hover:border-secondary transition-all"
-          title="Suggest Title, Slug, and Summary from content">
-          <span *ngIf="!suggestingAll">✨ Suggest All from Content</span>
-          <span *ngIf="suggestingAll" class="flex items-center gap-1">
-            <span class="animate-spin h-2 w-2 border border-current border-t-transparent rounded-full"></span>
-            Thinking...
-          </span>
-        </button>
       </div>
-      <textarea id="content" name="content" [(ngModel)]="post.content" rows="20" required [disabled]="saving"
+
+      <div class="form-group">
+        <div class="flex items-center justify-between mb-1">
+          <label for="content" [class.field-changed]="isChanged('content')" class="mb-0">Content *</label>
+          <button type="button" (click)="suggestAll()" [disabled]="saving || suggestingAll"
+            class="text-[10px] text-terminal-dim hover:text-secondary flex items-center gap-1 border border-terminal-dim/30 rounded px-2 py-0.5 hover:border-secondary transition-all"
+            title="Suggest Title, Slug, and Summary from content">
+            @if (!suggestingAll) {
+              <span>✨ Suggest All from Content</span>
+            }
+            @if (suggestingAll) {
+              <span class="flex items-center gap-1">
+                <span class="animate-spin h-2 w-2 border border-current border-t-transparent rounded-full"></span>
+                Thinking...
+              </span>
+            }
+          </button>
+        </div>
+        <textarea id="content" name="content" [(ngModel)]="post.content" rows="20" required [disabled]="saving"
         placeholder="Write your post content here..."></textarea>
-    </div>
-
-    @if (errorMessage) {
-    <div class="error-message"><span class="error-icon">✗</span> {{ errorMessage }}</div>
-    }
-
-    <div class="button-group flex justify-between items-center">
-      <div class="flex gap-2">
-        <button type="submit" [disabled]="!postForm.valid || saving || loading" class="btn-primary">
-          {{ saving ? '[ Saving... ]' : post.published ? '[ Save Changes ]' : '[ Save Draft ]' }}
-        </button>
-        <button type="button" (click)="cancel()" [disabled]="saving" class="btn-secondary">
-          [ Cancel ]
-        </button>
       </div>
 
-      <div class="flex gap-2">
-        <button type="button" (click)="togglePublish()"
-          [disabled]="post.published || !postForm.valid || saving || deleting"
-          class="btn-success bg-green-900/50 text-green-400 border border-green-700 px-4 py-2 rounded hover:bg-green-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-          [ Publish ]
-        </button>
-        <button type="button" (click)="togglePublish()" [disabled]="!post.published || saving || loading || deleting"
-          class="btn-warning bg-yellow-900/50 text-yellow-400 border border-yellow-700 px-4 py-2 rounded hover:bg-yellow-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-          [ Unpublish ]
-        </button>
-        <button *ngIf="isEditMode" type="button" (click)="deletePost()" [disabled]="saving || deleting || loading"
-          class="btn-delete bg-red-900/50 text-red-400 border border-red-700 px-4 py-2 rounded hover:bg-red-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-          {{ deleting ? '[ Deleting... ]' : '[ Delete Post ]' }}
-        </button>
+      @if (errorMessage) {
+        <div class="error-message"><span class="error-icon">✗</span> {{ errorMessage }}</div>
+      }
+
+      <div class="button-group flex justify-between items-center">
+        <div class="flex gap-2">
+          <button type="submit" [disabled]="!postForm.valid || saving || loading" class="btn-primary">
+            {{ saving ? '[ Saving... ]' : post.published ? '[ Save Changes ]' : '[ Save Draft ]' }}
+          </button>
+          <button type="button" (click)="cancel()" [disabled]="saving" class="btn-secondary">
+            [ Cancel ]
+          </button>
+        </div>
+
+        <div class="flex gap-2">
+          <button type="button" (click)="togglePublish()"
+            [disabled]="post.published || !postForm.valid || saving || deleting"
+            class="btn-success bg-green-900/50 text-green-400 border border-green-700 px-4 py-2 rounded hover:bg-green-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            [ Publish ]
+          </button>
+          <button type="button" (click)="togglePublish()" [disabled]="!post.published || saving || loading || deleting"
+            class="btn-warning bg-yellow-900/50 text-yellow-400 border border-yellow-700 px-4 py-2 rounded hover:bg-yellow-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            [ Unpublish ]
+          </button>
+          @if (isEditMode) {
+            <button type="button" (click)="deletePost()" [disabled]="saving || deleting || loading"
+              class="btn-delete bg-red-900/50 text-red-400 border border-red-700 px-4 py-2 rounded hover:bg-red-800/50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+              {{ deleting ? '[ Deleting... ]' : '[ Delete Post ]' }}
+            </button>
+          }
+        </div>
       </div>
-    </div>
-  </form>
+    </form>
   }
 </div>

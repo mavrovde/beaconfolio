@@ -10,63 +10,79 @@
         class="absolute left-0 md:left-1/2 h-full w-px border-l-2 border-dashed border-terminal transform -translate-x-1/2 hidden md:block opacity-50">
       </div>
 
-      <div *ngIf="profile" class="space-y-12">
-        <div *ngFor="let job of (profile.experience || []); let i = index; let last = last"
-          [attr.data-year]="job.startDate | yearExtract" class="relative flex md:justify-between items-start group">
-          <!-- Timeline Dot: Square -->
-          <div
-            class="absolute left-0 md:left-1/2 w-4 h-4 bg-black border-2 border-primary transform -translate-x-1/2 z-10 hidden md:block mt-1">
-          </div>
-
-          <!-- Content Card -->
+      @if (profile) {
+        <div class="space-y-12">
+          @for (job of (profile.experience || []); track job; let i = $index; let last = $last) {
+            <div
+              [attr.data-year]="job.startDate | yearExtract" class="relative flex md:justify-between items-start group">
+              <!-- Timeline Dot: Square -->
+              <div
+                class="absolute left-0 md:left-1/2 w-4 h-4 bg-black border-2 border-primary transform -translate-x-1/2 z-10 hidden md:block mt-1">
+              </div>
+              <!-- Content Card -->
           <div [class]="
               'w-full md:w-[45%] mb-8 md:mb-0 border border-terminal p-6 bg-black hover:border-primary transition-colors ' +
               (i % 2 === 0 ? 'md:order-1 md:mr-auto' : 'md:order-2 md:ml-auto')
             ">
-            <div class="mb-4 border-b border-terminal pb-4">
-              <h3 class="text-xl font-bold text-primary font-mono">{{ job.title }}</h3>
-              <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mt-2">
-                <div>
-                  <a *ngIf="job.companyLinkedInUrl" [href]="job.companyLinkedInUrl" target="_blank"
-                    class="text-secondary hover:text-white font-medium no-underline font-mono">
-                    @ {{ job.company }}
-                  </a>
-                  <span *ngIf="!job.companyLinkedInUrl" class="text-secondary font-medium font-mono">
-                    @ {{ job.company }}
-                  </span>
+                <div class="mb-4 border-b border-terminal pb-4">
+                  <h3 class="text-xl font-bold text-primary font-mono">{{ job.title }}</h3>
+                  <div class="flex flex-col sm:flex-row sm:justify-between sm:items-center mt-2">
+                    <div>
+                      @if (job.companyLinkedInUrl) {
+                        <a [href]="job.companyLinkedInUrl" target="_blank"
+                          class="text-secondary hover:text-white font-medium no-underline font-mono">
+                          @ {{ job.company }}
+                        </a>
+                      }
+                      @if (!job.companyLinkedInUrl) {
+                        <span class="text-secondary font-medium font-mono">
+                          @ {{ job.company }}
+                        </span>
+                      }
+                    </div>
+                    <span class="text-sm font-bold font-mono text-primary mt-1 sm:mt-0 glow-text">
+                      [{{ job.startDate }} - {{ job.endDate }}]
+                    </span>
+                  </div>
                 </div>
-                <span class="text-sm font-bold font-mono text-primary mt-1 sm:mt-0 glow-text">
-                  [{{ job.startDate }} - {{ job.endDate }}]
-                </span>
+                <div class="text-sm text-terminal-dim mb-4 flex flex-wrap gap-x-4 gap-y-1 font-mono">
+                  @if (job.location) {
+                    <span>
+                      <i class="fas fa-map-marker-alt mr-1"></i> {{ job.location }}
+                    </span>
+                  }
+                  @if (job.workType) {
+                    <span class="capitalize">
+                      <i class="fas fa-briefcase mr-1"></i> {{ job.workType }}
+                    </span>
+                  }
+                  @if (job.employmentType) {
+                    <span class="capitalize">
+                      <i class="fas fa-clock mr-1"></i> {{ job.employmentType }}
+                    </span>
+                  }
+                </div>
+                @if (job.description) {
+                  <p
+                    class="text-primary text-sm leading-relaxed mb-4 whitespace-pre-line break-words font-mono opacity-90">
+                    {{ job.description }}
+                  </p>
+                }
+                @if (job.skills && job.skills.length > 0) {
+                  <span class="flex flex-wrap gap-2 mt-4">
+                    @for (skill of (job.skills || []); track skill) {
+                      <div
+                        class="text-xs px-2 py-1 border border-terminal text-primary font-mono opacity-80">
+                        {{ skill }}
+                      </div>
+                    }
+                  </span>
+                }
               </div>
             </div>
-
-            <div class="text-sm text-terminal-dim mb-4 flex flex-wrap gap-x-4 gap-y-1 font-mono">
-              <span *ngIf="job.location">
-                <i class="fas fa-map-marker-alt mr-1"></i> {{ job.location }}
-              </span>
-              <span *ngIf="job.workType" class="capitalize">
-                <i class="fas fa-briefcase mr-1"></i> {{ job.workType }}
-              </span>
-              <span *ngIf="job.employmentType" class="capitalize">
-                <i class="fas fa-clock mr-1"></i> {{ job.employmentType }}
-              </span>
-            </div>
-
-            <p *ngIf="job.description"
-              class="text-primary text-sm leading-relaxed mb-4 whitespace-pre-line break-words font-mono opacity-90">
-              {{ job.description }}
-            </p>
-
-            <span *ngIf="job.skills && job.skills.length > 0" class="flex flex-wrap gap-2 mt-4">
-              <div *ngFor="let skill of (job.skills || [])"
-                class="text-xs px-2 py-1 border border-terminal text-primary font-mono opacity-80">
-                {{ skill }}
-              </div>
-            </span>
-          </div>
+          }
         </div>
-      </div>
+      }
     </div>
   </div>
 </section>

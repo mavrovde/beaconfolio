@@ -1,5 +1,5 @@
 import { ChangeDetectorRef, Component, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import {
     AbstractControl,
     FormBuilder,
@@ -29,7 +29,7 @@ function trimmedMinLength(min: number) {
 @Component({
     selector: 'app-contact-form',
     standalone: true,
-    imports: [CommonModule, ReactiveFormsModule, TranslatePipe],
+    imports: [ReactiveFormsModule, TranslatePipe],
     templateUrl: './contact-form.component.html',
 })
 export class ContactFormComponent {

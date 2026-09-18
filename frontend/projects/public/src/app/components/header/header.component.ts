@@ -1,5 +1,5 @@
 import { ChangeDetectorRef, Component, PLATFORM_ID, inject } from '@angular/core';
-import { CommonModule, isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser } from '@angular/common';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { Language, LanguageService } from '@beaconfolio/shared';
 import { YearsService } from '../../services/years.service';
@@ -8,7 +8,7 @@ import { TranslatePipe } from '@beaconfolio/shared';
 @Component({
   selector: 'app-header',
   standalone: true,
-  imports: [CommonModule, TranslatePipe, RouterLink, RouterLinkActive],
+  imports: [TranslatePipe, RouterLink, RouterLinkActive],
   templateUrl: './header.component.html',
   styleUrls: ['./header.component.css'],
 })
