@@ -2,10 +2,10 @@ import { Component, OnInit, PLATFORM_ID, RESPONSE_INIT, inject } from '@angular/
 import { CommonModule, isPlatformBrowser, isPlatformServer } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { BlogService, BlogPost } from '@beaconfolio/shared';
-import { Observable, switchMap, catchError, of, tap, map, startWith } from 'rxjs';
+import { Observable, switchMap, catchError, of, tap, map, startWith, combineLatest, firstValueFrom } from 'rxjs';
 import { HeaderComponent } from '../../header/header.component';
 import { SeoService } from '../../../services/seo.service';
-import { SiteConfigService, DEFAULT_SITE_CONFIG, SiteConfig } from '../../../services/site-config.service';
+import { SiteConfigService, SiteConfig } from '../../../services/site-config.service';
 
 /**
  * View state for the blog-post page. A genuine "not found" (unknown slug → 404,
@@ -135,22 +135,15 @@ export class BlogPostComponent implements OnInit {
   private seoService = inject(SeoService);
   private platformId = inject(PLATFORM_ID);
   private responseInit = inject<ResponseInit | null>(RESPONSE_INIT);
+  // Identity for JSON-LD/share URLs comes from the runtime site config (#65) —
+  // read from the STREAM at every use site, never latched into a field (#459).
+  private siteConfig = inject(SiteConfigService);
 
   vm$: Observable<BlogPostVm> | null = null;
   /** Terminal-style username for the template (#66) — async pipe (rule 5). */
-  readonly unixUser$: Observable<string>;
-  // Identity for JSON-LD/share URLs comes from the runtime site config (#65).
-  private site: SiteConfig = DEFAULT_SITE_CONFIG;
-
-  constructor() {
-    const siteConfig = inject(SiteConfigService);
-
-    // eslint-disable-next-line no-restricted-syntax -- cd-safety-ok: assigns a private field consumed only inside later callbacks — nothing template-bound.
-    siteConfig.config$.subscribe((cfg) => (this.site = cfg));
-    this.unixUser$ = siteConfig.config$.pipe(
-      map((c) => (c.ownerName.split(' ')[0] || 'owner').toLowerCase())
-    );
-  }
+  readonly unixUser$: Observable<string> = this.siteConfig.config$.pipe(
+    map((c) => (c.ownerName.split(' ')[0] || 'owner').toLowerCase())
+  );
 
   ngOnInit() {
     this.vm$ = this.route.paramMap.pipe(
@@ -161,18 +154,30 @@ export class BlogPostComponent implements OnInit {
           this.router.navigate(['/']);
           return of<BlogPostVm>({ status: 'notfound' });
         }
-        return this.blogService.getPost(slug).pipe(
-          map(post => (post
-            ? { status: 'found' as const, post }
-            : { status: 'notfound' as const })),
-          tap(vm => {
+        // The site config is a SOURCE of this view, not a field latched beside
+        // it (#459). `config$` and `getPost` are two independent HTTP streams;
+        // whichever settled first used to win, so a post that arrived before
+        // the config built its JSON-LD from `DEFAULT_SITE_CONFIG` — publishing
+        // 'Portfolio Owner' and a RELATIVE `mainEntityOfPage.@id` (siteUrl is
+        // '') — and nothing ever corrected it. Combined here, the schema
+        // cannot be built from a config that has not arrived. Same treatment
+        // `project-detail` already gives its own schema.
+        return combineLatest([this.siteConfig.config$, this.blogService.getPost(slug)]).pipe(
+          map(([site, post]) => ({
+            site,
+            vm: (post
+              ? { status: 'found' as const, post }
+              : { status: 'notfound' as const })
+          })),
+          tap(({ site, vm }) => {
             if (vm.status === 'found') {
-              this.applySeo(vm.post);
+              this.applySeo(vm.post, site);
             } else {
               // Empty-body (published-but-missing) not-found.
               this.handleNotFound();
             }
           }),
+          map(({ vm }): BlogPostVm => vm),
           // A missing/unpublished post (404 from the API → HttpClient throws) or a
           // transient error resolves to a graceful not-found panel instead of
           // redirecting home (#25). Runs the same not-found side-effects (noindex
@@ -200,7 +205,7 @@ export class BlogPostComponent implements OnInit {
     }
   }
 
-  private applySeo(post: BlogPost): void {
+  private applySeo(post: BlogPost, site: SiteConfig): void {
     this.seoService.updateSeo({
       title: post.title,
       description: post.summary || post.content.substring(0, 160),
@@ -216,13 +221,13 @@ export class BlogPostComponent implements OnInit {
       "datePublished": post.created_at,
       "author": {
         "@type": "Person",
-        "name": this.site.ownerName,
-        "url": this.site.siteUrl
+        "name": site.ownerName,
+        "url": site.siteUrl
       },
       "description": post.summary || post.content.substring(0, 160),
       "mainEntityOfPage": {
         "@type": "WebPage",
-        "@id": `${this.site.siteUrl}/blog/${post.slug}`
+        "@id": `${site.siteUrl}/blog/${post.slug}`
       },
       "keywords": post.tags?.join(', ')
     });
@@ -234,7 +239,12 @@ export class BlogPostComponent implements OnInit {
 
   async sharePost() {
     const slug = this.route.snapshot.paramMap.get('slug');
-    const url = `${isPlatformBrowser(this.platformId) ? window.location.origin : this.site.siteUrl}/blog/${slug}`;
+    // Off-browser the origin comes from the RESOLVED config, awaited here for
+    // the same reason the schema is composed rather than latched (#459).
+    const origin = isPlatformBrowser(this.platformId)
+      ? window.location.origin
+      : (await firstValueFrom(this.siteConfig.config$)).siteUrl;
+    const url = `${origin}/blog/${slug}`;
     if (isPlatformBrowser(this.platformId) && navigator.share) {
       try {
         await navigator.share({ title: document.title, url });
