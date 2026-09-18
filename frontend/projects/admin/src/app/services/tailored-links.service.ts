@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -57,9 +57,9 @@ export interface TailoredLinkPatch {
 
 @Injectable({ providedIn: 'root' })
 export class TailoredLinksService {
-    private apiUrl = `${environment.apiUrl}${environment.apiPrefix}/admin/tailored-links`;
+    private http = inject(HttpClient);
 
-    constructor(private http: HttpClient) {}
+    private apiUrl = `${environment.apiUrl}${environment.apiPrefix}/admin/tailored-links`;
 
     listFor(opportunityId: string): Observable<TailoredLink[]> {
         const params = new HttpParams().set('opportunity_id', opportunityId);

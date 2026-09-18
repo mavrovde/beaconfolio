@@ -1,4 +1,4 @@
-import { Injectable, Inject, DOCUMENT } from '@angular/core';
+import { Injectable, DOCUMENT, inject } from '@angular/core';
 import { Title, Meta } from '@angular/platform-browser';
 import { BehaviorSubject } from 'rxjs';
 import { SiteConfigService, SiteConfig, DEFAULT_SITE_CONFIG } from './site-config.service';
@@ -30,6 +30,10 @@ export const OG_IMAGE_PATH = '/assets/og-image.png';
     providedIn: 'root'
 })
 export class SeoService {
+    private titleService = inject(Title);
+    private metaService = inject(Meta);
+    private document = inject<Document>(DOCUMENT);
+
     // Identity comes from the runtime site config (#65); these derived fields
     // start at the neutral defaults and update when the config arrives, at
     // which point the last-applied SEO data is re-applied so no page keeps
@@ -47,12 +51,9 @@ export class SeoService {
 
     public jsonLdSchema$ = new BehaviorSubject<JsonLd | null>(null);
 
-    constructor(
-        private titleService: Title,
-        private metaService: Meta,
-        @Inject(DOCUMENT) private document: Document,
-        siteConfig: SiteConfigService
-    ) {
+    constructor() {
+        const siteConfig = inject(SiteConfigService);
+
         siteConfig.config$.subscribe((cfg) => {
             // eslint-disable-next-line no-restricted-syntax -- cd-safety-ok: writes go to the Title/Meta DOM services, never to a template-bound property — no repaint needed.
             this.site = cfg;

@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet } from '@angular/router';
 import { GoogleAnalyticsService } from './services/google-analytics.service';
@@ -23,14 +23,12 @@ import { ViewportScroller } from '@angular/common';
   `,
 })
 export class AppComponent implements OnInit {
-  jsonLd$?: Observable<SafeHtml | null>;
+  private googleAnalyticsService = inject(GoogleAnalyticsService);
+  private viewportScroller = inject(ViewportScroller);
+  private seoService = inject(SeoService);
+  private sanitizer = inject(DomSanitizer);
 
-  constructor(
-    private googleAnalyticsService: GoogleAnalyticsService,
-    private viewportScroller: ViewportScroller,
-    private seoService: SeoService,
-    private sanitizer: DomSanitizer
-  ) { }
+  jsonLd$?: Observable<SafeHtml | null>;
 
   ngOnInit() {
     this.googleAnalyticsService.initialize();

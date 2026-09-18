@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
@@ -15,17 +15,15 @@ import { Subscription } from 'rxjs';
   styleUrls: ['./post-list.component.css'],
 })
 export class PostListComponent implements OnInit, OnDestroy {
+  private blogService = inject(BlogService);
+  private cdr = inject(ChangeDetectorRef);
+
   table = new ServerTableHelper<BlogPost>('created_at', 'desc', 10);
   loading = true;
   error: string | null = null;
   deletingIds = new Set<number>();
 
   private subscription?: Subscription;
-
-  constructor(
-    private blogService: BlogService,
-    private cdr: ChangeDetectorRef,
-  ) { }
 
   ngOnInit() {
     // Subscribe to parameter changes

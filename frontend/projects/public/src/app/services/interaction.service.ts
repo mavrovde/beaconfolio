@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -26,7 +26,8 @@ export interface InteractionResponse {
     providedIn: 'root'
 })
 export class InteractionService {
-    constructor(private http: HttpClient) { }
+    private http = inject(HttpClient);
+
 
     submitContact(payload: ContactPayload): Observable<InteractionResponse> {
         const url = `${environment.apiUrl}${environment.apiPrefix}/interactions/contact`;

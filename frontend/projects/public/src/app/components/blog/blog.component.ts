@@ -1,4 +1,4 @@
-import { Component, OnInit, Input, Inject, PLATFORM_ID, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, Input, PLATFORM_ID, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { BlogService, BlogPost, BlogSearchResult } from '@beaconfolio/shared';
 import { Observable, map, of, take } from 'rxjs';
@@ -17,6 +17,17 @@ import { HeaderComponent } from '../header/header.component';
   styleUrls: ['./blog.component.css'],
 })
 export class BlogComponent implements OnInit {
+  private blogService = inject(BlogService);
+  private seoService = inject(SeoService);
+  private router = inject(Router);
+  private cdr = inject(ChangeDetectorRef);
+  private platformId = inject(PLATFORM_ID);
+  // `{ optional: true }` preserves the pre-#425 constructor signature, where this dependency
+  // was `private siteConfig?: SiteConfigService`. The `inject` codemod drops optionality, and a
+  // plain `inject()` THROWS where the old code simply saw `undefined` — the component reads it as
+  // `this.siteConfig?.config$` precisely because the public app can render without it.
+  private siteConfig = inject(SiteConfigService, { optional: true });
+
   @Input() standalone = true;
   // Pagination State
   posts: BlogPost[] = [];
@@ -41,14 +52,7 @@ export class BlogComponent implements OnInit {
    *  so the row repaints when the runtime identity arrives. */
   readonly unixUser$: Observable<string>;
 
-  constructor(
-    private blogService: BlogService,
-    private seoService: SeoService,
-    private router: Router,
-    private cdr: ChangeDetectorRef,
-    @Inject(PLATFORM_ID) private platformId: object,
-    private siteConfig?: SiteConfigService
-  ) {
+  constructor() {
     // eslint-disable-next-line no-restricted-syntax -- cd-safety-ok: assigns a private field consumed only inside later callbacks — nothing template-bound.
     this.siteConfig?.config$?.subscribe((cfg) => (this.site = cfg));
     this.unixUser$ = (this.siteConfig?.config$ ?? of(DEFAULT_SITE_CONFIG)).pipe(

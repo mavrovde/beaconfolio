@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
@@ -21,6 +21,11 @@ import { OpportunitiesService } from '../../../services/opportunities.service';
   templateUrl: './inbox.component.html',
 })
 export class InboxComponent implements OnInit {
+  private interactionsService = inject(InteractionsService);
+  private opportunitiesService = inject(OpportunitiesService);
+  private router = inject(Router);
+  private cdr = inject(ChangeDetectorRef);
+
   readonly statuses = INTERACTION_STATUSES;
   readonly sources = INTERACTION_SOURCES;
 
@@ -41,13 +46,6 @@ export class InboxComponent implements OnInit {
   loading = false;
   error: string | null = null;
   expandedId: string | null = null;
-
-  constructor(
-    private interactionsService: InteractionsService,
-    private opportunitiesService: OpportunitiesService,
-    private router: Router,
-    private cdr: ChangeDetectorRef
-  ) { }
 
   ngOnInit() {
     this.load();

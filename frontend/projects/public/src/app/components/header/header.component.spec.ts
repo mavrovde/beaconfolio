@@ -1,3 +1,4 @@
+import { ChangeDetectorRef, PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { HeaderComponent } from './header.component';
 import { By } from '@angular/platform-browser';
@@ -6,7 +7,7 @@ import { Router, provideRouter } from '@angular/router';
 
 
 import { LanguageService } from '@beaconfolio/shared';
-import { MockLanguageService } from '@beaconfolio/shared/testing';
+import { createInInjectionContext, MockLanguageService } from '@beaconfolio/shared/testing';
 import { YearsService } from '../../services/years.service';
 import { of } from 'rxjs';
 
@@ -206,7 +207,15 @@ describe('HeaderComponent', () => {
   it('scrollToYear should navigate directly and return if not in browser environment', () => {
     const langService = TestBed.inject(LanguageService);
     const yearsService = TestBed.inject(YearsService);
-    const serverComponent = new HeaderComponent(langService, yearsService, router, 'server', { markForCheck: vi.fn() } as any);
+    // The component takes no constructor arguments since #425 — the 'server' platform is
+    // expressed as a provider on a throwaway injector instead of a positional argument.
+    const serverComponent = createInInjectionContext(HeaderComponent, [
+      { provide: LanguageService, useValue: langService },
+      { provide: YearsService, useValue: yearsService },
+      { provide: Router, useValue: router },
+      { provide: PLATFORM_ID, useValue: 'server' },
+      { provide: ChangeDetectorRef, useValue: { markForCheck: vi.fn() } },
+    ]);
     serverComponent.scrollToYear(2020);
     expect(router.navigate).toHaveBeenCalledWith(['/'], { fragment: 'experience' });
   });

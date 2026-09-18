@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TranslatePipe } from '@beaconfolio/shared';
 import { StorageService } from '@beaconfolio/shared';
@@ -11,9 +11,11 @@ import { StorageService } from '@beaconfolio/shared';
     styleUrls: ['./cookie-consent.component.css'],
 })
 export class CookieConsentComponent {
+    private storageService = inject(StorageService);
+
     isVisible = false;
 
-    constructor(private storageService: StorageService) {
+    constructor() {
         this.isVisible = !this.storageService.isDecisionMade();
     }
 

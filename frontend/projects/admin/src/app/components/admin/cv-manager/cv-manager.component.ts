@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
 import { TranslatePipe } from '@beaconfolio/shared';
@@ -14,6 +14,10 @@ import { Subscription } from 'rxjs';
   styleUrls: ['./cv-manager.component.css']
 })
 export class CvManagerComponent implements OnInit, OnDestroy {
+  private cvService = inject(AdminCvService);
+  private fb = inject(FormBuilder);
+  private cdr = inject(ChangeDetectorRef);
+
   requestsTable = new ServerTableHelper<CvRequestSummary>('created_at', 'desc', 10);
   versionsTable = new ServerTableHelper<CvVersion>('created_at', 'desc', 10);
 
@@ -28,11 +32,7 @@ export class CvManagerComponent implements OnInit, OnDestroy {
   private requestsSub?: Subscription;
   private versionsSub?: Subscription;
 
-  constructor(
-    private cvService: AdminCvService,
-    private fb: FormBuilder,
-    private cdr: ChangeDetectorRef
-  ) {
+  constructor() {
     this.uploadForm = this.fb.group({
       version: ['', Validators.required],
       // Checked = becomes the public default (historical behavior). Unchecked

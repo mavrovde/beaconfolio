@@ -1,4 +1,4 @@
-import { Component, Input, Inject, PLATFORM_ID } from '@angular/core';
+import { Component, Input, PLATFORM_ID, inject } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { Observable, map } from 'rxjs';
 import { TranslatePipe } from '@beaconfolio/shared';
@@ -14,6 +14,8 @@ import { environment } from '../../../environments/environment';
   styleUrls: ['./hero.component.css'],
 })
 export class HeroComponent {
+  private platformId = inject(PLATFORM_ID);
+
   @Input() profile: Profile | null = null;
 
   /** Runtime portrait (#333): the backend serves the admin-uploaded photo at
@@ -34,10 +36,9 @@ export class HeroComponent {
    *  derived here so the template stays dumb. */
   readonly availability$: Observable<{ state: string; key: string }>;
 
-  constructor(
-    @Inject(PLATFORM_ID) private platformId: object,
-    siteConfigService: SiteConfigService,
-  ) {
+  constructor() {
+    const siteConfigService = inject(SiteConfigService);
+
     this.availability$ = siteConfigService.config$.pipe(
       map((config) => ({
         state: config.availability,

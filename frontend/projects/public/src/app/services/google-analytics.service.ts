@@ -1,4 +1,4 @@
-import { Injectable, Inject, PLATFORM_ID } from '@angular/core';
+import { Injectable, PLATFORM_ID, inject } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { Router, NavigationEnd } from '@angular/router';
 import { filter, take } from 'rxjs/operators';
@@ -11,15 +11,13 @@ declare const gtag: (...args: unknown[]) => void;
     providedIn: 'root'
 })
 export class GoogleAnalyticsService {
+    private platformId = inject(PLATFORM_ID);
+    private router = inject(Router);
+    private siteConfig = inject(SiteConfigService);
+
     // The measurement id comes from the runtime site config (#65) — empty
     // disables analytics entirely; no id is ever baked into the bundle.
     private googleAnalyticsId = '';
-
-    constructor(
-        @Inject(PLATFORM_ID) private platformId: object,
-        private router: Router,
-        private siteConfig: SiteConfigService
-    ) { }
 
     private isInitialized = false;
 

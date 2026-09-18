@@ -1,4 +1,4 @@
-import { Component, OnInit, Inject, PLATFORM_ID, RESPONSE_INIT } from '@angular/core';
+import { Component, OnInit, PLATFORM_ID, RESPONSE_INIT, inject } from '@angular/core';
 import { CommonModule, isPlatformBrowser, isPlatformServer } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { Observable, of } from 'rxjs';
@@ -150,22 +150,16 @@ export interface TailoredVm {
   `,
 })
 export class TailoredComponent implements OnInit {
+    private route = inject(ActivatedRoute);
+    private tailoredLinks = inject(TailoredLinkService);
+    private profileService = inject(ProfileService);
+    private seoService = inject(SeoService);
+    private platformId = inject(PLATFORM_ID);
+    private responseInit = inject<ResponseInit | null>(RESPONSE_INIT);
+
     vm$: Observable<TailoredVm> | null = null;
     /** Echoed in the not-found panel; read from the snapshot, never mutated. */
     slug = '';
-
-    constructor(
-        private route: ActivatedRoute,
-        private tailoredLinks: TailoredLinkService,
-        private profileService: ProfileService,
-        private seoService: SeoService,
-        @Inject(PLATFORM_ID) private platformId: object,
-        // Server-side this is the mutable ResponseInit the @angular/ssr engine
-        // builds the outgoing Response from; in the browser (and in unit tests)
-        // the platform factory yields null. Mutating `.status` during render is
-        // what turns a soft-404 into a real HTTP 404 (#109).
-        @Inject(RESPONSE_INIT) private responseInit: ResponseInit | null,
-    ) {}
 
     ngOnInit(): void {
         this.slug = this.route.snapshot.paramMap.get('slug') ?? '';

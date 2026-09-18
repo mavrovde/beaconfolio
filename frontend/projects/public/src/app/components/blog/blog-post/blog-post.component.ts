@@ -1,4 +1,4 @@
-import { Component, OnInit, Inject, PLATFORM_ID, RESPONSE_INIT } from '@angular/core';
+import { Component, OnInit, PLATFORM_ID, RESPONSE_INIT, inject } from '@angular/core';
 import { CommonModule, isPlatformBrowser, isPlatformServer } from '@angular/common';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { BlogService, BlogPost } from '@beaconfolio/shared';
@@ -126,25 +126,22 @@ export interface BlogPostVm {
   `]
 })
 export class BlogPostComponent implements OnInit {
+  private route = inject(ActivatedRoute);
+  private router = inject(Router);
+  private blogService = inject(BlogService);
+  private seoService = inject(SeoService);
+  private platformId = inject(PLATFORM_ID);
+  private responseInit = inject<ResponseInit | null>(RESPONSE_INIT);
+
   vm$: Observable<BlogPostVm> | null = null;
   /** Terminal-style username for the template (#66) — async pipe (rule 5). */
   readonly unixUser$: Observable<string>;
   // Identity for JSON-LD/share URLs comes from the runtime site config (#65).
   private site: SiteConfig = DEFAULT_SITE_CONFIG;
 
-  constructor(
-    private route: ActivatedRoute,
-    private router: Router,
-    private blogService: BlogService,
-    private seoService: SeoService,
-    siteConfig: SiteConfigService,
-    @Inject(PLATFORM_ID) private platformId: object,
-    // On the server this is the mutable `ResponseInit` the @angular/ssr engine
-    // uses to build the outgoing Response; on the browser (and in unit tests) the
-    // platform factory yields `null`. Mutating `.status` during render lets us
-    // turn a soft-404 into a real HTTP 404 for unknown blog slugs (#109).
-    @Inject(RESPONSE_INIT) private responseInit: ResponseInit | null
-  ) {
+  constructor() {
+    const siteConfig = inject(SiteConfigService);
+
     // eslint-disable-next-line no-restricted-syntax -- cd-safety-ok: assigns a private field consumed only inside later callbacks — nothing template-bound.
     siteConfig.config$.subscribe((cfg) => (this.site = cfg));
     this.unixUser$ = siteConfig.config$.pipe(

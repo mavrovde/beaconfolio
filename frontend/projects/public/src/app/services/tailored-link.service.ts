@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -25,9 +25,9 @@ export interface TailoredView {
 
 @Injectable({ providedIn: 'root' })
 export class TailoredLinkService {
-    private readonly baseUrl = `${environment.apiUrl}${environment.apiPrefix}/for`;
+    private http = inject(HttpClient);
 
-    constructor(private http: HttpClient) {}
+    private readonly baseUrl = `${environment.apiUrl}${environment.apiPrefix}/for`;
 
     /** The tailored view for a slug. Unknown / disabled / expired all 404. */
     getView(slug: string): Observable<TailoredView> {

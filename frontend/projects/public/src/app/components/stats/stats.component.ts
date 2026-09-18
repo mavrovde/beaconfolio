@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, PLATFORM_ID, Inject, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, PLATFORM_ID, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { Router, NavigationEnd } from '@angular/router';
 import { Observable } from 'rxjs';
@@ -17,6 +17,11 @@ import packageJson from '../../../../../../package.json';
   styleUrls: ['./stats.component.css'],
 })
 export class SystemStatsComponent implements OnInit, OnDestroy {
+  private platformId = inject(PLATFORM_ID);
+  private statsService = inject(StatsService);
+  private router = inject(Router);
+  private cdr = inject(ChangeDetectorRef);
+
   uptime: string = '00:00:00';
   private serverStartTime: number | null = null;
   private intervalId: ReturnType<typeof setInterval> | undefined;
@@ -29,13 +34,9 @@ export class SystemStatsComponent implements OnInit, OnDestroy {
   currentYear: number = new Date().getFullYear();
   site$: Observable<SiteConfig>;
 
-  constructor(
-    @Inject(PLATFORM_ID) private platformId: object,
-    private statsService: StatsService,
-    private router: Router,
-    private cdr: ChangeDetectorRef,
-    siteConfig: SiteConfigService
-  ) {
+  constructor() {
+    const siteConfig = inject(SiteConfigService);
+
     this.site$ = siteConfig.config$;
   }
 

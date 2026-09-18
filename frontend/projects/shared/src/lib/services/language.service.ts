@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { BehaviorSubject, Observable, of } from 'rxjs';
 import { map, catchError, shareReplay } from 'rxjs/operators';
@@ -13,13 +13,16 @@ export type TranslationTree = { [key: string]: string | TranslationTree };
   providedIn: 'root',
 })
 export class LanguageService {
+  private http = inject(HttpClient);
+  private storageService = inject(StorageService);
+
   private currentLangSubject = new BehaviorSubject<Language>('en');
   currentLang$ = this.currentLangSubject.asObservable();
 
   private translationsSubject = new BehaviorSubject<TranslationTree>({});
   translations$ = this.translationsSubject.asObservable();
 
-  constructor(private http: HttpClient, private storageService: StorageService) {
+  constructor() {
     // Try to load saved language if exists (and consented)
     const savedLang = this.storageService.getItem('language') as Language;
     if (savedLang && (savedLang === 'en' || savedLang === 'de')) {

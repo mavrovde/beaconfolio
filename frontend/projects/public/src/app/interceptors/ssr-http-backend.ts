@@ -1,4 +1,4 @@
-import { Injectable, Inject, PLATFORM_ID } from '@angular/core';
+import { Injectable, PLATFORM_ID, inject } from '@angular/core';
 import { isPlatformServer } from '@angular/common';
 import { HttpBackend, HttpEvent, HttpRequest, HttpXhrBackend } from '@angular/common/http';
 import { Observable } from 'rxjs';
@@ -44,10 +44,9 @@ import { SSR_BACKEND_ORIGIN } from '../ssr-backend-origin';
  */
 @Injectable()
 export class SsrHttpBackend implements HttpBackend {
-  constructor(
-    private readonly xhrBackend: HttpXhrBackend,
-    @Inject(PLATFORM_ID) private readonly platformId: object,
-  ) {}
+  private readonly xhrBackend = inject(HttpXhrBackend);
+  private readonly platformId = inject(PLATFORM_ID);
+
 
   handle(req: HttpRequest<unknown>): Observable<HttpEvent<unknown>> {
     if (isPlatformServer(this.platformId) && !req.url.startsWith('http')) {

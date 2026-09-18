@@ -1,4 +1,4 @@
-import { Component, OnInit, Inject, PLATFORM_ID } from '@angular/core';
+import { Component, OnInit, PLATFORM_ID, inject } from '@angular/core';
 import { CommonModule, ViewportScroller, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { Observable } from 'rxjs';
@@ -56,16 +56,14 @@ import { buildPersonSchema } from '../../seo/person-schema';
   `,
 })
 export class HomeComponent implements OnInit {
-  profile$: Observable<Profile> | null = null;
+  private profileService = inject(ProfileService);
+  private route = inject(ActivatedRoute);
+  private viewportScroller = inject(ViewportScroller);
+  private seoService = inject(SeoService);
+  private siteConfig = inject(SiteConfigService);
+  private platformId = inject(PLATFORM_ID);
 
-  constructor(
-    private profileService: ProfileService,
-    private route: ActivatedRoute,
-    private viewportScroller: ViewportScroller,
-    private seoService: SeoService,
-    private siteConfig: SiteConfigService,
-    @Inject(PLATFORM_ID) private platformId: object
-  ) { }
+  profile$: Observable<Profile> | null = null;
 
   ngOnInit() {
     this.profile$ = this.profileService.getProfile();

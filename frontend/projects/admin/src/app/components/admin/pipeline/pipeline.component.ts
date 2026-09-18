@@ -1,4 +1,4 @@
-import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -25,6 +25,11 @@ import {
   templateUrl: './pipeline.component.html',
 })
 export class PipelineComponent implements OnInit {
+  private opportunitiesService = inject(OpportunitiesService);
+  private adminCvService = inject(AdminCvService);
+  private tailoredLinksService = inject(TailoredLinksService);
+  private cdr = inject(ChangeDetectorRef);
+
   readonly stages = OPPORTUNITY_STAGES;
   readonly sources = OPPORTUNITY_SOURCES;
 
@@ -61,13 +66,6 @@ export class PipelineComponent implements OnInit {
     highlighted_projects: '',
     expires_at: '',
   };
-
-  constructor(
-    private opportunitiesService: OpportunitiesService,
-    private adminCvService: AdminCvService,
-    private tailoredLinksService: TailoredLinksService,
-    private cdr: ChangeDetectorRef
-  ) { }
 
   ngOnInit() {
     this.load();

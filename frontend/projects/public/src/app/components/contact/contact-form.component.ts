@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component } from '@angular/core';
+import { ChangeDetectorRef, Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
     AbstractControl,
@@ -33,16 +33,16 @@ function trimmedMinLength(min: number) {
     templateUrl: './contact-form.component.html',
 })
 export class ContactFormComponent {
+    private fb = inject(FormBuilder);
+    private interactionService = inject(InteractionService);
+    private cdr = inject(ChangeDetectorRef);
+
     contactForm: FormGroup;
     isLoading = false;
     successMessage: string | null = null;
     errorMessage: string | null = null;
 
-    constructor(
-        private fb: FormBuilder,
-        private interactionService: InteractionService,
-        private cdr: ChangeDetectorRef
-    ) {
+    constructor() {
         this.contactForm = this.fb.group({
             name: ['', [Validators.required, trimmedMinLength(2), Validators.maxLength(200)]],
             email: ['', [Validators.required, Validators.email]],

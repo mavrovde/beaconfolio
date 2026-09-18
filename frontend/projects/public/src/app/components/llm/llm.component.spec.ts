@@ -4,7 +4,9 @@ import { LlmService } from '@beaconfolio/shared';
 import { FormsModule } from '@angular/forms';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 import { provideRouter, Router } from '@angular/router';
-import { PLATFORM_ID } from '@angular/core';
+import { ChangeDetectorRef, PLATFORM_ID } from '@angular/core';
+import { createInInjectionContext } from '@beaconfolio/shared/testing';
+import { SeoService } from '../../services/seo.service';
 
 class MockLlmService {
     chat = vi.fn().mockResolvedValue(undefined);
@@ -785,7 +787,14 @@ describe('LlmComponent', () => {
             });
 
             it('SSR should return early in saveState, loadState, clearState', () => {
-                const serverComponent = new LlmComponent({} as any, {} as any, {} as any, {} as any, 'server');
+                // No constructor arguments since #425 — the 'server' platform comes from a provider.
+                const serverComponent = createInInjectionContext(LlmComponent, [
+                    { provide: LlmService, useValue: {} },
+                    { provide: ChangeDetectorRef, useValue: {} },
+                    { provide: Router, useValue: {} },
+                    { provide: SeoService, useValue: {} },
+                    { provide: PLATFORM_ID, useValue: 'server' },
+                ]);
                 expect(() => serverComponent.clearState()).not.toThrow();
                 expect(() => (serverComponent as any).saveState()).not.toThrow();
                 expect(() => (serverComponent as any).loadState()).not.toThrow();
