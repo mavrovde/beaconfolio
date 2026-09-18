@@ -20,13 +20,22 @@ All notable changes to this project will be documented in this file.
   the list plus a detail page that silently serves the wrong project; the detail route therefore
   resolves through the same projection the list linked from, and an unknown slug renders a
   not-found panel with a **real SSR 404**, not a soft 404 served as 200 (the `blog-post` contract
-  from #109).
+  from #109). The same argument applies to `techStack`, which is de-duplicated for the same
+  reason — both templates track that list by its value, and a repeated entry logs `NG0955` and
+  reconciles the wrong node. The not-found panel is gated on a resolved state rather than on
+  "nothing yet", so a navigation to a project that DOES exist no longer flashes "no longer
+  exists" while the profile is in flight.
   **The backend now strips each project entry to a nested allowlist** (`title`, `slug`, `summary`,
   `description`, `role`, `startDate`, `endDate`, `techStack`, `links`, `image`, and within `links`
   only `source`/`demo`). `experience` and `education` pass their nested keys through because their
   shape comes from the LinkedIn scraper; a `projects` array is hand-authored, so a stored
   `{"title": "…", "clientContact": "…"}` would otherwise have been served verbatim to
-  unauthenticated callers.
+  unauthenticated callers. `links` is projected explicitly rather than inherited from the
+  top-level allowlist, because the allowlist admits the KEY and nothing else constrained the
+  VALUE: a hand-authored `"links": [{"internalTracker": …}]` (a list, not an object) skipped the
+  nested projection entirely and reached the public wire intact. The ten servable keys are named
+  in the README, so a forker can see that a field outside them is dropped before the API answers
+  rather than merely unrendered.
   **The structured data picks its `@type`**: a project with a repository is `SoftwareSourceCode`
   (which is what `codeRepository` and `programmingLanguage` belong to) and anything else is a
   `CreativeWork`, which names its maker `creator` rather than `author` — emitting one type's
