@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Placeholder for next release.
+
+## [1.15.2] - 2026-09-18
+
 ### Changed
 - **The importer's test suite now actually runs somewhere.** `importer/` shipped 15 tests that no
   gate executed: the pre-push selector had no rule for `importer/**`, so those paths fell through to
