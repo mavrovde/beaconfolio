@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { PLATFORM_ID, RESPONSE_INIT } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, Observable, ReplaySubject, Subject, of } from 'rxjs';
 
 import { TranslatePipe } from '@beaconfolio/shared';
 import { MockTranslatePipe } from '@beaconfolio/shared/testing';
@@ -12,6 +12,7 @@ import { Profile, ProfileService } from '../../../services/profile.service';
 import { SeoService } from '../../../services/seo.service';
 import {
     DEFAULT_SITE_CONFIG,
+    SiteConfig,
     SiteConfigService,
 } from '../../../services/site-config.service';
 import { Project } from '../../../projects-model/projects';
@@ -55,7 +56,17 @@ async function render(
     slug: string | undefined,
     projects: Project[] | undefined,
     served?: Profile | null,
-    options: { platformId?: object; responseInit?: ResponseInit | null; siteUrl?: string } = {}
+    options: {
+        platformId?: object;
+        responseInit?: ResponseInit | null;
+        siteUrl?: string;
+        // The two streams the view is combined from, injectable so a test can
+        // control their ORDER (and their absence). Both are synchronous in the
+        // default case, which is precisely why the ordering bug this pins was
+        // invisible to every other spec in the file.
+        profile$?: Observable<Profile | null>;
+        config$?: Observable<SiteConfig>;
+    } = {}
 ) {
     const params = new BehaviorSubject(
         convertToParamMap(slug === undefined ? {} : { slug })
@@ -72,16 +83,21 @@ async function render(
         imports: [ProjectDetailComponent],
         providers: [
             provideRouter([]),
-            { provide: ProfileService, useValue: { getProfile: () => of(profile) } },
+            {
+                provide: ProfileService,
+                useValue: { getProfile: () => options.profile$ ?? of(profile) },
+            },
             { provide: ActivatedRoute, useValue: { paramMap: params.asObservable() } },
             { provide: SeoService, useValue: seo },
             {
                 provide: SiteConfigService,
                 useValue: {
-                    config$: of({
-                        ...DEFAULT_SITE_CONFIG,
-                        siteUrl: options.siteUrl ?? 'https://example.com',
-                    }),
+                    config$:
+                        options.config$ ??
+                        of({
+                            ...DEFAULT_SITE_CONFIG,
+                            siteUrl: options.siteUrl ?? 'https://example.com',
+                        }),
                 },
             },
             { provide: PLATFORM_ID, useValue: options.platformId ?? 'browser' },
@@ -251,6 +267,48 @@ describe('ProjectDetailComponent', () => {
     ])('marks not-found without a status %s', async (_label, options) => {
         const { seo, responseInit } = await render('no-such-project', PROJECTS, undefined, options);
         expect(seo.setNotFound).toHaveBeenCalledWith('Project');
+        expect(responseInit?.status).toBeUndefined();
+    });
+
+    // The bug this pins: the config used to be latched into a field by its own
+    // `subscribe`, so whichever HTTP stream resolved FIRST decided what the
+    // JSON-LD claimed. A profile that arrived before the config built the node
+    // against `DEFAULT_SITE_CONFIG.siteUrl === ''` — `schema.url` omitted — and
+    // nothing ever rebuilt it. Every other spec in this file injects a
+    // synchronous `of(...)` for both, which is exactly why none of them could
+    // see it (#451 review round 1, finding 5).
+    it('builds the JSON-LD from the config even when the profile resolves first', async () => {
+        const config$ = new ReplaySubject<SiteConfig>(1);
+        const { seo } = await render('beaconfolio', PROJECTS, undefined, { config$ });
+
+        // Profile in, config not yet: nothing may be published on a config the
+        // component has not seen.
+        expect(seo.setJsonLd).not.toHaveBeenCalled();
+
+        config$.next({ ...DEFAULT_SITE_CONFIG, siteUrl: 'https://late.example' });
+        await Promise.resolve();
+
+        expect(seo.setJsonLd).toHaveBeenCalledTimes(1);
+        const node = seo.setJsonLd.mock.calls[0][0] as Record<string, unknown>;
+        expect(node['url']).toEqual('https://late.example/projects/beaconfolio');
+    });
+
+    // A two-state template renders its `@else` while the profile is still in
+    // flight, so navigating to a project that DOES exist flashed "That project
+    // no longer exists." first. `loading` is a real third arm, as `blog-post`
+    // has carried since #25.
+    it('renders the loading arm — not the not-found panel — before the profile arrives', async () => {
+        const profile$ = new Subject<Profile | null>();
+        const { el, seo, responseInit } = await render('beaconfolio', PROJECTS, undefined, {
+            profile$,
+            platformId: 'server',
+        });
+
+        expect(el.querySelector('[data-testid="project-loading"]')).not.toBeNull();
+        expect(el.querySelector('[data-testid="project-missing"]')).toBeNull();
+        expect(el.querySelector('[data-testid="project-detail"]')).toBeNull();
+        // …and the pending state must not have written a 404 to the response.
+        expect(seo.setNotFound).not.toHaveBeenCalled();
         expect(responseInit?.status).toBeUndefined();
     });
 

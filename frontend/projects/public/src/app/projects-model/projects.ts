@@ -115,9 +115,19 @@ export function toRenderableProjects(
             ...raw,
             title,
             slug,
-            techStack: (raw.techStack ?? []).filter(
-                (t): t is string => typeof t === 'string' && t.trim() !== ''
-            ),
+            // De-duplicated for exactly the reason the SLUG is: both templates
+            // render this list with `track tech`, and a repeated entry makes
+            // that track key non-unique — Angular logs NG0955 and reconciles
+            // the wrong node. `techStack` is as hand-authored as the titles
+            // are, so "React" twice is an ordinary typo, not a hypothetical.
+            // A Set preserves first-seen order, which is the authored order.
+            techStack: [
+                ...new Set(
+                    (raw.techStack ?? []).filter(
+                        (t): t is string => typeof t === 'string' && t.trim() !== ''
+                    )
+                ),
+            ],
             links: {
                 source: safeHttpUrl(raw.links?.source),
                 demo: safeHttpUrl(raw.links?.demo),
@@ -125,9 +135,17 @@ export function toRenderableProjects(
             // An absolute URL must pass the same http(s) gate as the links. A
             // RELATIVE path (`assets/…`) is the normal case for a bundled demo
             // asset and cannot carry a scheme at all, so it is kept as authored.
-            image: image ?? (typeof raw.image === 'string' && !raw.image.includes(':')
-                ? raw.image
-                : undefined),
+            // A PROTOCOL-RELATIVE url (`//tracker.example/pixel.png`) also
+            // carries no colon, so the colon test alone let a third-party
+            // absolute URL through the gate it was written to close — it
+            // inherits the page's scheme and loads off-site all the same.
+            image:
+                image ??
+                (typeof raw.image === 'string' &&
+                !raw.image.includes(':') &&
+                !raw.image.startsWith('//')
+                    ? raw.image
+                    : undefined),
         });
     }
     return out;

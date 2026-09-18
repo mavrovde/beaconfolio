@@ -32,6 +32,14 @@ own name and domain.
   a `/projects` list and a `/projects/:slug` detail page per project — title, summary, stack,
   role, dates, screenshot and repo/demo links, each detail page emitting `SoftwareSourceCode`
   (or `CreativeWork`) structured data. Omit the array and the section simply is not there.
+  **Each entry is served through a public allowlist** — `title`, `slug`, `summary`,
+  `description`, `role`, `startDate`, `endDate`, `techStack`, `image` and `links`
+  (`links` itself narrowed to `source` + `demo`). Anything else you keep beside a project
+  (a client contact, an internal tracker link, private notes) is **dropped before the public
+  API responds**, deliberately — a `projects` array is hand-authored, so it must not be served
+  verbatim. The flip side: a brand-new field is not merely unrendered, it never reaches the
+  browser at all, so adding one means editing `PUBLIC_PROJECT_FIELDS` in
+  `backend/app/api/profile.py` as well as the renderer.
 - **Multilingual**: Full support for English and German with real-time switching
 - **Blog with Semantic Search**: AI-powered content discovery using `nomic-embed-text` embeddings
 - **AI Tag Generation**: Auto-suggest tags for posts using a local `llama3.2:1b` model

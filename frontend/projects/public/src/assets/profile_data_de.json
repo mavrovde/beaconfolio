@@ -16,13 +16,7 @@
       "endDate": "Heute",
       "duration": "4 J. 7 M.",
       "workType": "Hybrid",
-      "skills": [
-        "Python",
-        "FastAPI",
-        "PostgreSQL",
-        "Kubernetes",
-        "TypeScript"
-      ],
+      "skills": ["Python", "FastAPI", "PostgreSQL", "Kubernetes", "TypeScript"],
       "companyLinkedInUrl": ""
     },
     {
@@ -33,12 +27,7 @@
       "endDate": "Feb. 2022",
       "duration": "2 J. 9 M.",
       "workType": "Remote",
-      "skills": [
-        "Angular",
-        "Node.js",
-        "Docker",
-        "CI/CD"
-      ],
+      "skills": ["Angular", "Node.js", "Docker", "CI/CD"],
       "companyLinkedInUrl": ""
     },
     {
@@ -49,11 +38,7 @@
       "endDate": "Mai 2019",
       "duration": "2 J. 10 M.",
       "workType": "Vor Ort",
-      "skills": [
-        "Java",
-        "Spring",
-        "SQL"
-      ],
+      "skills": ["Java", "Spring", "SQL"],
       "companyLinkedInUrl": ""
     }
   ],
@@ -72,22 +57,9 @@
     }
   ],
   "skills": [
-    "Python",
-    "FastAPI",
-    "TypeScript",
-    "Angular",
-    "PostgreSQL",
-    "Kubernetes",
-    "Docker",
-    "CI/CD",
-    "AWS",
-    "REST APIs",
-    "Microservices",
-    "TDD",
-    "System Design",
-    "SQL",
-    "Git",
-    "Agile"
+    "Python", "FastAPI", "TypeScript", "Angular", "PostgreSQL", "Kubernetes",
+    "Docker", "CI/CD", "AWS", "REST APIs", "Microservices", "TDD",
+    "System Design", "SQL", "Git", "Agile"
   ],
   "certifications": [
     {
@@ -99,14 +71,8 @@
     }
   ],
   "languages": [
-    {
-      "name": "Englisch",
-      "proficiency": "Verhandlungssicher"
-    },
-    {
-      "name": "Deutsch",
-      "proficiency": "Fließend"
-    }
+    { "name": "Englisch", "proficiency": "Verhandlungssicher" },
+    { "name": "Deutsch", "proficiency": "Fließend" }
   ],
   "projects": [
     {
@@ -116,14 +82,7 @@
       "endDate": "heute",
       "summary": "Eine quelloffene, recruiter-orientierte Portfolio-Vorlage: forken, eigene Inhalte einsetzen, fertig.",
       "description": "Ein Full-Stack-Portfolio mit Blog, semantischer Suche und lokalem LLM. Vorn Angular 22 mit SSR, dahinter FastAPI und PostgreSQL mit pgvector — der gesamte Stack als Docker-Images, ausgeliefert durch einen einzigen Push auf main.\n\nAlles, was eine Forkerin ändern muss, ist Inhalt oder Konfiguration — niemals eine Komponente.",
-      "techStack": [
-        "Angular",
-        "TypeScript",
-        "FastAPI",
-        "PostgreSQL",
-        "pgvector",
-        "Docker"
-      ],
+      "techStack": ["Angular", "TypeScript", "FastAPI", "PostgreSQL", "pgvector", "Docker"],
       "links": {
         "source": "https://github.com/janedoe/beaconfolio",
         "demo": "https://example.com"
@@ -136,12 +95,7 @@
       "endDate": "2025",
       "summary": "Embedding-basierte Suche über einen Dokumentenbestand, Antwort in unter 100 ms im 95. Perzentil.",
       "description": "Chunking, Embeddings und Nächste-Nachbarn-Suche über pgvector, mit einem kleinen Reranking-Schritt vor der Ausgabe. Durchgängig instrumentiert: Eine langsame Anfrage benennt die langsame Stufe.",
-      "techStack": [
-        "Python",
-        "pgvector",
-        "Ollama",
-        "Redis"
-      ],
+      "techStack": ["Python", "pgvector", "Ollama", "Redis"],
       "links": {
         "source": "https://github.com/janedoe/semantic-search"
       }
@@ -152,11 +106,7 @@
       "startDate": "2023",
       "endDate": "2024",
       "summary": "Ein Dashboard für Build-Pipelines, das zeigt, warum ein Lauf langsam war — nicht nur, dass er es war.",
-      "techStack": [
-        "TypeScript",
-        "D3",
-        "Go"
-      ],
+      "techStack": ["TypeScript", "D3", "Go"],
       "links": {
         "demo": "https://example.com"
       }

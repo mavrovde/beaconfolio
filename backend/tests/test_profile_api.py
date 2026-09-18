@@ -492,3 +492,48 @@ def test_projects_survive_the_top_level_allowlist_while_pii_does_not():
     )
     assert view["projects"] == [{"title": "Beaconfolio"}]
     assert "phone" not in view and "birthday" not in view
+
+
+def test_project_links_that_are_not_an_object_are_dropped_entirely():
+    """A non-dict `links` must not ride through on the top-level allowlist.
+
+    `"links"` is itself in `PUBLIC_PROJECT_FIELDS`, so a comprehension that
+    admits it copies the value VERBATIM, and the nested projection — which only
+    fires for a `dict` — never sees it. A hand-authored array is an entirely
+    ordinary thing to write, and it carried `internalTracker` / `clientContact`
+    straight to the public wire (PR #451 review round 1, blocker 4). The
+    projection is now explicit: only an object survives, and only through
+    `PUBLIC_PROJECT_LINK_FIELDS`.
+    """
+    from app.api.profile import public_profile_view
+
+    as_list = public_profile_view(
+        {
+            "projects": [
+                {
+                    "title": "X",
+                    "links": [
+                        {
+                            "internalTracker": "https://jira.internal/PROJ-1",
+                            "clientContact": "ceo@bigcorp.example",
+                        }
+                    ],
+                }
+            ]
+        }
+    )
+    assert as_list["projects"] == [{"title": "X"}]
+
+    as_string = public_profile_view(
+        {"projects": [{"title": "X", "links": "internal://secret-notes"}]}
+    )
+    assert as_string["projects"] == [{"title": "X"}]
+
+    # The documented shape still survives — the drop is scoped to the shapes the
+    # renderer cannot consume, not to `links` as such.
+    as_object = public_profile_view(
+        {"projects": [{"title": "X", "links": {"demo": "https://example.com"}}]}
+    )
+    assert as_object["projects"] == [
+        {"title": "X", "links": {"demo": "https://example.com"}}
+    ]

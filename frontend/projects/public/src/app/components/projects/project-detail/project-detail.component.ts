@@ -1,19 +1,27 @@
 import { Component, OnInit, PLATFORM_ID, RESPONSE_INIT, inject } from '@angular/core';
 import { CommonModule, isPlatformServer } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
-import { Observable, combineLatest, map, tap } from 'rxjs';
+import { Observable, combineLatest, map, startWith, tap } from 'rxjs';
 import { TranslatePipe } from '@beaconfolio/shared';
 
-import { Profile, ProfileService } from '../../../services/profile.service';
+import { ProfileService } from '../../../services/profile.service';
 import { SeoService } from '../../../services/seo.service';
-import {
-    SiteConfigService,
-    SiteConfig,
-    DEFAULT_SITE_CONFIG,
-} from '../../../services/site-config.service';
+import { SiteConfigService, SiteConfig } from '../../../services/site-config.service';
 import { RenderableProject, findProject, formatPeriod } from '../../../projects-model/projects';
 import { buildProjectSchema } from '../../../seo/project-schema';
 import { HeaderComponent } from '../../header/header.component';
+
+/**
+ * View state for the detail page. `loading` is a real arm, not decoration: the
+ * `@else` of a two-state template fires while the profile is still in flight,
+ * so a browser navigation to a project that DOES exist flashed "That project no
+ * longer exists." first. `blog-post` carries the same three states for the same
+ * reason (#25/#109).
+ */
+export interface ProjectDetailVm {
+    status: 'loading' | 'found' | 'notfound';
+    project?: RenderableProject;
+}
 
 /**
  * One project's detail page (#92), `/projects/:slug`.
@@ -41,43 +49,48 @@ export class ProjectDetailComponent implements OnInit {
     private platformId = inject(PLATFORM_ID);
     private responseInit = inject<ResponseInit | null>(RESPONSE_INIT);
 
-    // Starts at the neutral default and updates when the runtime config
-    // arrives, the same idiom `blog-post` uses: the JSON-LD is then always
-    // emitted, and an unconfigured `siteUrl` simply yields a node with no url.
-    private site: SiteConfig = DEFAULT_SITE_CONFIG;
-    private ownerName = '';
-
-    project$!: Observable<RenderableProject | undefined>;
+    vm$!: Observable<ProjectDetailVm>;
 
     readonly period = formatPeriod;
 
     ngOnInit(): void {
-        // The config feeds the JSON-LD's absolute URL. Read here rather than in
-        // an APP_INITIALIZER: a route-extraction build has no backend, and a
-        // provider that BLOCKS on this stream never settles (lessons §78).
-        this.siteConfig.config$.subscribe((cfg) => (this.site = cfg));
-
-        this.project$ = combineLatest([
+        // The site config is a SOURCE of this view, not a field latched beside
+        // it. Subscribing separately and assigning `this.site` was two bugs at
+        // once: in a ZONELESS app an assignment from inside an async callback
+        // never repaints (#94/#118, which is what the cd-safety lint rule
+        // catches), and whichever of the two HTTP streams resolved first won —
+        // a profile that arrived before the config built the JSON-LD against
+        // `DEFAULT_SITE_CONFIG.siteUrl === ''` and nothing ever corrected it.
+        // Combined here, the schema cannot be built from a config that has not
+        // arrived. Read in the stream rather than in an APP_INITIALIZER: a
+        // route-extraction build has no backend, and a provider that BLOCKS on
+        // this stream never settles (lessons §78).
+        this.vm$ = combineLatest([
             this.profileService.getProfile(),
             this.route.paramMap,
+            this.siteConfig.config$,
         ]).pipe(
-            map(([profile, params]): [Profile | null, RenderableProject | undefined] => [
-                profile,
-                findProject(profile?.projects, params.get('slug') ?? ''),
-            ]),
-            tap(([profile, project]) => {
-                this.ownerName = profile?.name ?? '';
+            map(([profile, params, site]) => ({
+                site,
+                ownerName: profile?.name ?? '',
+                project: findProject(profile?.projects, params.get('slug') ?? ''),
+            })),
+            tap(({ site, ownerName, project }) => {
                 if (project) {
-                    this.applySeo(project);
+                    this.applySeo(project, site, ownerName);
                 } else {
                     this.handleNotFound();
                 }
             }),
-            map(([, project]) => project),
+            map(
+                ({ project }): ProjectDetailVm =>
+                    project ? { status: 'found', project } : { status: 'notfound' }
+            ),
+            startWith<ProjectDetailVm>({ status: 'loading' })
         );
     }
 
-    private applySeo(project: RenderableProject): void {
+    private applySeo(project: RenderableProject, site: SiteConfig, ownerName: string): void {
         this.seoService.updateSeo({
             title: project.title,
             description: project.summary || project.description,
@@ -85,7 +98,7 @@ export class ProjectDetailComponent implements OnInit {
             image: project.image,
             keywords: project.techStack.join(', '),
         });
-        this.seoService.setJsonLd(buildProjectSchema(project, this.site, this.ownerName));
+        this.seoService.setJsonLd(buildProjectSchema(project, site, ownerName));
     }
 
     private handleNotFound(): void {

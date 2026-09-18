@@ -160,7 +160,18 @@ def _public_projects(entries: object) -> object:
         if not isinstance(entry, dict):
             projected.append(entry)
             continue
-        item = {k: v for k, v in entry.items() if k in PUBLIC_PROJECT_FIELDS}
+        # `links` is EXCLUDED here and re-added below, never inherited. It is
+        # itself in PUBLIC_PROJECT_FIELDS, so admitting it in the comprehension
+        # copies the value verbatim and the nested projection — which only fires
+        # for a dict — never sees a list or a scalar. A hand-authored
+        # `"links": [{"internalTracker": ...}]` then reached the public wire
+        # unstripped (PR #451 review round 1, blocker 4). Only the documented
+        # object shape is servable; anything else has no renderer and is dropped.
+        item = {
+            k: v
+            for k, v in entry.items()
+            if k in PUBLIC_PROJECT_FIELDS and k != "links"
+        }
         links = entry.get("links")
         if isinstance(links, dict):
             item["links"] = {

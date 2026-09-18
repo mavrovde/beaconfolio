@@ -132,6 +132,19 @@ describe('toRenderableProjects', () => {
         expect(toRenderableProjects([{ title: 'T' }])[0].techStack).toEqual([]);
     });
 
+    // Same argument as the slug de-duplication, applied to the other
+    // hand-authored list: both templates render this one with `track tech`, so
+    // a repeat makes the track key non-unique. Measured on the unfixed code as
+    // `NG0955: … Duplicated keys were: key "React" at index "0" and "1"`
+    // (#451 review round 1, finding 6). First-seen order is preserved, because
+    // the authored order is the one the card shows.
+    it('de-duplicates a repeated tech-stack entry, keeping authored order', () => {
+        const [p] = toRenderableProjects([
+            { title: 'T', techStack: ['React', 'Node', 'React', 'Go'] },
+        ]);
+        expect(p.techStack).toEqual(['React', 'Node', 'Go']);
+    });
+
     // A bundled demo asset is referenced by relative path and has no scheme, so
     // it cannot go through the absolute-URL gate; a scheme-bearing image must.
     it('keeps a relative image path and vets an absolute one', () => {
@@ -143,6 +156,13 @@ describe('toRenderableProjects', () => {
         ).toEqual('https://cdn.example/p.png');
         expect(
             toRenderableProjects([{ title: 'C', image: 'javascript:alert(1)' }])[0].image
+        ).toBeUndefined();
+        // A PROTOCOL-RELATIVE url carries no colon either, so a colon-only test
+        // read it as "relative" and let a third-party absolute URL straight into
+        // `[src]` — it inherits the page's scheme and loads off-site all the
+        // same (#451 review round 1, finding 8).
+        expect(
+            toRenderableProjects([{ title: 'D', image: '//tracker.example/pixel.png' }])[0].image
         ).toBeUndefined();
     });
 });

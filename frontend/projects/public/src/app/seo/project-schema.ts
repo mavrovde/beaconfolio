@@ -38,9 +38,12 @@ export type ProjectSchema = {
 /**
  * schema.org `temporalCoverage` wants an ISO 8601 interval (`start/end`), and
  * an open-ended one is written `start/..` — NOT with the profile's display word
- * ("present"/"Heute"). The dates here are free text a forker types, so anything
- * that does not look like a year or a year-month is passed through untouched
- * rather than coerced into a shape it is not.
+ * ("present"/"Heute"). The dates here are free text a forker types, so the
+ * property is OMITTED rather than coerced whenever the value is not a shape
+ * schema.org accepts: a non-ISO START yields `undefined` (no interval can be
+ * anchored), and a non-ISO END becomes the open-ended `..`. Nothing is passed
+ * through untouched — an earlier version of this comment claimed it was, which
+ * the code never did (#451 review round 1, nit 13).
  */
 const ISO_DATE = /^\d{4}(-\d{2})?(-\d{2})?$/;
 

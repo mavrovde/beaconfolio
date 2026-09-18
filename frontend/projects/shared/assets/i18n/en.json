@@ -51,7 +51,7 @@
     "BLOG": "> Blog_Posts",
     "CONTACT": "> Contact_Info",
     "HIRE_ME": "Hire me",
-    "PROJECTS": "Projects"
+    "PROJECTS": "> Projects"
   },
   "COMMON": {
     "VIEW_CREDENTIAL": "[ View Credential ]",
