@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { fetchBrand, wordmark } from '../helpers';
+import { expectDerivedFromConfig, fetchBrand, wordmark } from '../helpers';
 
 test.describe('Translation Integrity', () => {
     test.beforeEach(async ({ page }) => {
@@ -57,7 +57,7 @@ test.describe('Translation Integrity', () => {
         // pin on the behaviour rather than on the hardcoding.
         const brand = await fetchBrand(request);
         const mark = wordmark(brand);
-        expect(mark).not.toBe('>_ SM');
+        expectDerivedFromConfig(mark, '>_ SM');
         await expect(page.locator('header a', { hasText: mark })).toBeVisible();
 
         // Navigate back to home via logo

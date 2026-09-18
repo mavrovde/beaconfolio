@@ -124,18 +124,30 @@ All notable changes to this project will be documented in this file.
   API serves, and assert the derived value differs from the literal it replaced — a re-hardcoded
   template fails there instead of passing.
   **A preset now reaches the whole page, not just its body.** v1.15.x pointed `body` at each
-  preset’s `--font-sans`, and left **59 `font-mono` utilities across 13 public templates**
-  pinning their own elements to the code face — so `classic` served a serif body wrapped around
+  preset’s `--font-sans`, and left **58 `font-mono` utilities across 17 public templates**
+  pinning their own elements to the code face — 54 in 13 external `.html` files and 4 page-root
+  wrappers written as inline `template:` strings. (That supersedes the "58 across 14" in the entry
+  above, which was 62 across 18: an `.html`-only grep cannot see an inline `template:`, and neither
+  could the first version of the guard below.) So `classic` served a serif body wrapped around
   monospace headings, prose, buttons, nav and form fields, and the other three document presets
   were mixed the same way. Those utilities never meant “this is code”; they meant “the site’s
-  face”, from when the site had exactly one. They now say `font-sans`. The sweep is a **no-op on
-  `terminal`**, whose two font tokens are the same VT323 stack — which is the entire safety
-  argument for it, so the unit contract now pins that equality, pins that `classic` really does
-  declare a different body family from its code family (or the sweep would have changed nothing
-  anywhere), and fails if any public template regains `font-mono`. The `/llm` transcript is the
-  one deliberate exception and keeps the monospace face under every preset: an AI transcript *is*
-  terminal output. The admin console is untouched — its remaining monospace is SQL results, the
-  post editor and slugs, which are code.
+  face”, from when the site had exactly one. They now say `font-sans`, and the status bar's ticking
+  uptime and memory readouts gained `tabular-nums` so a proportional preset does not reflow them
+  once a second. The sweep is a **no-op on `terminal`**, whose two font tokens are the same VT323
+  stack — which is the entire safety argument for it, so the unit contract now pins that equality,
+  pins that `classic` really does declare a different body family from its code family (or the
+  sweep would have changed nothing anywhere), and fails if any public template regains `font-mono`
+  in **either** template form — external `.html` **or** an inline `template:` string, a scope the
+  contract pins explicitly because a guard that reads only one of them reports the sweep complete
+  while half the project is unswept. The `/llm` transcript is the one deliberate exception and
+  keeps the monospace face under every preset: an AI transcript *is* terminal output. The **admin
+  console is deliberately out of scope** — a second app, behind the operator allowlist, with no
+  template guard covering it — so six `font-mono` call sites remain there and a non-terminal preset
+  still renders mixed on those screens; only the SQL panel and the chat wrapper are arguably code.
+  The public app's initial-bundle **warning** budget moves 500 kB → **520 kB**: the brand plumbing
+  puts the initial total at **503.11 kB**, and a build that warns on every run is an alarm nobody
+  reads. 16.89 kB of headroom keeps it able to fire on the next real growth; the 1 MB error ceiling
+  is unchanged. Admin is unaffected at **438.96 kB**.
 
 ## [1.15.2] - 2026-09-18
 

@@ -20,13 +20,22 @@ export { THEME_PRESETS } from '@beaconfolio/shared';
 /** A one-line description per preset, shown beside the picker so the choice is
  *  legible without opening the public site in five tabs.
  *
- *  Keep these HONEST about type: `body` takes `--font-sans` per preset, but 58
- *  `font-mono` utilities across 14 public templates still pin their own
- *  elements to the monospace stack, so a non-terminal preset is mixed rather
- *  than uniformly serif/sans until #67 makes fonts config-driven. The wording
- *  below says "body" for that reason — a picker that promised a serif site and
- *  delivered a serif paragraph beside monospace panels would be the same class
- *  of claim-without-measurement the theme contract exists to stop. */
+ *  Keep these HONEST about type. Until #67 they said "body" deliberately,
+ *  because 58 `font-mono` utilities across 17 public templates pinned their own
+ *  elements to the monospace stack and a non-terminal preset rendered mixed.
+ *  #67 swept those, so a preset now reaches the whole PUBLIC page — which is
+ *  what this picker chooses for, and what the wording below describes.
+ *
+ *  THIS console was deliberately left out of that sweep: a second app, behind
+ *  the operator allowlist, with no template guard covering it. Six `font-mono`
+ *  call sites remain here — the SQL result panel (2), two dashboard controls,
+ *  an inbox badge and the chat panel's terminal-styled wrapper — so a
+ *  non-terminal preset still renders mixed on those admin screens. Only the
+ *  SQL panel and the chat wrapper are arguably code; the other three are
+ *  chrome that nobody has swept. Said plainly rather than filed, because a
+ *  picker that promised a serif site and delivered a serif paragraph beside
+ *  monospace panels would be the same class of claim-without-measurement the
+ *  theme contract exists to stop. */
 export const THEME_DESCRIPTIONS: Readonly<Record<string, string>> = {
     terminal: 'Green phosphor CRT — the default, with scanlines and glow',
     dark: 'Neutral dark, no CRT effects',

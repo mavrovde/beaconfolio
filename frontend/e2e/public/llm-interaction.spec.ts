@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { API_PREFIX } from '../config';
-import { fetchBrand, hasShellChrome, shellPrompt } from '../helpers';
+import { expectDerivedFromConfig, fetchBrand, hasShellChrome, shellPrompt } from '../helpers';
 
 test.describe('LLM Terminal', () => {
     test.beforeEach(async ({ page }) => {
@@ -32,7 +32,7 @@ test.describe('LLM Terminal', () => {
         if (hasShellChrome(brand.theme)) {
             const prompt = shellPrompt(brand, '~/llm');
             await expect(page.getByText(prompt, { exact: true }).first()).toBeVisible();
-            expect(prompt).not.toBe('user@portfolio:~/llm$');
+            expectDerivedFromConfig(prompt, 'user@portfolio:~/llm$');
         } else {
             await expect(page.getByText(/^\w+@[\w.-]+:~/)).toHaveCount(0);
         }

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { config } from '../config';
-import { fetchBrand, hasShellChrome, shellPrompt, waitForPostQueryable } from '../helpers';
+import { expectDerivedFromConfig, fetchBrand, hasShellChrome, shellPrompt, waitForPostQueryable } from '../helpers';
 
 test.describe('Blog Interactions', () => {
     test.beforeEach(async ({ page }) => {
@@ -182,7 +182,7 @@ test.describe('Blog Interactions', () => {
             // The guard that keeps the line above falsifiable: the configured
             // identity must actually differ from the literal it replaced, or a
             // revert to the hardcoded template would still pass.
-            expect(prompt).not.toBe('user@portfolio:~/blog$');
+            expectDerivedFromConfig(prompt, 'user@portfolio:~/blog$');
         } else {
             // The other half of #67: a serif document preset must not greet a
             // visitor with a shell prompt at all.

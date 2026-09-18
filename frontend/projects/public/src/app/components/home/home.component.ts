@@ -36,7 +36,7 @@ import { buildPersonSchema } from '../../seo/person-schema';
   ],
   template: `
     <div
-      class="bg-black min-h-screen text-primary selection:bg-primary selection:text-black font-mono"
+      class="bg-black min-h-screen text-primary selection:bg-primary selection:text-black font-sans"
       >
       <app-header></app-header>
     

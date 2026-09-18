@@ -125,10 +125,12 @@ describe('theme token contract', () => {
 /**
  * Per-preset typography (#67 — the residual #339 deferred here).
  *
- * #339 pointed `body` at each preset's `--font-sans`, but 59 `font-mono`
- * utilities across 13 public templates kept their own elements on the
- * monospace face, so `classic` rendered a serif body around monospace
- * headings, prose, buttons and form fields. Those utilities never meant
+ * #339 pointed `body` at each preset's `--font-sans`, but 58 `font-mono`
+ * utilities across 17 public templates kept their own elements on the
+ * monospace face — 54 in 13 external `.html` files and 4 page-root wrappers
+ * written as inline `template:` strings — so `classic` rendered a serif body
+ * around monospace headings, prose, buttons and form fields. (`/llm`'s
+ * transcript holds 4 more and keeps them.) Those utilities never meant
  * "this is code" — they meant "the site's face", back when the site had
  * exactly one. They now say `font-sans`.
  *
@@ -174,11 +176,31 @@ describe('per-preset typography (#67)', () => {
     // document preset again. `llm.component.html` is the deliberate exception
     // — an AI transcript IS terminal output, and it keeps the monospace face
     // under every preset.
+    //
+    // BOTH template forms are in scope, and that is the whole point. Round 1
+    // of this PR shipped this guard filtering `.endsWith('.html')` alone: it
+    // was green while four page-root wrappers — home, blog-post, not-found and
+    // tailored — still carried `font-mono` in an inline `template:`, so those
+    // four pages rendered a monospace wrapper around swept serif descendants
+    // under every document preset. A guard blind to half the project's
+    // templates is worse than no guard, because it reports the sweep complete.
     it('no public template pins the code face except the LLM transcript', () => {
         const root = join(__dirname, 'components');
-        const offenders = readdirSync(root, { recursive: true, encoding: 'utf-8' })
-            .filter((relative) => relative.endsWith('.html'))
-            .filter((relative) => !relative.includes('llm'))
+        const scanned = readdirSync(root, { recursive: true, encoding: 'utf-8' })
+            .filter((r) => r.endsWith('.html') || (r.endsWith('.ts') && !r.endsWith('.spec.ts')))
+            .filter((r) => !r.includes('llm'));
+
+        // Pin the SCOPE, not just the result: re-narrowing the filter back to
+        // `.html` would make the assertion below pass again for the wrong
+        // reason, which is exactly how the omission survived round 1.
+        expect(scanned, 'external templates are out of scope').toContain(
+            join('hero', 'hero.component.html'),
+        );
+        expect(scanned, 'inline templates are out of scope').toContain(
+            join('home', 'home.component.ts'),
+        );
+
+        const offenders = scanned
             .filter((relative) => readFileSync(join(root, relative), 'utf-8').includes('font-mono'))
             .sort();
 

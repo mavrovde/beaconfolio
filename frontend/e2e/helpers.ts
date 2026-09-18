@@ -97,3 +97,30 @@ export function wordmark(brand: ServedBrand): string {
 export function hasShellChrome(theme: string): boolean {
     return theme === 'terminal';
 }
+
+/**
+ * The falsifiability half of every derived-identity assertion (#67).
+ *
+ * Asserting `derived !== '<the literal the template used to hardcode>'` is what
+ * makes the visible assertion beside it mean something: without it, a revert to
+ * the hardcoded prompt or wordmark would still pass. But that guard can only
+ * speak when the SERVED identity actually differs from the literal. A
+ * deployment whose `SITE_NAME` genuinely slugs to `portfolio`, or whose
+ * `OWNER_NAME` genuinely initials to `SM`, renders exactly what the hardcoding
+ * rendered — no test can separate the two by inspection — and asserting a
+ * difference there turns a correct configuration red.
+ *
+ * So it steps aside for that case and says why, rather than inverting.
+ */
+export function expectDerivedFromConfig(derived: string, hardcoded: string): void {
+    if (derived === hardcoded) {
+        console.warn(
+            `[#67] the served identity derives to ${JSON.stringify(derived)}, which is also ` +
+                `the literal the templates used to hardcode — this run cannot tell a derived ` +
+                `value from a reverted one. Set a distinct SITE_NAME/OWNER_NAME to restore it.`,
+        );
+        return;
+    }
+
+    expect(derived).not.toBe(hardcoded);
+}

@@ -58,7 +58,7 @@ export interface TailoredVm {
         ContactComponent,
     ],
     template: `
-    <div class="bg-black min-h-screen text-primary selection:bg-primary selection:text-black font-mono">
+    <div class="bg-black min-h-screen text-primary selection:bg-primary selection:text-black font-sans">
       <app-header></app-header>
     
       @if (vm$ | async; as vm) {
