@@ -103,6 +103,7 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
 | hook | `hook-parse-lib.sh` | the ONE quote-aware command-parsing model, sourced by all four hooks (#237) |
 | hook | `prepush-select-lib.sh` | the diff→leg map the pre-push gate selects with; the default arm, an empty diff and an unobtainable range all select ALL, and every rule is killed by `pre-push-tests.test.sh --mutations` (#377) |
 | tooling | `scripts/dedup_changelog_unreleased.py` | run after ANY rebase touching `CHANGELOG.md` (via `/prep-pr` step 2): merges duplicated `[Unreleased]` sections and drops repeated ENTRIES — a heading-only check passes while entries are doubled (#354/#362 each cost a round). Never loses content: unrecognised headings, preamble text and fenced code are preserved; self-test in the pre-push gate |
+| tooling | `scripts/retro_metrics.sh` | the release window's retrospective figures as MEASUREMENTS, not hand counts: corpus bounded on the RELEASE PR's `mergedAt` (not the tag commit's date, which drops the release PR from its own release by one second), timestamps normalised to UTC, verdicts heading-anchored AND replayed at `mergedAt` so a back-filled review cannot be miscounted as a gate — prints corpus, median files/PR, canonical verdicts, mean rounds, round-1 approvals and rework share. Run it at `/retro` step 2 instead of re-deriving the jq. Class F ("a claim asserted rather than measured") has been the top or joint-top defect class in five consecutive retrospectives and its instances are overwhelmingly hand-counted figures in the retro docs themselves (v1.15.0 retro) |
 | lint | `scripts/check_compose_env.sh` | every documented `Settings` knob must reach the backend container in BOTH compose files — pre-push + CI (v1.13.0 retro; #296/#297/#298 each shipped this bug) |
 | lint | `scripts/check_env_example_complete.sh` | `backend/.env.example` documents EXACTLY the `Settings` knobs `config.py` consumes (missing AND orphan keys both red, `validation_alias`-aware) — CI only, the companion leg to the compose-env contract (#61) |
 | lint | `scripts/run_frontend_suites.sh` | runs the Vitest projects independently and retries ONCE on the worker-teardown race (present on 4.x AND 5.x, #309); replaces `npm test` in the pre-push gate AND wraps each frontend job in CI (#319) |
@@ -323,7 +324,10 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
     API/AI path, and plain mocks/stubs for boundaries the others cannot reach. "The units are
     green" is not validation — v1.12.0 shipped three screens at 100% unit coverage that had never
     rendered in a browser (lessons §29). **PR CI carries this evidence itself since #380**
-    (`.github/workflows/pr-evidence.yml`): the **WireMock integration tier runs automatically**
+    (`.github/workflows/pr-evidence.yml` for the integration tier and
+    `.github/workflows/pr-evidence-e2e.yml` for the browser tier — split by #424 so a label
+    event can no longer post a `skipped` check-run over the integration tier's green one):
+    the **WireMock integration tier runs automatically**
     on every PR that touches `backend/**`, `frontend/**`, `proxy/**` or a compose file (docs-only
     PRs pay nothing), and the **full browser E2E runs on demand via the `run-e2e` PR label** —
     apply the label when the change's failure mode needs a real browser. A measured LOCAL run
@@ -363,6 +367,19 @@ that adds or removes a tool; the #232 drift-check pattern is the model if it kee
     **`/prep-pr` step 2 is where both halves are checked**, so run it rather than re-deriving the
     commands here. Merging two `[Unreleased]` sections duplicates *headings* and *entries*
     independently, and a heading-only check passes while entries are doubled.
+
+    **A verdict that is NOT from an independent `pr-reviewer` must SAY SO, in the verdict, in its
+    own paragraph.** (v1.15.0: the owner directed the window to run solo — no subagents — so **3 of
+    6 PRs merged on a verdict written by the main session**, #433 round 3, #434 and the release PR
+    #436.) Reviewer and author share one GitHub identity here, so nothing downstream can tell the
+    two apart: `audit_no_verdict_merges.sh` counts the verdict, the trend table counts the round,
+    and `pre-merge-gate.sh` passes — a self-review is *mechanically indistinguishable* from an
+    independent one, which is exactly why the disclosure has to be written by the only party that
+    knows. State who produced it and what else that session did to the branch (authored it?
+    rebased it? resolved conflicts?), so a later reader can weigh the verdict instead of assuming
+    an arm's-length look that did not happen. A solo verdict is **still a real gate** — it caught
+    findings in this window — and it is **still better than merging unreviewed**; it is simply not
+    the thing rule 13 asks for, and the record must not imply otherwise.
 
 ## Issue tracking, milestones & labels (development flow)
 

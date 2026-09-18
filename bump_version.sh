@@ -108,6 +108,39 @@ fi
 
 echo "Bumping version ($BUMP_TYPE): $current_version -> $new_version"
 
+# --- Release-queue gate (v1.15.0 retro) ---------------------------------------
+# `release-manager.md` step 1 has said "NEVER cut the release PR while issues
+# planned under release:vX.Y.Z are still open" since the v1.14.3 revert cost two
+# PRs and a rule-13 violation. v1.15.0 was cut anyway — not by overriding that
+# paragraph but by never RUNNING the query: the release was assembled from what
+# `[Unreleased]` happened to contain, and the OWNER, not any gate, found #70,
+# #265 and #386 still labelled `release:v1.15.0` afterwards. A rule that is only
+# prose is not a control (lessons §30: assert at the layer that can enforce), so
+# the bump asks GitHub at the moment the version actually moves.
+#
+# Fails OPEN and says so when `gh` is missing, unauthenticated or offline — a
+# release must never be blocked by a network hiccup, but "I could not check" must
+# never read as "the queue is empty". Skip a deliberate, owner-de-scoped cut with
+# RELEASE_QUEUE_GATE=0 (named, like PR_MERGE_GATE=0, so it is visible in history).
+if [ "${RELEASE_QUEUE_GATE:-1}" != "0" ]; then
+    queue_label="release:v$new_version"
+    if ! command -v gh > /dev/null 2>&1; then
+        echo "WARNING: gh not found — release queue for '$queue_label' UNVERIFIED (not empty; unchecked)." >&2
+    elif ! queue=$(gh issue list --label "$queue_label" --state open --limit 100 \
+                       --json number,title --jq '.[] | "  #\(.number)  \(.title)"' 2>/dev/null); then
+        echo "WARNING: could not query GitHub — release queue for '$queue_label' UNVERIFIED (not empty; unchecked)." >&2
+    elif [ -n "$queue" ]; then
+        echo "REFUSING to cut $new_version: issues are still open under '$queue_label':" >&2
+        printf '%s\n' "$queue" >&2
+        echo >&2
+        echo "De-scope them one by one (move the label to the next release) or, if the owner" >&2
+        echo "has explicitly de-scoped them, re-run with RELEASE_QUEUE_GATE=0." >&2
+        exit 1
+    else
+        echo "Release queue for '$queue_label': empty (checked)."
+    fi
+fi
+
 if [ "$DRY_RUN" -eq 1 ]; then
     echo "Dry run — no files modified. Would update:"
     echo "  VERSION"

@@ -5,8 +5,40 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **`scripts/retro_metrics.sh` — the release retrospective's figures become EXECUTABLE.** Prints
+  the corpus, median files/PR, canonical verdicts, mean rounds, round-1 approvals and rework share
+  for a release window, with the three bounding rules that have each cost a release baked in:
+  bound on the release PR's `mergedAt` (the tag commit's date drops the release PR from its own
+  release by one second), normalise timestamps to UTC, and replay every verdict at `mergedAt` so a
+  back-filled review cannot be miscounted as a gate. Motivation, measured: "a claim asserted rather
+  than measured" has been the top or joint-top defect class in **five consecutive** retrospectives,
+  and **5 of v1.15.0's 7 instances are hand-counted figures in the retro/wiki documents
+  themselves**. Wired into `/retro` step 2 and the `release-retro` skill.
 
 ### Changed
+- **`bump_version.sh` refuses to cut a release while its `release:vX.Y.Z` queue holds open
+  issues.** v1.15.0 was assembled from `[Unreleased]` content and the label queue was never
+  queried; the owner, not any gate, found #70/#265/#386 still labelled `release:v1.15.0` and open.
+  The `release-manager` charter had forbidden exactly this since v1.14.3 — the rule did not fail,
+  it was never executed (lessons §30: assert at the layer that can enforce). Fails **open** when
+  `gh` is missing or offline and says `UNVERIFIED (not empty; unchecked)`, so "could not check"
+  never reads as "empty"; an owner de-scope bypasses it with a named `RELEASE_QUEUE_GATE=0`.
+  Four new stub-driven cases in `test-bump-version.sh` (23 passed), mutation-checked.
+- **Rule 13: a verdict that is NOT from an independent `pr-reviewer` must disclose that, in the
+  verdict.** 3 of v1.15.0's 6 PRs merged on a main-session verdict under the owner's solo
+  directive — including the release's largest PR. Reviewer and author share one GitHub identity
+  here, so the audit script, the merge gate and the trend table all count a self-review as an
+  independent one; only the session writing it can say otherwise.
+- Rule 12's workflow reference now names both evidence tiers (`pr-evidence.yml` and
+  `pr-evidence-e2e.yml`), split by #424 — the one item PR #433 handed to the owner rather than
+  editing project configuration on an agent's request.
+- `lessons-learned` §39 gains the input corollary: a PreToolUse deny kills the whole chain, so the
+  **file a gated command consumes** must exist before the gated command is composed — otherwise
+  the retry fails with `no such file or directory`, three commands away from the cause.
+- **The `Tokens` / `Tokens per merged PR` / `Agent-time` trend columns are RETIRED** after a
+  fourth consecutive release with no usable capture (v1.15.0: none of the five telemetry fields is
+  set for #431, the one issue it shipped). Historical cells stay; new rows read `retired`.
+  Resolves #386 by retirement rather than a fifth attempt.
 - **Snyk no longer runs on every PR commit — it runs on the MERGE (owner directive 2026-09-18)** —
   `snyk-security.yml`'s `pull_request` trigger billed `snyk test` / `snyk code test` against the
   monthly private-test quota on every commit of every open PR. The quota ran out mid-v1.15.0, so

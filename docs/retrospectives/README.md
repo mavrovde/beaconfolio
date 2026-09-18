@@ -35,7 +35,7 @@ introduced a second failure mode: merging against a *standing* REQUEST CHANGES) 
 (fake-greens, the class #393 guards). Both are back-filled only where a release's own record
 measured them; **`n-a` means not measured, never estimated.**
 
-| Release | PRs merged | Verdicts (loose / canonical-heading) | Mean rounds | Approved r1 | Rework share of verdicts | "Claim not measured" (F) findings | Class G findings | Merged w/o valid APPROVE | Median files/PR | Tokens | Tokens / merged PR | Agent-time |
+| Release | PRs merged | Verdicts (loose / canonical-heading) | Mean rounds | Approved r1 | Rework share of verdicts | "Claim not measured" (F) findings | Class G findings | Merged w/o valid APPROVE | Median files/PR | Tokens ⚰️ | Tokens / merged PR ⚰️ | Agent-time ⚰️ |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
 | [v1.12.0](v1.12.0.md) | 10 | 24 / n-a¹ | **2.4** | 20% (2/10) | 58%⁴ | **9**⁵ | n-a | n-a | 17 | 9.07M² | 907k² | 28.1h² |
 | [v1.13.0](v1.13.0.md) | 16 | 52 / **50** | **3.13** | **0% (0/16)** | 68%⁴ | **12**⁵ | n-a | 0 | 14 | not recorded³ | n-a³ | 23.5h tag→tag |
@@ -43,6 +43,7 @@ measured them; **`n-a` means not measured, never estimated.**
 | [v1.14.1](v1.14.1.md) | 17¹¹ | 44 / **41**¹⁰ | **2.41**¹⁰ | **29% (5/17)** | 59%⁸ | **5**⁵ | **2** | 1 (#355) | 8 | **2.60M**⁹ | **153k**⁹ | **6.0h**⁹ · 107h tag→tag |
 | [v1.14.2](v1.14.2.md) | 14¹² | 40 / **38**¹³ | **2.71**¹³ | **0% (0/14)**¹³ | 63%¹³ | **22**⁵ ¹⁴ | **8** | **6 of 14 (43%)**¹⁵ | 7 | not recorded¹⁶ | n-a¹⁶ | n-a¹⁶ · **20.1h tag→tag** |
 | [v1.14.3](v1.14.3.md) | 17 | 36 / **34**¹⁷ | **2.00**¹⁷ | **18% (3/17)**¹⁷ | 50%¹⁷ | **8**⁵ (2 on the retro PR) | **9**¹⁸ | **1 (#412)**¹⁹ | 8 | partial²⁰ | n-a²⁰ | n-a²⁰ · **15.8h tag→tag** |
+| [v1.15.0](v1.15.0.md) | **6**²² | 11 / **11**²³ | **1.83** | **50% (3/6)**²⁴ | 45%²³ | **7**⁵ (5 on doc surfaces) | **0**²⁵ | **0** | 7 | retired²¹ | retired²¹ | retired²¹ · 71.6h tag→tag²⁶ |
 
 ¹ v1.12.0's verdict headings predate the mandated form, so a canonical-heading re-count undercounts
 that window (15). From v1.13.0 the heading is charter-mandated **and** gate-enforced, so this column
@@ -185,6 +186,63 @@ other three were not captured at close-the-loop and are not reconstructable
 (`Review rounds`/`Agent`/`Model` are 11 of 11 after the retro's thread-derived back-fill).
 Summing a gap is the note-3 defect; **#386 stays open a third release on this criterion.**
 
+²¹ **RETIRED at v1.15.0 — `Tokens`, `Tokens / merged PR` and `Agent-time` are no longer series
+columns.** The clause v1.14.3 declared **binary** ("filled for every shipped board item at
+close-the-loop, or the columns formally retired") failed a **fourth** consecutive time: Project 3
+holds **none** of `Tokens (k)` / `Time of processing (min)` / `Review rounds` / `Agent` / `Model`
+for **#431, the one issue v1.15.0 fully shipped**, nor for #424. The four cells above it read
+*estimates* (v1.12.0), *not recorded* (v1.13.0, v1.14.2), *fields including an unshipped item*
+(v1.14.0), *subagent-only* (v1.14.1) and *partial, 8 of 11* (v1.14.3) — six releases, six
+different meanings, which is not a series. **Historical cells stay: they are the record.** New
+rows read `retired`. What replaces them is what GitHub actually holds and anyone can re-derive —
+PR count, verdict count, rounds, median files/PR, open→merge wall clock — all printed by
+`scripts/retro_metrics.sh`. A cycle that DOES capture per-run effort end-to-end publishes it as
+that release's own appendix (the way [v1.14.1](v1.14.1.md#appendix--per-run-effort-telemetry)
+did), never as a column. **#386 is resolved by this retirement**, not by another attempt.
+
+²² **6 PRs — the smallest corpus in the series, and every RATE in this row must be read with that
+denominator.** 3 of the 6 are ≤8-file docs/config PRs and only one (#433) is a feature PR with a
+reviewer-driven round trip. Prefer per-PR normalisation when comparing this row to the 14-17 PR
+windows: class F is *flat* in absolute terms (8 → 7) and therefore **worse per PR** than v1.14.3.
+
+²³ **First window where the LOOSE and ANCHORED filters return the same number: 11 and 11**, and
+all 11 are pre-merge (zero back-fills, second window running). No author fix-report in the window
+even *contains* an uppercase marker — #429's and #433's both open "fix report (not a verdict)" and
+avoid the words entirely, which is the v1.13.0 rule working at the author side rather than being
+caught at the filter. Rework share `(11 − 6)/11` = 45%, full corpus; every PR was reviewed, so
+there is no second denominator this time.
+
+²⁴ **The series-best round-1 rate is confounded by self-review, and must never be quoted alone.**
+The owner directed the window to run solo (no subagents), so 3 of 6 PRs merged on a verdict
+written by the **main session**. Split: agent-reviewed PRs (#429 #430 #433 #435) **1 of 4**;
+main-session-reviewed (#434 #436) **2 of 2** — and #434 was the release's **largest** PR (24 files,
++1983 lines, new endpoint + migration), approved in one round by the session that had just rebased
+it. All the solo verdicts disclosed this voluntarily; from v1.15.0 CLAUDE.md rule 13 **requires**
+the disclosure, because reviewer and author share one identity and nothing downstream can detect
+it. See [v1.15.0.md §4](v1.15.0.md).
+
+²⁵ **Class G = 0, on a window that tested #393's gate not at all.** One instance was raised at
+*nit* (#433 r1: deleting a patch together with its paired assertion left the suite green) and
+fixed. The v1.14.3 prediction's mechanical half scores **n/a** by its own falsifier — the window
+added no new `scripts/*.test.sh` and touched no hook contract, so there was nothing for #393's
+contracts to cover. Carried forward unchanged to the v1.15.0 prediction.
+
+²⁶ **71.6h tag→tag is an idle gap, not cost.** #433 and #434 were opened 2026-09-15 and merged
+2026-09-18 across a ~66h owner-directed priority hold on another project. Active work is two
+bursts totalling ~3h; #436 went open→merge in **14 minutes**. Per-PR lead times are in
+[v1.15.0.md §5](v1.15.0.md) — quote those, never this span.
+
+**v1.14.3's prediction: 4 of 6 clauses PASS, 1 FAILS, 1 n/a.** Merged with no valid APPROVE
+**0 of 6** ✅ (from 1; the falsifier was checked, not assumed — all 6 carry pre-merge verdicts and
+the bypass log is empty). Class N **1** with **#424 shipped** ✅. Mean rounds **1.83** / zero PRs
+at ≥4 verdicts ✅, median files/PR 8 → 7 and so above the ~5 ambiguity floor. Class G **0** ✅ on
+count, its mechanical half **n/a** (note 25). ❌ **Class F 7** against a target of ≤4 — flat in
+absolute terms on a third the corpus, and **5 of the 7 are in the two documentation PRs whose
+purpose was reducing class F**; the AC half of that clause passes (**0** ticked-without-evidence).
+❌ **Telemetry, fourth strike on a clause declared binary → the columns are retired** (note 21).
+The class-F failure is what motivated making the retro's figures executable rather than writing
+another paragraph. See [v1.15.0.md §7](v1.15.0.md).
+
 **v1.14.2's prediction: 2 of 6 clauses PASS, 4 FAIL** — but the two headline failures moved
 hard in the right direction: no-valid-APPROVE merges **6 → 1** (and the 1 is the predicted
 "never reached the gate" mode, quoted via the absent bypass log), class F **22 → 8** with the
@@ -219,20 +277,52 @@ it is **unmeasurable here** — all 17 merges report `mergedBy: mavrovde`, since
 one identity and the API exposes no CLI-vs-web-UI distinction. The defensible claim is "no merge that
 *reached* the gate carried an uncovered commit"; #355 proves at least one did not reach it.
 
-**Standing prediction (set by v1.14.0, checked at v1.15):** zero merges whose newest canonical
-APPROVE predates a commit on the PR; zero PRs merged with no posted verdict at all; zero
-merged-result findings (Alembic head fork / "green alone, broken by the merge"); class-F blocker+major
-findings **≤2**; Project 3 `Review rounds` filled for every issue the release ships, or the column
-formally retired.
+**v1.14.0's standing prediction — CHECKED AT v1.15.0 AS SCHEDULED: 3 PASS, 1 FAIL, 1 resolved by
+retirement.** Stale approvals **0 of 6** ✅ (from 4 of 10 — third consecutive clean release).
+PRs merged with no verdict at all **0** ✅ — the first fully clean window since the control landed
+(1, 6, 1 in the three releases between). Merged-result findings **0 in review** ✅; one was caught
+*pre-push* by `check_changelog_merge.sh` (deleting the `### Added` heading along with the exempt
+placeholder bullet fails check 4), which is the layer the clause wanted it caught at.
+❌ **Class-F blocker+major 7** against ≤2 — missed at every release since the clause was set
+(5, 22, 8, 7); four consecutive misses on one clause is itself the finding, and it is why v1.15.0
+made the retro's figures executable instead of restating the target. `Review rounds` **resolved by
+retirement** (note 21): unfilled for both shipped issues, and the thread-derived `Mean rounds`
+column supersedes a board field v1.12.0 already measured disagreeing with the thread.
+**Its falsifier still bites and is still reported as such:** merge provenance is unmeasurable here
+— all merges report `mergedBy: mavrovde`, since owner and agents share one identity — so the
+defensible claim stays *"no merge that reached the gate carried an uncovered commit"*, supported
+this window by the empty bypass log and by 6 of 6 merges carrying pre-merge verdicts.
+See [v1.15.0.md §7](v1.15.0.md).
 
-**Falsification stated up front:** clauses 1 and 3 can go to zero for the wrong reason — if fewer
-merges pass through a guarded session, the gate is being ROUTED AROUND, not obeyed. So measure merge
-PROVENANCE first (`gh pr view <n> --json mergedBy`, plus whether the thread shows a delta-confirm) and
-report web-UI merges as *unmeasured*, never as a pass. Second falsifier: if mean rounds rise back above
-3.0 while classes F, G and S stay low, the constraint has moved back to material difficulty and the
-answer is not another charter paragraph.
+**Standing prediction (set by v1.15.0, checked at the next release):** class-F blocker+major
+**≤4 AND ≤2 of them on retro/wiki documentation surfaces** (the second half is the real test of
+`scripts/retro_metrics.sh`); zero merges with no valid APPROVE and zero stale approvals; **every
+non-independent verdict carries the rule-13 disclosure** (100%, reported as an independent/solo
+split table); a release cut with an **empty `release:vX.Y.Z` queue**, evidenced by
+`bump_version.sh` printing `empty (checked)` at cut time; mean rounds **≤2.2** with zero PRs at ≥4
+verdicts; class G **≤4** and **0 on the surfaces #393's contracts cover** (carried forward — v1.15.0
+scored that half n/a).
+
+**Falsification stated up front:** (a) the no-verdict and stale-approval clauses go to zero for
+free on a small corpus — v1.15.0 was **6 PRs**; state the corpus size beside every rate and prefer
+per-PR normalisation. (b) The disclosure clause is vacuous if the window runs with independent
+reviewers throughout — score it *"n/a — no solo verdicts"*, never a pass. (c) The release-queue
+clause **cannot be scored after the fact**, because a retro that re-labels issues (as v1.15.0's §2
+did) erases the evidence — capture the `bump_version.sh` output **at cut time**. (d) If class F
+falls while the retrospective simply publishes fewer numbers, the instrument has produced the
+appearance of success and nothing else; the control is that §5 and the trend row stay fully
+populated. (e) The older falsifier still stands: if mean rounds rise back above 3.0 while classes
+F, G and S stay low, the constraint has moved to material difficulty and the answer is not another
+charter paragraph.
 
 ## How to count consistently
+
+**Run `scripts/retro_metrics.sh <prev-tag> <release-PR>` — it encodes the rules below and prints
+every headline figure.** From v1.15.0 that is how a row is produced. The prose here stays as the
+*specification* (a third party must be able to re-derive a cell from it, which is what #429's
+round-1 major was about), and the bullets keep the incidents that explain each rule — but the
+figures themselves should come from the executable, because five consecutive releases have found
+hand-counted numbers in these very documents to be the top defect class.
 
 So the series stays comparable, count the same way every time:
 
