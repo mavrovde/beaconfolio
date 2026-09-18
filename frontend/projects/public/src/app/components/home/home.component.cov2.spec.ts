@@ -59,7 +59,7 @@ async function configure(opts: {
             siteName: 'beaconfolio.com', siteUrl: 'https://beaconfolio.com',
             ownerName: 'Mock Owner', ownerHeadline: 'Principal Software Engineer',
             ownerDescription: 'Desc.',
-            socialLinks: ['https://social.example/mock', 'https://github.com/mavrovde'],
+            socialLinks: ['https://social.example/mock', 'https://github.com/janedoe'],
             analyticsId: '',
                 availability: 'listening',
             }),

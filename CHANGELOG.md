@@ -20,6 +20,26 @@ All notable changes to this project will be documented in this file.
   argument to the *string* `"undefined"`, which is pure letters and therefore **matches**, so a
   backend that predates this change (and omits the field) would otherwise have produced
   `ns.html?id=undefined`.
+- **Code-host and social profile links now render on the site, from config.** The contact section
+  showed a hardcoded email and LinkedIn and nothing else, while the configured `SOCIAL_LINKS` list
+  was consumed by exactly one thing — the `Person.sameAs` block in the structured data — so a
+  recruiter reading the page and a crawler reading the markup saw different sets of links. Both now
+  read the same list. GitHub, GitLab, Bitbucket, Codeberg, SourceHut, Azure DevOps and several
+  social hosts get a curated label and glyph; **an unregistered host is rendered, not dropped**, with
+  a label derived from its own domain, so adding a self-hosted GitLab or anything else is a config
+  edit and nothing else. That derivation takes the *registrable* label and recognises a two-part
+  public suffix by an explicit ccTLD list rather than by label length: the length shortcut reads an
+  ordinary three-letter subdomain as a suffix and would have labelled `code.bbc.com` CODE instead
+  of BBC (review finding). Deriving the list from `SOCIAL_LINKS` rather than adding a second
+  `codeHosts` knob is deliberate: two lists of the same fact drift, and this one already had a
+  consumer. A configured value that is not an absolute `http(s)` URL is dropped rather than escaped —
+  it lands in an `[href]`, and Angular's sanitizer is the second line of defence there, not the
+  first. A deployment that never set `SOCIAL_LINKS` still shows its profile's LinkedIn, so nothing
+  disappears on upgrade. The last real code-host handle left anywhere in the public app — a leftover
+  in a home-page test fixture, which the issue's own verification grep flags — is anonymized to the
+  demo persona at the same time. A URL repeated in the configured list is collapsed, because the
+  template tracks its rows by URL and a repeated track key is a reconciliation bug rather than
+  merely a repeated row.
 
 ## [1.15.2] - 2026-09-18
 

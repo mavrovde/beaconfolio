@@ -168,7 +168,8 @@ waits for the backend health gate. Re-running is safe: values already set are ne
 Then open <http://localhost:4200> (public site) and <http://admin.localhost:4200> (admin, user
 `admin`). **Make it yours** — the whole checklist is config + admin uploads, zero code edits:
 
-1. `.env`: `OWNER_NAME`, `OWNER_HEADLINE`, `SITE_NAME`, `SITE_URL`, `SOCIAL_LINKS`,
+1. `.env`: `OWNER_NAME`, `OWNER_HEADLINE`, `SITE_NAME`, `SITE_URL`, `SOCIAL_LINKS` (one list
+   feeding both the rendered contact links and JSON-LD `sameAs` — any code host works, #93),
    `BEACONFOLIO_ANALYTICS_ID` **or** `BEACONFOLIO_GTM_CONTAINER_ID` (identity, #65/#447 — a
    container id wins and the gtag install stands down, so you never send two copies of the same
    pageview) · `PUBLIC_SERVER_NAME`/`ADMIN_SERVER_NAME` (your
