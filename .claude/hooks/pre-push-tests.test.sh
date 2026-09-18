@@ -413,11 +413,27 @@ sel "scanner/config text files select docs, not the full round" \
 sel ".mcp.json is an AI-config surface, so it selects the drift check" \
     "aiconfig pii" .mcp.json
 
+# --- importer (#417) ---------------------------------------------------------
+# Until #417 these paths hit the unmapped default, so an importer push paid the
+# FULL round and still never ran the importer's own tests — slow AND blind.
+# `sel_lacks` is the half that matters: a rule that selected the importer leg
+# AND everything else would satisfy `sel` on a bad day but fix nothing.
+sel "an importer diff selects the importer leg and NOTHING heavier (#417)" \
+    "importer pii" importer/core.py
+sel "the importer's own tests select their leg (#417)" \
+    "importer pii" importer/tests/test_importer.py
+sel "importer requirements select the importer leg (#417)" \
+    "importer pii" importer/requirements.txt
+sel_lacks "an importer diff does NOT select backend" "backend" importer/core.py
+sel_lacks "an importer diff does NOT select a Vitest project" "fe:public" importer/core.py
+sel "an importer + docs diff selects both, still nothing heavier" \
+    "docs importer pii" importer/core.py docs/a.md
+
 # --- fail-closed ------------------------------------------------------------
-sel "an UNMAPPED path selects ALL (fail closed)" "ALL" importer/ledger.py
+sel "an UNMAPPED path selects ALL (fail closed)" "ALL" scraper/scrape-posts.js
 sel "a new top-level directory selects ALL" "ALL" brand-new-thing/x.txt
 sel "ONE unmapped path in an otherwise docs-only diff still selects ALL" \
-    "ALL" docs/a.md importer/ledger.py
+    "ALL" docs/a.md scraper/scrape-posts.js
 sel "an EMPTY changed-file list selects ALL" "ALL" ""
 
 # --- deep/fast defaults (#404 review round 1, blocker 1) --------------------
@@ -862,7 +878,7 @@ else
   fails=$((fails + 1))
 fi
 
-R="$(mkstubfixture fix/allargv importer/ledger.py)"
+R="$(mkstubfixture fix/allargv scraper/scrape-posts.js)"
 got="$(observe_argv "$R" "$P origin HEAD")"
 if [ "$got" = "ARGV:" ]; then
   printf 'PASS  [%s]  an ALL round invokes the self-test WITHOUT --mutations\n' "$got"
@@ -881,7 +897,7 @@ else
   fails=$((fails + 1))
 fi
 
-R="$(mkstubfixture fix/allgate importer/ledger.py)"
+R="$(mkstubfixture fix/allgate scraper/scrape-posts.js)"
 got="$(observe_argv "$R" "$P origin HEAD" GATE)"
 if [ "$got" = "GATE:" ]; then
   printf 'PASS  [%s]  an ALL round runs the merge-gate cases WITHOUT mutations\n' "$got"
@@ -890,7 +906,7 @@ else
   fails=$((fails + 1))
 fi
 
-R="$(mkstubfixture fix/allstack importer/ledger.py)"
+R="$(mkstubfixture fix/allstack scraper/scrape-posts.js)"
 got="$(observe_argv "$R" "$P origin HEAD" STACK)"
 if [ "$got" = "STACK:" ]; then
   printf 'PASS  [%s]  an ALL round runs the stack-guard cases WITHOUT mutations\n' "$got"
@@ -915,7 +931,7 @@ e2e "a fully-qualified release branch scopes to the delta" \
 e2e "a feature branch whose NAME contains 'main' still scopes" \
     "docs pii" "$R" "$P origin HEAD:feature-main-nav"
 
-R="$(mkfixture fix/unmapped main importer/ledger.py)"
+R="$(mkfixture fix/unmapped main scraper/scrape-posts.js)"
 e2e "an unmappable path runs EVERYTHING (fail closed)" \
     "ALL" "$R" "$P origin HEAD"
 
@@ -1117,6 +1133,12 @@ mutate die "$LIBF" ".mcp.json stops selecting the AI-config drift check" \
   'replace::  .mcp.json) echo aiconfig ;;=>  .mcp.json) echo ;;'
 mutate die "$LIBF" "the shared-edge files stop selecting the apply contract (#338)" \
   'replace::  infra/edge/*) echo edge ;;=>  infra/edge/*) echo ;;'
+# #417: selecting NOTHING for importer/** is the failure mode that looks like a
+# speed-up. Without this the rule could be deleted and every "importer must not
+# select backend" case above would still pass — a selector that selects nothing
+# satisfies every negative assertion.
+mutate die "$LIBF" "importer paths stop selecting the importer suite (#417)" \
+  'replace::  importer/*) echo importer ;;=>  importer/*) echo ;;'
 mutate die "$LIBF" "an unobtainable git range reports success instead of failing" \
   'replace::  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 1=>  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo docs/fake.md; return 0; }'
 mutate die "$LIBF" "rename detection hides the SOURCE path of a git mv (#388 blocker 1)" \

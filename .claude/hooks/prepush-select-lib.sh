@@ -190,6 +190,15 @@ prepush_legs_for_path() {
   # ~1s, no sudo/caddy/systemd needed, so it runs wherever the diff selects it.
   infra/edge/*) echo edge ;;
 
+  # --- importer: the LinkedIn -> backend importer (#417) ---------------------
+  # Its own suite is 15 tests in 0.04s, fully mocked (httpx patched, no network,
+  # rule 10 clean), so it is cheap enough to run wherever the diff selects it.
+  # Before #417 `importer/**` fell through to the unmapped default, which is the
+  # worst of both outcomes: the push paid the FULL round AND never ran the one
+  # suite that covers the diff. PR #415 shipped five regression tests for a
+  # measured prod incident onto exactly that blind spot.
+  importer/*) echo importer ;;
+
   # --- documentation --------------------------------------------------------
   # CHANGELOG.md is the one doc whose defect lives in the MERGED result, not the
   # branch (#391) — it selects the merged-changelog lint on top of the docs leg.
@@ -209,9 +218,10 @@ prepush_legs_for_path() {
   .mcp.json) echo aiconfig ;;
 
   # --- ANYTHING ELSE: fail closed ------------------------------------------
-  # proxy/**, scraper/**, importer/**, a brand-new top-level directory … none
-  # has a leg that can exercise it, none is ENUMERATED above, and guessing
-  # "nothing" is how a narrowed gate stops gating.
+  # proxy/**, scraper/**, a brand-new top-level directory … none has a leg that
+  # can exercise it, none is ENUMERATED above, and guessing "nothing" is how a
+  # narrowed gate stops gating. (`importer/**` left this list in #417, when it
+  # gained a leg of its own.)
   *) prepush_unmapped_path ;;
   esac
 }

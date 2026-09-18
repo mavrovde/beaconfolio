@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+- **The importer's test suite now actually runs somewhere.** `importer/` shipped 15 tests that no
+  gate executed: the pre-push selector had no rule for `importer/**`, so those paths fell through to
+  the fail-closed default and bought a full round without ever running the suite they belong to;
+  CI had no importer job at all; and `verify_all.sh` skipped it. A change to the LinkedIn importer
+  could therefore be pushed, merged and deployed with its own tests never once executed. Wired at
+  three layers, each of which can see a different failure: a fast `importer` leg in the pre-push
+  gate (`importer/**` now selects `importer pii` instead of `ALL`), a standalone parallel
+  `Importer Tests` job in `deploy.yml` (deliberately NOT folded into `version-consistency`, which
+  four build jobs depend on and which ships no Python toolchain), and step `[3/5]` of
+  `verify_all.sh`. The selector rule is pinned by a mutation case, so deleting it turns the contract
+  red rather than silently restoring the fall-through.
+
 ### Fixed
 - **The hero's "Hire me" CTA shipped as a solid green rectangle with an invisible label.** The
   theme rule `button, a { @apply text-primary … }` in both apps' `styles.css` sat OUTSIDE a cascade

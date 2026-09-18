@@ -32,14 +32,14 @@ fi
 # a stale map misleads every later reader, human or agent.
 echo ""
 echo "========================================"
-echo "[1/4] repo: 🗺️  AI-config map drift"
+echo "[1/5] repo: 🗺️  AI-config map drift"
 echo "========================================"
 bash "$(dirname "$0")/scripts/check_aiconfig_map.sh" || exit 1
 
 # 1. Backend Checks (via Docker to ensure consistent environment)
 echo ""
 echo "========================================"
-echo "[2/4] backend: 🐍 Static Analysis & Tests"
+echo "[2/5] backend: 🐍 Static Analysis & Tests"
 echo "========================================"
 # Start DB if not running
 # Start DB with DEV config to ensure ports are exposed
@@ -52,10 +52,23 @@ PYTEST_PYTHON="${PYTEST_PYTHON:-$([ -x venv/bin/python ] && echo venv/bin/python
 BEACONFOLIO_GEMINI_API_KEY="" "$PYTEST_PYTHON" -m pytest tests
 cd ..
 
-# 2. Frontend Checks
+# 2b. Importer suite (#417). It used to run on NO automated surface — not here,
+# not in CI, and `importer/**` was unmapped in the pre-push selector, so an
+# importer push paid the FULL round and still never ran these tests. 15 tests in
+# ~0.04s with httpx fully mocked (no network, no credential — rule 10 clean), so
+# there is no cost argument for leaving it out. Same interpreter resolution as
+# the backend step above, and the same PYTEST_PYTHON override.
 echo ""
 echo "========================================"
-echo "[3/4] frontend: 🅰️  Lint, Tests & Build"
+echo "[3/5] importer: 📥 LinkedIn → backend importer suite"
+echo "========================================"
+IMPORTER_PYTHON="${PYTEST_PYTHON:-$([ -x backend/venv/bin/python ] && echo backend/venv/bin/python || command -v python3)}"
+"$IMPORTER_PYTHON" -m pytest importer/tests -q || exit 1
+
+# 3. Frontend Checks
+echo ""
+echo "========================================"
+echo "[4/5] frontend: 🅰️  Lint, Tests & Build"
 echo "========================================"
 cd frontend
 echo "Running Lint..."
@@ -69,7 +82,7 @@ cd ..
 # 3. E2E Checks
 echo ""
 echo "========================================"
-echo "[4/4] e2e: 🎭 Docker Stack + E2E Tests"
+echo "[5/5] e2e: 🎭 Docker Stack + E2E Tests"
 echo "========================================"
 # Ensure full stack is running
 echo "Starting full stack..."
