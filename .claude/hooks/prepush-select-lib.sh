@@ -153,6 +153,7 @@ prepush_legs_for_path() {
   scripts/check_changelog_merge.sh|scripts/check_changelog_merge.test.sh) printf 'changelog\naiconfig\n' ;;
   scripts/audit_no_verdict_merges.sh|scripts/audit_no_verdict_merges.test.sh) printf 'vaudit\naiconfig\n' ;;
   scripts/run_frontend_suites.sh|scripts/run_frontend_suites.test.sh) printf 'fe:runner\naiconfig\n'; prepush_fe_all_legs ;;
+  scripts/check_e2e_hydration_barrier.sh|scripts/check_e2e_hydration_barrier.test.sh) printf 'e2ebarrier\naiconfig\n' ;;
 
   # --- compose / documented-knob contract ----------------------------------
   docker-compose*.yml|.env.example) echo compose ;;
@@ -170,6 +171,10 @@ prepush_legs_for_path() {
   # The lint config and its self-test affect only the eslint leg — running
   # three Vitest projects for a selector tweak buys nothing (#234).
   frontend/eslint.config.mjs|frontend/scripts/eslint-cd-safety.test.mjs) echo fe:cdsafety ;;
+  # The e2e specs are not compiled or run by any Vitest project — a different
+  # runner over a different tree — so they cannot break one. What they CAN break
+  # is the SSR hydration-barrier contract, which reads exactly these files.
+  frontend/e2e/*) echo e2ebarrier ;;
   frontend/projects/shared/*) prepush_fe_all_legs ;;
   frontend/projects/public/*) prepush_fe_public_legs ;;
   frontend/projects/admin/*) prepush_fe_admin_legs ;;

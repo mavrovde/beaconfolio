@@ -8,6 +8,14 @@ test.describe('LLM Terminal', () => {
         });
         await page.goto('/llm');
 
+        // Hydration barrier: /llm is server-rendered, and its terminal input is
+        // bound with [(ngModel)] — a ControlValueAccessor, so setUpControl's
+        // writeValue wipes anything typed before Angular attaches, exactly as it
+        // does the reactive CV form. The click below is the same race one step
+        // earlier: a button that is in the server HTML but not yet hydrated
+        // swallows the click silently. Idiom from contact-form.spec.ts.
+        await page.waitForLoadState('networkidle');
+
         // Switch to Single Agent mode
         await page.click('button:has-text("Single Agent")');
         await page.waitForSelector('.terminal-container');

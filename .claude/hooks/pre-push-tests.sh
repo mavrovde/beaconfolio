@@ -719,6 +719,22 @@ run_checks() {
         return 1
       }
     fi
+    # The SSR hydration barrier: an e2e test that types into a server-rendered
+    # page before Angular attaches has its input wiped by setUpControl's
+    # writeValue, and the failure surfaces 120s later as a click timeout on a
+    # disabled button. cv.spec.ts carried that exposure silently until #425's
+    # template rewrite tipped it and turned `main` red. Its self-test runs here
+    # too: the lint's own first draft went green over five real findings.
+    if leg e2ebarrier && [ -f "$ROOT/scripts/check_e2e_hydration_barrier.sh" ]; then
+      ( cd "$ROOT" && bash scripts/check_e2e_hydration_barrier.sh >/dev/null ) || {
+        echo "  ✗ check_e2e_hydration_barrier.sh failed — run 'bash scripts/check_e2e_hydration_barrier.sh' to see which spec fills an unhydrated page"
+        return 1
+      }
+      ( cd "$ROOT" && bash scripts/check_e2e_hydration_barrier.test.sh >/dev/null ) || {
+        echo "  ✗ check_e2e_hydration_barrier.test.sh failed — the hydration-barrier lint itself is broken"
+        return 1
+      }
+    fi
     # The CHANGELOG dedup helper REWRITES release history, so its own self-test
     # is part of the gate (#371 review: it entered the repo with no test and a
     # whitelist that silently deleted unrecognised sections).

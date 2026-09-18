@@ -24,6 +24,16 @@ test.describe('CV Request Flow', () => {
         console.log('[E2E] Navigating to /cv...');
         await page.goto('/cv');
 
+        // Hydration barrier: filling before Angular hydrates lets setUpControl's
+        // writeValue wipe the typed values, so cvForm stays pristine+invalid and
+        // the submit button never enables — the failure reads as a 120s click
+        // timeout on a `disabled` button, three steps from the cause. The idiom
+        // is contact-form.spec.ts's, added there as a review blocker after the
+        // same race was reproduced 1-in-60; this file was the ONE public spec
+        // that fills a form and never got it (measured across e2e/public: 4
+        // fills, 0 barriers), which is why #425's template rewrite could tip it.
+        await page.waitForLoadState('networkidle');
+
         // Fill form
         console.log('[E2E] Filling CV request form...');
         await page.fill('input[formControlName="name"]', 'E2E Tester');
@@ -38,9 +48,16 @@ test.describe('CV Request Flow', () => {
             return null;
         });
 
+        // The form is valid BEFORE the click is attempted. Without this the
+        // regression surfaces as `page.click` retrying a disabled button for the
+        // full 120s test timeout; with it, a form that never becomes valid fails
+        // here in seconds, naming the actual broken state.
+        const submit = page.locator('button[type="submit"]');
+        await expect(submit).toBeEnabled({ timeout: 15000 });
+
         // Click submit
         console.log('[E2E] Submitting request...');
-        await page.click('button[type="submit"]');
+        await submit.click();
 
         // Verify request payload was correct
         expect(requestPayload).toBeTruthy();
@@ -58,6 +75,16 @@ test.describe('CV Request Flow', () => {
 
     test('should show validation errors', async ({ page }) => {
         await page.goto('/cv');
+
+        // Hydration barrier: filling before Angular hydrates lets setUpControl's
+        // writeValue wipe the typed values, so cvForm stays pristine+invalid and
+        // the submit button never enables — the failure reads as a 120s click
+        // timeout on a `disabled` button, three steps from the cause. The idiom
+        // is contact-form.spec.ts's, added there as a review blocker after the
+        // same race was reproduced 1-in-60; this file was the ONE public spec
+        // that fills a form and never got it (measured across e2e/public: 4
+        // fills, 0 barriers), which is why #425's template rewrite could tip it.
+        await page.waitForLoadState('networkidle');
 
         // Touch fields and leave them to trigger validation
         await page.focus('input[formControlName="email"]');
