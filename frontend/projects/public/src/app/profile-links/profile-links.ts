@@ -67,7 +67,15 @@ export const DEFAULT_ICON = '›';
  * `git.zz.ht` into GIT rather than ZZ. A full Public Suffix List is ~10k
  * entries and a dependency; these seven cover the ccTLD shapes a portfolio's
  * links realistically use, and anything outside them degrades to dropping one
- * label, which is the same answer the length test gave for `github.com`.
+ * label.
+ *
+ * That degradation is not always harmless, and review measured where it bites:
+ * seven exotic registry shapes — `ne.jp`, `or.jp`, `me.uk`, `ltd.uk`, `in.ua`,
+ * `web.id`, `eu.com` — lose the registrable label, so `example.ne.jp` renders
+ * NE where the old length test rendered EXAMPLE. Accepted knowingly: the href
+ * is untouched in every case, so this is a caption, and the alternative is a
+ * ~10k-entry dependency. `eu.com` is worth knowing separately because growing
+ * the set cannot fix it — it fails the two-character-TLD test structurally.
  */
 const CCTLD_SECOND_LEVEL = new Set(['co', 'com', 'net', 'org', 'ac', 'gov', 'edu']);
 
