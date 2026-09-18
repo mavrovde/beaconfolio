@@ -18,6 +18,39 @@
   </div>
 </section>
 
+<!-- Theme (#339): the PUBLIC site's preset. Deliberately a separate panel
+     from availability — they change on different rhythms, and one long
+     settings block makes both harder to find. -->
+<section class="mb-6 p-4 border rounded bg-white" data-testid="theme-panel">
+  <h2 class="font-semibold mb-2">Public site theme</h2>
+  <p class="text-sm text-gray-500 mb-3">
+    Applies to the public site on its next load — no redeploy. The admin panel keeps its own
+    neutral styling either way.
+  </p>
+  <div class="flex gap-2 items-center flex-wrap">
+    @for (preset of themePresets; track preset) {
+      <button type="button"
+        class="px-3 py-1 border rounded font-mono text-sm"
+        [class.bg-black]="theme === preset"
+        [class.text-white]="theme === preset"
+        [attr.aria-pressed]="theme === preset"
+        [title]="themeDescriptions[preset]"
+        [disabled]="themeSaving"
+        (click)="setTheme(preset)">
+        {{ preset }}
+      </button>
+    }
+    @if (themeError) {
+      <span class="text-sm text-red-600">{{ themeError }}</span>
+    }
+  </div>
+  @if (theme) {
+    <p class="text-sm text-gray-500 mt-3" data-testid="theme-description">
+      {{ themeDescriptions[theme] }}
+    </p>
+  }
+</section>
+
 <div class="dashboard">
   <h1 class="page-title">&gt; Dashboard</h1>
 

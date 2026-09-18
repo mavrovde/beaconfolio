@@ -874,6 +874,15 @@ All admin-only (auth required):
   (`open|listening|not_looking`), shown on the public hero beside the Hire-me CTA; editable at
   runtime with no redeploy, served publicly via `/config/site` (an older backend without the field
   degrades to `listening` client-side)
+- `GET/PUT /api/app/admin/site-settings/theme` - The public site's **preset theme**
+  (`terminal|dark|light|modern|classic`), picked in the admin dashboard and applied on the next
+  load — no rebuild, no redeploy. `terminal` is the default and is the look the site has always
+  had, so an existing deployment is unaffected until someone chooses otherwise. The whole site
+  paints from one token set (see `frontend/projects/public/src/styles.css` for the contract a
+  theme must supply, colours AND surface effects); the chosen name is stamped into `data-theme`
+  on the root element **during SSR**, so the first byte already carries the right theme and there
+  is no flash of the wrong one. An unknown value normalizes to `terminal` on both sides rather
+  than being passed through — a name no stylesheet block matches would render untokenized
 - `POST /api/app/admin/cv/upload` now takes **`activate`** (form field, default `true`):
   `false` uploads a **variant** — listed in `/versions`, attachable to opportunities — while the
   public `/cv/download` keeps serving the current default untouched

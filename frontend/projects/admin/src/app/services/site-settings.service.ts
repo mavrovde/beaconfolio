@@ -3,12 +3,33 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
 
-/** Runtime site settings (#271) — the first key is the owner's job-search
- *  availability, rendered on the public hero. Vocabulary mirrors
- *  AVAILABILITY_STATES in backend/app/api/site_settings.py. */
+/** Runtime site settings (#271, #339) — the keys the owner changes without a
+ *  redeploy: the job-search availability rendered on the public hero, and the
+ *  preset theme the public site paints itself with. Both vocabularies mirror
+ *  their constants in backend/app/api/site_settings.py; a TypeScript file
+ *  cannot import Python, so a backend test reads THIS file and fails if the
+ *  copies drift. */
 export const AVAILABILITY_STATES = ['open', 'listening', 'not_looking'] as const;
 
+/** The five presets (#339). `terminal` is first and is the default — it is
+ *  today's look, so a deployment that never picks one is unaffected. */
+export const THEME_PRESETS = ['terminal', 'dark', 'light', 'modern', 'classic'] as const;
+
+/** A one-line description per preset, shown beside the picker so the choice is
+ *  legible without opening the public site in five tabs. */
+export const THEME_DESCRIPTIONS: Readonly<Record<string, string>> = {
+    terminal: 'Green phosphor CRT — the default, with scanlines and glow',
+    dark: 'Neutral dark, no CRT effects',
+    light: 'Light background, dark text',
+    modern: 'High-contrast sans with soft elevation',
+    classic: 'Serif on warm paper, document-like',
+};
+
 export interface AvailabilityValue {
+    value: string;
+}
+
+export interface ThemeValue {
     value: string;
 }
 
@@ -25,5 +46,13 @@ export class SiteSettingsService {
 
     setAvailability(value: string): Observable<AvailabilityValue> {
         return this.http.put<AvailabilityValue>(`${this.base}/availability`, { value });
+    }
+
+    getTheme(): Observable<ThemeValue> {
+        return this.http.get<ThemeValue>(`${this.base}/theme`);
+    }
+
+    setTheme(value: string): Observable<ThemeValue> {
+        return this.http.put<ThemeValue>(`${this.base}/theme`, { value });
     }
 }

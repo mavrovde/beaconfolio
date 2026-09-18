@@ -40,6 +40,28 @@ All notable changes to this project will be documented in this file.
   demo persona at the same time. A URL repeated in the configured list is collapsed, because the
   template tracks its rows by URL and a repeated track key is a reconciliation bug rather than
   merely a repeated row.
+- **The public site's look is now an admin-selectable preset, not a hard-coded palette.** Five
+  themes ship — `terminal` (today's green phosphor, and the default), `dark`, `light`, `modern`
+  and `classic` — chosen from the admin dashboard, stored as a runtime `site_settings` row and
+  served on `/api/app/config/site` beside the rest of the site's identity. **`terminal` is
+  byte-identical to the previous stylesheet**, verified in the COMPILED css rather than asserted:
+  every former literal moved into a token whose default value is that same literal, so a
+  deployment that never picks a theme renders exactly as it did before.
+  The mechanism is Tailwind 4's own `@theme` variables. Utilities already compile to
+  `var(--color-black)` / `var(--color-white)`, so re-pointing those two tokens inside a
+  `[data-theme='…']` block re-themes all 37 `bg-black` and 27 `text-white` call sites with zero
+  component edits; inventing new `bg-surface`-style tokens would have themed only the components
+  rewritten to use them, which is how a half-themed site happens. Effects that are not colors
+  (the phosphor glow, the scanline) live in separate `--fx-*` tokens for the same reason.
+  **The theme is stamped onto the root element during SSR**, so the first byte already carries the
+  right one and there is no flash of the wrong theme on hydration; a value outside the vocabulary
+  normalizes to `terminal` on the server, so an unknown `data-theme` can never reach the browser
+  and render the page untokenized. The stamp runs from `AppComponent.ngOnInit`, deliberately
+  **not** from an app initializer: `ng build public` runs a route-extraction bootstrap with no
+  backend behind it, and an initializer that reads the config starts a request that never settles
+  — because the stream is `shareReplay(1)`, its source subscription is never torn down and an RxJS
+  `timeout` does not rescue it either, so the build aborts (measured: ~34s to `AbortError` versus
+  3.5s green from `ngOnInit`).
 
 ## [1.15.2] - 2026-09-18
 

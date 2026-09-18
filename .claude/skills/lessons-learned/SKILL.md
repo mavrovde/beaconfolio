@@ -2168,3 +2168,39 @@ true: the next spec is written by someone who never reads it. When a footgun rec
 documented, the fix is a **guard**, not a louder paragraph (same class as items 4, 18 and the
 #142/#177 startup refusals). And when you find a comment asserting a repo-wide invariant, **grep it
 before you trust it** — that grep is what found this bug.
+
+---
+
+## 78. An app initializer that reads `SiteConfigService.config$` ABORTS `ng build public` — and a `timeout` cannot rescue it (#339)
+
+**Trap.** `ng build public` does not just bundle: it runs a **route-extraction bootstrap** of the
+app, in Node, with **no backend behind it**. Anything wired into `provideAppInitializer` /
+`APP_INITIALIZER` that touches `SiteConfigService.config$` therefore starts an HTTP request that
+never settles, and the build dies with `AbortError: Routes extraction was aborted` /
+`TimeoutError`. **Measured (#339): ~34s to the abort, against 3.5s for a green build.**
+
+**Why it bites — and why the obvious fixes don't work.** Three escapes were tried and all three
+failed:
+1. **`await` the initializer** — the awaited promise is exactly what never resolves.
+2. **Subscribe without blocking** (initializer returns immediately) — the *subscription* is still
+   an outstanding task, so extraction still waits on it.
+3. **An RxJS `timeout(...)`** — this is the surprising one. `config$` is `shareReplay(1)`, so the
+   timeout unsubscribes only the *downstream* subscriber; the shared **source** subscription and
+   its in-flight request stay alive, and extraction keeps waiting. A `timeout` on a replayed stream
+   bounds your read, not the work underneath it.
+
+**Why `gtmNoscriptUrl$` was always safe** (and why this looked like a contradiction): route
+extraction **does not render the root template**. A `config$` read reached through the template's
+`async` pipe is never subscribed during extraction, so an identical read has coexisted with green
+builds for as long as the service has existed. "This other code reads the same stream and builds
+fine" is not evidence — the two are subscribed by different machinery.
+
+**How to apply.** Read site config from **`AppComponent.ngOnInit`**, not from an app initializer.
+It still runs before serialization on the server — the server serializes only after app
+stability, and the in-flight `HttpClient` request is itself a pending task — so a root-element
+attribute stamped from `ngOnInit` (`data-theme`, #339) *does* reach the first byte. You get the
+SSR guarantee without handing route extraction a task it cannot finish.
+
+**Diagnosing the next one.** The abort names no file, so it reads like a toolchain fault. Follow
+lesson 13: build a clean `main` worktree first. That is what turned "the Angular builder is
+broken" into "our initializer is" in one step, after three fixes aimed at the wrong layer.

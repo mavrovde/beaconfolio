@@ -1,7 +1,73 @@
 @import 'tailwindcss';
 
+/* ============================================================================
+ * THE THEME TOKEN CONTRACT (#339)
+ * ============================================================================
+ *
+ * The whole public site paints itself from the tokens below. A theme is a
+ * complete re-declaration of them under a `[data-theme="<name>"]` selector —
+ * never a component edit. `#67` (the white-labeling epic) consumes this same
+ * contract for custom, non-preset themes, which is why it is written down
+ * here rather than left implicit in the preset blocks.
+ *
+ * A theme MUST supply every token in both groups. A partial theme does not
+ * fall back per-token to `terminal`: it inherits whatever the previous
+ * declaration left, which is how you get a half-themed component. The backend
+ * vocabulary (`THEME_PRESETS` in `backend/app/api/site_settings.py`) and the
+ * `[data-theme]` blocks here are pinned to each other by a backend test that
+ * reads this file, so a preset can never ship without its tokens.
+ *
+ * ## Group 1 — palette and type (Tailwind `@theme`, so they also generate
+ * utilities like `bg-background` / `text-primary`)
+ *
+ *   --color-primary       foreground accent: body text, borders, links
+ *   --color-secondary     dimmer accent: prompts, hover, scrollbar thumb
+ *   --color-background    the page ground
+ *   --color-surface       a raised panel's ground
+ *   --color-muted         hairlines and disabled text
+ *   --color-black         the GROUND, and the contrast pair for `--color-primary`
+ *   --color-white         the high-emphasis foreground (hover, active, headings)
+ *   --font-mono           monospace family
+ *   --font-sans           body family
+ *
+ * The last two are Tailwind's own `black`/`white` tokens, and re-pointing them
+ * per theme is deliberate rather than a shortcut. The components carry 37
+ * `bg-black` and 27 `text-white` utilities (measured); `bg-surface` and
+ * `bg-background` are used ZERO times. Introducing new semantic names would
+ * therefore have meant editing 64 call sites to make four themes work, and
+ * would have left `bg-black` as a live, un-themeable literal for anyone who
+ * wrote it next. `bg-black` compiles to `background-color: var(--color-black)`,
+ * so redefining the token under `[data-theme]` re-themes every existing call
+ * site at once — the same move this file already makes for `--color-red-500`.
+ * Read them as ROLES: on a light theme `--color-black` is the light ground,
+ * because `bg-primary text-black` has to stay a legible contrast pair.
+ *
+ * ## Group 2 — surface effects (plain custom properties, `--fx-*`)
+ *
+ * These exist because the terminal look is not only a palette: it is a text
+ * glow, CRT scanlines, a vignette and a hue-rotate filter over every image.
+ * They were hardcoded `rgba(51, 255, 0, …)` literals, so a non-green theme
+ * could not have been built without touching component-level CSS.
+ *
+ *   --fx-text-shadow          body text glow            (`none` to disable)
+ *   --fx-scanlines            body::before background   (`none`)
+ *   --fx-scanline-size        its background-size
+ *   --fx-scanline-animation   `flicker …` or `none`
+ *   --fx-vignette             body::after background    (`none`)
+ *   --fx-vignette-shadow      its inset glow            (`none`)
+ *   --fx-media-filter         filter over img/video     (`none`)
+ *   --fx-media-blend          their mix-blend-mode      (`normal`)
+ *   --fx-panel-border         `.border-terminal` border
+ *   --fx-panel-shadow         `.border-terminal` shadow (`none`)
+ *   --fx-panel-bg             `.border-terminal` ground
+ *   --fx-active-shadow        active button shadow      (`none`)
+ *   --fx-active-text-shadow   active button text glow   (`none`)
+ * ========================================================================= */
+
 @theme {
-  /* Enforce Green Palette */
+  /* DEFAULT = `terminal`. These values are the pre-#339 palette byte for
+   * byte: an existing deployment that never picks a theme must keep
+   * rendering exactly as it does today. */
   --color-primary: #33ff00;
   /* Bright Green (Text/Borders) */
   --color-secondary: #008800;
@@ -12,6 +78,8 @@
   /* Very Dark Green Background */
   --color-muted: #1a331a;
   /* Muted Green */
+  --color-black: #000000;
+  --color-white: #ffffff;
   --font-mono: 'VT323', 'Courier Prime', 'Courier', 'monospace';
   --font-sans: 'VT323', 'Courier Prime', 'Courier', 'monospace';
 
@@ -24,19 +92,196 @@
   --color-terminal-highlight: #33ff00;
 }
 
+/* Terminal's group-2 tokens. UNLAYERED on purpose: Tailwind emits `@theme`
+ * into `@layer theme`, and the `[data-theme]` blocks below have the same
+ * specificity as `:root`, so keeping both unlayered makes source order — not
+ * a specificity accident — decide which wins. */
+:root {
+  --fx-text-shadow: 0 0 5px rgba(51, 255, 0, 0.6), 0 0 10px rgba(51, 255, 0, 0.4);
+  --fx-scanlines:
+    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
+    linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+  --fx-scanline-size: 100% 2px, 3px 100%;
+  --fx-scanline-animation: flicker 0.15s infinite;
+  --fx-vignette: radial-gradient(circle, rgba(0, 20, 0, 0) 60%, rgba(0, 20, 0, 0.6) 100%);
+  --fx-vignette-shadow: inset 0 0 100px rgba(0, 255, 0, 0.1);
+  --fx-media-filter: grayscale(100%) sepia(100%) hue-rotate(90deg) saturate(300%) contrast(1.2);
+  --fx-media-blend: screen;
+  --fx-panel-border: 1px solid rgba(51, 255, 0, 0.6);
+  --fx-panel-shadow: 0 0 15px rgba(51, 255, 0, 0.2), inset 0 0 10px rgba(51, 255, 0, 0.1);
+  --fx-panel-bg: rgba(0, 20, 0, 0.8);
+  --fx-active-shadow: 0 0 10px rgba(51, 255, 0, 0.6), inset 0 0 5px rgba(51, 255, 0, 0.2);
+  --fx-active-text-shadow: 0 0 8px rgba(51, 255, 0, 0.8);
+}
+
+/* `terminal` is also spelled out explicitly, so an owner who picks it from the
+ * admin panel gets the same stylesheet path as one who never picked anything.
+ * Without this the default and the explicit choice are two code paths. */
+[data-theme='terminal'] {
+  --color-primary: #33ff00;
+  --color-secondary: #008800;
+  --color-background: #050505;
+  --color-surface: #0a150a;
+  --color-muted: #1a331a;
+  --color-black: #000000;
+  --color-white: #ffffff;
+  --color-red-500: #33ff00;
+  --color-blue-500: #33ff00;
+  --color-yellow-500: #33ff00;
+  --color-terminal-bg: #0a0a0a;
+  --color-terminal-dim: rgba(51, 255, 0, 0.5);
+  --color-terminal-highlight: #33ff00;
+  --font-mono: 'VT323', 'Courier Prime', 'Courier', 'monospace';
+  --font-sans: 'VT323', 'Courier Prime', 'Courier', 'monospace';
+}
+
+/* The four non-terminal presets use SYSTEM font stacks on purpose: a webfont
+ * per theme would add a render-blocking download that four fifths of
+ * deployments never use, and `index.html` would have to preload all of them.
+ * Every effect token is switched off explicitly rather than left to inherit —
+ * an inherited CRT scanline over a white page is the exact half-themed
+ * failure this contract exists to prevent. */
+
+[data-theme='dark'] {
+  --color-primary: #e6e6e6;
+  --color-secondary: #8a8f98;
+  --color-background: #101114;
+  --color-surface: #1a1c21;
+  --color-muted: #2c2f36;
+  --color-black: #101114;
+  --color-white: #ffffff;
+  --color-red-500: #f87171;
+  --color-blue-500: #60a5fa;
+  --color-yellow-500: #fbbf24;
+  --color-terminal-bg: #1a1c21;
+  --color-terminal-dim: rgba(230, 230, 230, 0.5);
+  --color-terminal-highlight: #ffffff;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --fx-text-shadow: none;
+  --fx-scanlines: none;
+  --fx-scanline-size: auto;
+  --fx-scanline-animation: none;
+  --fx-vignette: none;
+  --fx-vignette-shadow: none;
+  --fx-media-filter: none;
+  --fx-media-blend: normal;
+  --fx-panel-border: 1px solid #2c2f36;
+  --fx-panel-shadow: none;
+  --fx-panel-bg: #1a1c21;
+  --fx-active-shadow: none;
+  --fx-active-text-shadow: none;
+}
+
+[data-theme='light'] {
+  --color-primary: #1f2328;
+  --color-secondary: #57606a;
+  --color-background: #ffffff;
+  --color-surface: #f6f8fa;
+  --color-muted: #d0d7de;
+  --color-black: #ffffff;
+  --color-white: #0969da;
+  --color-red-500: #cf222e;
+  --color-blue-500: #0969da;
+  --color-yellow-500: #9a6700;
+  --color-terminal-bg: #f6f8fa;
+  --color-terminal-dim: rgba(31, 35, 40, 0.55);
+  --color-terminal-highlight: #0969da;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --fx-text-shadow: none;
+  --fx-scanlines: none;
+  --fx-scanline-size: auto;
+  --fx-scanline-animation: none;
+  --fx-vignette: none;
+  --fx-vignette-shadow: none;
+  --fx-media-filter: none;
+  --fx-media-blend: normal;
+  --fx-panel-border: 1px solid #d0d7de;
+  --fx-panel-shadow: none;
+  --fx-panel-bg: #f6f8fa;
+  --fx-active-shadow: none;
+  --fx-active-text-shadow: none;
+}
+
+[data-theme='modern'] {
+  --color-primary: #0b1220;
+  --color-secondary: #475569;
+  --color-background: #f8fafc;
+  --color-surface: #ffffff;
+  --color-muted: #e2e8f0;
+  --color-black: #ffffff;
+  --color-white: #4f46e5;
+  --color-red-500: #e11d48;
+  --color-blue-500: #4f46e5;
+  --color-yellow-500: #d97706;
+  --color-terminal-bg: #ffffff;
+  --color-terminal-dim: rgba(11, 18, 32, 0.55);
+  --color-terminal-highlight: #4f46e5;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --fx-text-shadow: none;
+  --fx-scanlines: none;
+  --fx-scanline-size: auto;
+  --fx-scanline-animation: none;
+  --fx-vignette: none;
+  --fx-vignette-shadow: none;
+  --fx-media-filter: none;
+  --fx-media-blend: normal;
+  --fx-panel-border: 1px solid #e2e8f0;
+  /* The one preset that keeps a shadow — a soft elevation, not a glow. */
+  --fx-panel-shadow: 0 1px 2px rgba(11, 18, 32, 0.06), 0 8px 24px rgba(11, 18, 32, 0.06);
+  --fx-panel-bg: #ffffff;
+  --fx-active-shadow: 0 1px 2px rgba(79, 70, 229, 0.25);
+  --fx-active-text-shadow: none;
+}
+
+[data-theme='classic'] {
+  --color-primary: #2b2724;
+  --color-secondary: #6b6259;
+  --color-background: #fbf7f0;
+  --color-surface: #f3ece1;
+  --color-muted: #ddd2c2;
+  --color-black: #fbf7f0;
+  --color-white: #7a3b2e;
+  --color-red-500: #a03028;
+  --color-blue-500: #2f5d7c;
+  --color-yellow-500: #8a6d1f;
+  --color-terminal-bg: #f3ece1;
+  --color-terminal-dim: rgba(43, 39, 36, 0.55);
+  --color-terminal-highlight: #7a3b2e;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
+  --font-sans: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+  --fx-text-shadow: none;
+  --fx-scanlines: none;
+  --fx-scanline-size: auto;
+  --fx-scanline-animation: none;
+  --fx-vignette: none;
+  --fx-vignette-shadow: none;
+  --fx-media-filter: none;
+  --fx-media-blend: normal;
+  --fx-panel-border: 1px solid #ddd2c2;
+  --fx-panel-shadow: none;
+  --fx-panel-bg: #f3ece1;
+  --fx-active-shadow: none;
+  --fx-active-text-shadow: none;
+}
+
 body {
+  /* `bg-black` still, and it is now a THEMED token — see the contract above. */
   @apply bg-black text-primary font-mono antialiased overflow-x-hidden;
-  text-shadow: 0 0 5px rgba(51, 255, 0, 0.6), 0 0 10px rgba(51, 255, 0, 0.4);
+  text-shadow: var(--fx-text-shadow);
   position: relative;
   min-height: 100vh;
 }
 
-/* Force Green Tint on Everything *except* the text itself to avoid double-tinting */
+/* The green tint over media is a TERMINAL effect, not a site-wide one:
+ * `mix-blend-mode: screen` over a white page erases the image entirely. */
 img,
 video,
 .avatar {
-  filter: grayscale(100%) sepia(100%) hue-rotate(90deg) saturate(300%) contrast(1.2);
-  mix-blend-mode: screen;
+  filter: var(--fx-media-filter);
+  mix-blend-mode: var(--fx-media-blend);
 }
 
 /* Scanlines & CRT Overlay */
@@ -48,13 +293,11 @@ body::before {
   left: 0;
   bottom: 0;
   right: 0;
-  background:
-    linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
-    linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+  background: var(--fx-scanlines);
   z-index: 9999;
-  background-size: 100% 2px, 3px 100%;
+  background-size: var(--fx-scanline-size);
   pointer-events: none;
-  animation: flicker 0.15s infinite;
+  animation: var(--fx-scanline-animation);
 }
 
 /* Screen Vignette & Green Phosphor Glow */
@@ -66,8 +309,8 @@ body::after {
   left: 0;
   bottom: 0;
   right: 0;
-  background: radial-gradient(circle, rgba(0, 20, 0, 0) 60%, rgba(0, 20, 0, 0.6) 100%);
-  box-shadow: inset 0 0 100px rgba(0, 255, 0, 0.1);
+  background: var(--fx-vignette);
+  box-shadow: var(--fx-vignette-shadow);
   z-index: 9998;
   pointer-events: none;
 }
@@ -97,7 +340,7 @@ body::after {
 
 ::-webkit-scrollbar-thumb {
   @apply bg-secondary;
-  border: 2px solid #000;
+  border: 2px solid var(--color-black);
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -111,9 +354,9 @@ body::after {
 }
 
 .border-terminal {
-  border: 1px solid rgba(51, 255, 0, 0.6);
-  box-shadow: 0 0 15px rgba(51, 255, 0, 0.2), inset 0 0 10px rgba(51, 255, 0, 0.1);
-  background: rgba(0, 20, 0, 0.8);
+  border: var(--fx-panel-border);
+  box-shadow: var(--fx-panel-shadow);
+  background: var(--fx-panel-bg);
 }
 
 .terminal-btn {
@@ -122,9 +365,9 @@ body::after {
 
 .terminal-btn.active {
   @apply text-primary opacity-100 font-bold border-primary;
-  background: black;
-  box-shadow: 0 0 10px rgba(51, 255, 0, 0.6), inset 0 0 5px rgba(51, 255, 0, 0.2);
-  text-shadow: 0 0 8px rgba(51, 255, 0, 0.8);
+  background: var(--color-black);
+  box-shadow: var(--fx-active-shadow);
+  text-shadow: var(--fx-active-text-shadow);
 }
 
 /* The theme DEFAULT for buttons and links — deliberately in @layer base.
@@ -139,8 +382,13 @@ body::after {
  * is what localises the cause to this selector rather than to the palette.
  *
  * `@layer base` puts it below utilities, so it still themes an unstyled
- * button/link and a component can still opt out with a utility class. */
+ * button/link and a component can still opt out with a utility class.
+ *
+ * `hover:text-white` stays as written: `--color-white` is a THEME token now
+ * (#339), so on the light presets it resolves to that theme's emphasis colour
+ * rather than to literal white, which would be invisible on their grounds. */
 @layer base {
+
   button,
   a {
     @apply text-primary border-primary hover:bg-primary/20 hover:text-white transition-colors duration-150;

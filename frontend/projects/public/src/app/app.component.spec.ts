@@ -8,6 +8,7 @@ import { ViewportScroller } from '@angular/common';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Component } from '@angular/core';
 import { SeoService } from './services/seo.service';
+import { ThemeService } from './services/theme.service';
 import { DomSanitizer } from '@angular/platform-browser';
 import { BehaviorSubject } from 'rxjs';
 import { CookieConsentComponent } from './components/cookie-consent/cookie-consent.component';
@@ -33,6 +34,7 @@ describe('AppComponent', () => {
   let mockSeoService: { schemaSubject: BehaviorSubject<any>, jsonLdSchema$: any };
   let mockSanitizer: any;
   let gaService: { initialize: any; gtmNoscriptUrl$: BehaviorSubject<any> };
+  let themeService: { initialize: any; apply: any };
   let trustUrl: (url: string) => any;
 
   beforeEach(async () => {
@@ -41,6 +43,8 @@ describe('AppComponent', () => {
       gtmNoscriptUrl$: new BehaviorSubject<any>(null),
     };
     gaService = mockGaService;
+
+    themeService = { initialize: vi.fn(), apply: vi.fn() };
 
     mockSeoService = {
       schemaSubject: new BehaviorSubject<any>(null),
@@ -69,7 +73,8 @@ describe('AppComponent', () => {
         { provide: GoogleAnalyticsService, useValue: mockGaService },
         { provide: ViewportScroller, useValue: { setOffset: vi.fn() } },
         { provide: SeoService, useValue: mockSeoService },
-        { provide: DomSanitizer, useValue: mockSanitizer }
+        { provide: DomSanitizer, useValue: mockSanitizer },
+        { provide: ThemeService, useValue: themeService }
       ]
     })
       .overrideComponent(AppComponent, {
@@ -135,4 +140,14 @@ describe('AppComponent', () => {
       });
     });
   });
+
+  // #339: the theme is stamped from HERE, not from an app initializer — an
+  // initializer that touches `config$` aborts `ng build`'s route extraction
+  // (there is no backend behind it and `config$` is a shareReplay, so the
+  // request never settles and nothing tears it down). This pins the call site
+  // itself, because coverage alone would stay at 100% with the line deleted.
+  it('stamps the configured theme on the root element from ngOnInit', () => {
+    expect(themeService.initialize).toHaveBeenCalledTimes(1);
+  });
+
 });
