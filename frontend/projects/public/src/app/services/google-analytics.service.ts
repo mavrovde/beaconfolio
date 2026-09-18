@@ -45,8 +45,9 @@ export class GoogleAnalyticsService {
     // The GTM container id, same runtime source (#447). When this is set the
     // container is installed and the gtag path is NOT taken: GTM and gtag are
     // two installs of the SAME measurement, and running both double-counts
-    // every pageview. Readable so the root template can render the <noscript>
-    // half server-side, where a browser-injected one would be meaningless.
+    // every pageview. Browser-side only — the <noscript> half does NOT read
+    // this field, because initialize() never assigns it off-browser; it comes
+    // off `gtmNoscriptUrl$` below instead.
     public gtmContainerId = '';
 
     private isInitialized = false;
