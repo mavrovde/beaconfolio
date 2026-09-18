@@ -30,6 +30,25 @@ admin.beaconfolio.com {
 	}
 }
 
+# --- Tenant: viafrei (ports.md block 18100–18199) ----------------------------
+# Plain-HTTP loopback upstreams: the tenant terminates nothing itself (no
+# self-signed hop, so no tls_insecure_skip_verify and no redirect-only port).
+# viafrei.de/www serve a static landing page; mcp.viafrei.de is an MCP
+# Streamable HTTP server (long-lived SSE responses — no buffering).
+
+viafrei.de, www.viafrei.de {
+	reverse_proxy 127.0.0.1:18180 {
+		header_up Host {host}
+	}
+}
+
+mcp.viafrei.de {
+	reverse_proxy 127.0.0.1:18187 {
+		header_up Host {host}
+		flush_interval -1
+	}
+}
+
 # --- Second-tenant template (#338 AC: the dry-run example) -------------------
 # Onboarding a tenant is a PR against THIS file + ports.md, then one apply:
 #   1. Claim a port range in ports.md (next free 100-block).

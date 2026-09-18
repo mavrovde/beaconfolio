@@ -9,7 +9,8 @@ tenant binds only `127.0.0.1:<port>` inside its allocated block, and the edge
 | Range         | Tenant        | In use today                                                                 |
 |---------------|---------------|------------------------------------------------------------------------------|
 | 18000–18099   | beaconfolio   | 18080 (proxy HTTP, redirect-only), 18443* (proxy HTTPS, the edge upstream)   |
-| 18100–18999   | *unallocated* | — claim the next free 100-block per tenant via PR against this file          |
+| 18100–18199   | viafrei       | 18180 (landing HTTP), 18187 (MCP Streamable HTTP), 18132 (Postgres, tooling) |
+| 18200–18999   | *unallocated* | — claim the next free 100-block per tenant via PR against this file          |
 | 5433**        | beaconfolio   | Postgres (`127.0.0.1:5433`, compose `db` publish — local pytest + tooling)   |
 
 \* 18443 sits outside the nominal 100-block for historical reasons (the #310
