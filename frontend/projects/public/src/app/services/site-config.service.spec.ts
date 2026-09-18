@@ -18,6 +18,7 @@ const DTO = {
     analytics_id: 'G-TEST0001',
     availability: 'open',
     ai_crawler_policy: 'deny',
+    gtm_container_id: 'GTM-TEST001',
 };
 
 describe('SiteConfigService', () => {
@@ -52,6 +53,7 @@ describe('SiteConfigService', () => {
             availability: 'open',
             analyticsId: 'G-TEST0001',
             aiCrawlerPolicy: 'deny',
+            gtmContainerId: 'GTM-TEST001',
         });
     });
 
@@ -118,5 +120,35 @@ describe('SiteConfigService', () => {
                 availability: 'on_vacation',
             });
         expect(got).toBe('listening');
+    });
+});
+
+// --- GTM container id (#447) ---
+
+describe('SiteConfigService — gtm_container_id (#447)', () => {
+    let service: SiteConfigService;
+    let httpMock: HttpTestingController;
+
+    beforeEach(() => {
+        TestBed.configureTestingModule({
+            providers: [provideHttpClient(), provideHttpClientTesting(), SiteConfigService],
+        });
+        service = TestBed.inject(SiteConfigService);
+        httpMock = TestBed.inject(HttpTestingController);
+    });
+
+    afterEach(() => httpMock.verify());
+
+    it.each([
+        ['GTM-ABC1234', 'GTM-ABC1234'],
+        [undefined, ''], // pre-#447 backend during a deploy window
+        ['', ''], // the documented OFF switch
+    ])('normalizes gtm_container_id %s to %s', (wire, expected) => {
+        let got: string | undefined;
+        service.config$.subscribe((c) => (got = c.gtmContainerId));
+        httpMock
+            .expectOne((r) => r.url.includes('/config/site'))
+            .flush({ ...DTO, gtm_container_id: wire });
+        expect(got).toBe(expected);
     });
 });

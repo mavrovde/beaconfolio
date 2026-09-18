@@ -169,7 +169,9 @@ Then open <http://localhost:4200> (public site) and <http://admin.localhost:4200
 `admin`). **Make it yours** — the whole checklist is config + admin uploads, zero code edits:
 
 1. `.env`: `OWNER_NAME`, `OWNER_HEADLINE`, `SITE_NAME`, `SITE_URL`, `SOCIAL_LINKS`,
-   `BEACONFOLIO_ANALYTICS_ID` (identity, #65) · `PUBLIC_SERVER_NAME`/`ADMIN_SERVER_NAME` (your
+   `BEACONFOLIO_ANALYTICS_ID` **or** `BEACONFOLIO_GTM_CONTAINER_ID` (identity, #65/#447 — a
+   container id wins and the gtag install stands down, so you never send two copies of the same
+   pageview) · `PUBLIC_SERVER_NAME`/`ADMIN_SERVER_NAME` (your
    domain) · `IMAGE_REPO` (your registry, for prod).
 2. Admin panel: upload your **Profile Data** JSON and your **CV** (Content → replaces the demo).
    Your **portrait** is a runtime upload too (#333), but has **no panel button yet** — it is one
@@ -670,7 +672,8 @@ export const environment = {
   apiUrl: '',
   apiPrefix: '/api/app',
   // Deprecated (#65): analytics is RUNTIME config now — set
-  // BEACONFOLIO_ANALYTICS_ID in the host .env; this field is inert.
+  // BEACONFOLIO_ANALYTICS_ID, or BEACONFOLIO_GTM_CONTAINER_ID for a Tag
+  // Manager container (#447), in the host .env; this field is inert.
   googleAnalyticsId: '',
 };
 ```

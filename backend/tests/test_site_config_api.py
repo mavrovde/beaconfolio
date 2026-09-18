@@ -20,6 +20,7 @@ async def test_site_config_returns_all_fields(client: AsyncClient):
         "owner_description",
         "social_links",
         "analytics_id",
+        "gtm_container_id",
     ):
         assert field in data, f"missing field: {field}"
 
@@ -35,6 +36,7 @@ async def test_site_config_reflects_settings(client: AsyncClient, monkeypatch):
     monkeypatch.setattr(settings, "owner_headline", "Pin Headline")
     monkeypatch.setattr(settings, "owner_description", "Pin description.")
     monkeypatch.setattr(settings, "analytics_id", "G-PIN00001")
+    monkeypatch.setattr(settings, "gtm_container_id", "GTM-PIN0001")
     response = await client.get(f"{settings.api_prefix}/config/site")
     data = response.json()
     assert data["site_name"] == "pin-site"
@@ -42,6 +44,7 @@ async def test_site_config_reflects_settings(client: AsyncClient, monkeypatch):
     assert data["owner_headline"] == "Pin Headline"
     assert data["owner_description"] == "Pin description."
     assert data["analytics_id"] == "G-PIN00001"
+    assert data["gtm_container_id"] == "GTM-PIN0001"
 
 
 @pytest.mark.asyncio
@@ -157,3 +160,49 @@ def test_explicit_site_values_win():
     s = Settings(OWNER_NAME="Jane Doe", SITE_URL="https://jane.example", _env_file=None)
     assert s.owner_name == "Jane Doe"
     assert s.site_url == "https://jane.example"
+
+
+# --- GTM container id (#447) ---
+
+
+def test_empty_gtm_container_id_stays_empty():
+    """Empty is the documented OFF switch, exactly as for analytics_id — the
+    compose files forward ``${BEACONFOLIO_GTM_CONTAINER_ID:-}``, so an unset
+    host var arrives as "" and must NOT be coerced into some default."""
+    from app.config import Settings
+
+    s = Settings(BEACONFOLIO_GTM_CONTAINER_ID="", _env_file=None)
+    assert s.gtm_container_id == ""
+
+
+def test_gtm_container_id_is_read_from_the_namespaced_alias():
+    """The knob binds to BEACONFOLIO_GTM_CONTAINER_ID and to nothing else.
+
+    Pinned because an ambient generic name (``GTM_CONTAINER_ID``) on a shared
+    host could otherwise bind a NEIGHBOUR's container and silently ship this
+    site's traffic into someone else's property — the #141 namespacing reason,
+    which is a data-leak class, not a style preference.
+    """
+    from app.config import Settings
+
+    s = Settings(BEACONFOLIO_GTM_CONTAINER_ID="GTM-ABC1234", _env_file=None)
+    assert s.gtm_container_id == "GTM-ABC1234"
+
+    unnamespaced = Settings(GTM_CONTAINER_ID="GTM-NEIGHBOR", _env_file=None)
+    assert unnamespaced.gtm_container_id == ""
+
+
+def test_gtm_and_analytics_ids_are_independent_knobs():
+    """Setting one must not disturb the other. The PRECEDENCE between them is
+    a client-side decision (the browser installs one or the other); the server
+    reports both faithfully and decides nothing.
+    """
+    from app.config import Settings
+
+    s = Settings(
+        BEACONFOLIO_ANALYTICS_ID="G-AAAAAAA",
+        BEACONFOLIO_GTM_CONTAINER_ID="GTM-BBBBBBB",
+        _env_file=None,
+    )
+    assert s.analytics_id == "G-AAAAAAA"
+    assert s.gtm_container_id == "GTM-BBBBBBB"

@@ -85,7 +85,8 @@ cp .env.example .env
 #    features fall back to the in-stack Ollama.
 #    Identity (#65/#66 — the committed DEFAULTS are the Jane Doe demo persona):
 #    set SITE_URL, SITE_NAME, OWNER_NAME, OWNER_HEADLINE, OWNER_DESCRIPTION,
-#    SOCIAL_LINKS (and BEACONFOLIO_ANALYTICS_ID to keep analytics) or the site
+#    SOCIAL_LINKS (and BEACONFOLIO_ANALYTICS_ID, or BEACONFOLIO_GTM_CONTAINER_ID
+#    for a Tag Manager container — #447, it wins over the gtag id) or the site
 #    renders the demo identity and SSR advertises example.com og:url/canonical.
 #    The backend prints an IDENTITY line at every startup and flags
 #    "DEFAULTS IN USE" loudly when the demo persona is live (#335).

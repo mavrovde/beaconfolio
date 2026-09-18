@@ -19,6 +19,9 @@ export interface SiteConfig {
     ownerDescription: string;
     socialLinks: string[];
     analyticsId: string;
+    /** GTM container id (#447). When non-empty the app installs the container
+     *  and NOT gtag — two installs of one measurement double-count. */
+    gtmContainerId: string;
     /** Owner's job-search state (#271): 'open' | 'listening' | 'not_looking'.
      *  GUARANTEED here — the projection normalizes an absent wire value. */
     availability: string;
@@ -36,6 +39,8 @@ interface SiteConfigDto {
     owner_description: string;
     social_links: string[];
     analytics_id: string;
+    /** ABSENT on a pre-#447 backend — normalized to '' in the projection. */
+    gtm_container_id?: string;
     /** ABSENT on an older backend (deploy-window skew) — normalized to the
      *  default in the projection, per this service's degrade-never-break
      *  contract. */
@@ -56,6 +61,7 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
     ownerDescription: 'Professional software engineering portfolio.',
     socialLinks: [],
     analyticsId: '',
+    gtmContainerId: '',
     availability: 'listening',
     aiCrawlerPolicy: 'allow',
 };
@@ -80,6 +86,10 @@ export class SiteConfigService {
                 ownerDescription: dto.owner_description,
                 socialLinks: dto.social_links,
                 analyticsId: dto.analytics_id,
+                // Absent on a pre-#447 backend (deploy-window skew); '' is this
+                // field's documented off switch, so the fallback and the
+                // "disabled" value are deliberately the same thing.
+                gtmContainerId: dto.gtm_container_id ?? '',
                 // An older backend omits this (deploy-window skew). Without the
                 // fallback, undefined reached toUpperCase() downstream and the
                 // WHOLE availability stream errored — the indicator silently

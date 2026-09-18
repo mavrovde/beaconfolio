@@ -50,6 +50,8 @@ describe('GoogleAnalyticsService', () => {
       const el = document.getElementById(id);
       if (el) el.remove();
     });
+    const gtm = document.getElementById('gtm-container-script');
+    if (gtm) gtm.remove();
   });
 
   it('should be created', () => {
@@ -201,5 +203,138 @@ describe('GoogleAnalyticsService', () => {
 
     expect(appendChildSpy).not.toHaveBeenCalled();
     getSpy.mockRestore();
+  });
+});
+
+
+// --- GTM container install (#447) ---
+
+import { firstValueFrom } from 'rxjs';
+import { safeTagId } from './google-analytics.service';
+
+/** Build a service whose site config carries the given fields. */
+function serviceWith(cfg: Record<string, unknown>) {
+  TestBed.resetTestingModule();
+  TestBed.configureTestingModule({
+    providers: [
+      GoogleAnalyticsService,
+      { provide: Router, useValue: { events: new Subject<any>().asObservable() } },
+      {
+        provide: SiteConfigService,
+        useValue: {
+          config$: of({
+            siteName: 's', siteUrl: '', ownerName: 'o', ownerHeadline: 'h',
+            ownerDescription: 'd', socialLinks: [], analyticsId: '',
+            gtmContainerId: '', ...cfg,
+          }),
+        },
+      },
+    ],
+  });
+  return TestBed.inject(GoogleAnalyticsService);
+}
+
+describe('GoogleAnalyticsService — GTM (#447)', () => {
+  let appended: Node[];
+
+  beforeEach(() => {
+    appended = [];
+    vi.spyOn(document.head, 'appendChild').mockImplementation((node: Node) => {
+      appended.push(node);
+      return node;
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    ['google-analytics-script', 'google-analytics-init', 'gtm-container-script']
+      .forEach(id => document.getElementById(id)?.remove());
+  });
+
+  const srcs = () => appended
+    .filter((n): n is HTMLScriptElement => (n as HTMLScriptElement).tagName === 'SCRIPT')
+    .map(n => (n as HTMLScriptElement).src || '');
+
+  it('installs the container via the canonical gtm.js loader', () => {
+    serviceWith({ gtmContainerId: 'GTM-ABC1234' }).initialize();
+    expect(srcs().some(u => u === 'https://www.googletagmanager.com/gtm.js?id=GTM-ABC1234'))
+      .toBe(true);
+  });
+
+  it('seeds dataLayer with the gtm.start event', () => {
+    (window as any).dataLayer = undefined;
+    serviceWith({ gtmContainerId: 'GTM-ABC1234' }).initialize();
+    const dl = (window as any).dataLayer as any[];
+    expect(dl.some(e => e && e.event === 'gtm.js' && typeof e['gtm.start'] === 'number'))
+      .toBe(true);
+  });
+
+  // The DISCRIMINATING case. Two installs of one measurement double-count
+  // every pageview, so "GTM wins" has to mean gtag is SKIPPED, not reordered.
+  it('does NOT also install gtag when both ids are configured', () => {
+    serviceWith({ gtmContainerId: 'GTM-ABC1234', analyticsId: 'G-SHOULDNOT' }).initialize();
+    expect(srcs().some(u => u.includes('/gtm.js?id=GTM-ABC1234'))).toBe(true);
+    expect(srcs().some(u => u.includes('/gtag/js'))).toBe(false);
+    expect(document.getElementById('google-analytics-init')).toBeNull();
+  });
+
+  it('falls back to the gtag install when no container is configured', () => {
+    serviceWith({ analyticsId: 'G-ONLYGTAG' }).initialize();
+    expect(srcs().some(u => u.includes('/gtag/js?id=G-ONLYGTAG'))).toBe(true);
+    expect(srcs().some(u => u.includes('/gtm.js'))).toBe(false);
+  });
+
+  it('installs nothing when neither id is configured', () => {
+    serviceWith({}).initialize();
+    expect(srcs()).toEqual([]);
+  });
+
+  it('drops a container id that could smuggle markup', () => {
+    serviceWith({ gtmContainerId: 'GTM-X"></script><script>alert(1)' }).initialize();
+    expect(srcs()).toEqual([]);
+  });
+
+  it('exposes the <noscript> url only when a container is configured', async () => {
+    const withGtm = serviceWith({ gtmContainerId: 'GTM-ABC1234' });
+    expect(await firstValueFrom(withGtm.gtmNoscriptUrl$)).not.toBeNull();
+
+    const without = serviceWith({});
+    expect(await firstValueFrom(without.gtmNoscriptUrl$)).toBeNull();
+  });
+
+  // Regression: a pre-#447 backend omits gtm_container_id entirely. Without
+  // the typeof guard, TAG_ID_PATTERN.test(undefined) tests the STRING
+  // "undefined" — pure letters, so it MATCHES — and the noscript iframe would
+  // point at ns.html?id=undefined.
+  it('treats a MISSING container id as absent, not as the string "undefined"', async () => {
+    const svc = serviceWith({ gtmContainerId: undefined });
+    expect(await firstValueFrom(svc.gtmNoscriptUrl$)).toBeNull();
+    svc.initialize();
+    expect(srcs().some(u => u.includes('undefined'))).toBe(false);
+  });
+
+  // The idempotence guard. initialize() is called from AppComponent.ngOnInit,
+  // and a second container script would push a SECOND gtm.start onto dataLayer
+  // and load the container twice — the same double-count this issue exists to
+  // prevent, arriving by a different route.
+  it('does not install the container twice when the script is already present', () => {
+    const existing = document.createElement('script');
+    existing.id = 'gtm-container-script';
+    document.head.insertAdjacentElement('beforeend', existing);
+    try {
+      serviceWith({ gtmContainerId: 'GTM-ABC1234' }).initialize();
+      expect(srcs().some(u => u.includes('/gtm.js'))).toBe(false);
+    } finally {
+      existing.remove();
+    }
+  });
+
+  it('safeTagId rejects every non-string and every unsafe string', () => {
+    expect(safeTagId(undefined)).toBe('');
+    expect(safeTagId(null)).toBe('');
+    expect(safeTagId(42)).toBe('');
+    expect(safeTagId('')).toBe('');
+    expect(safeTagId('GTM-OK123')).toBe('GTM-OK123');
+    expect(safeTagId('GTM OK')).toBe('');
   });
 });

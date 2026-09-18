@@ -5,7 +5,21 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- Placeholder for next release.
+- **The analytics tag is now a Google Tag Manager container, configured at runtime.** The site
+  previously hard-wired a `gtag.js` install driven by `BEACONFOLIO_ANALYTICS_ID`, so adding any
+  second tag — a conversion pixel, a consent tool, a search-console verification — meant a code
+  change and a deploy. A new `BEACONFOLIO_GTM_CONTAINER_ID` knob (namespaced like every other
+  setting, so an ambient generic name cannot bind someone else's container) is served through
+  `/api/app/config/site` and installs the container with Google's canonical `gtm.js` loader plus
+  the `<noscript>` iframe. The iframe is **server-rendered**, because a visitor with no JavaScript
+  never runs Angular and that tag is the only one they can send.
+  **GTM wins over gtag, by skipping it entirely rather than reordering it**: the two are two
+  installs of the *same* measurement, and running both reports every pageview twice. Tag ids are
+  passed through a `safeTagId()` whitelist before they reach a URL — and that helper's `typeof`
+  guard is load-bearing, not defensive noise: `/^[A-Za-z0-9-]+$/.test(undefined)` coerces its
+  argument to the *string* `"undefined"`, which is pure letters and therefore **matches**, so a
+  backend that predates this change (and omits the field) would otherwise have produced
+  `ns.html?id=undefined`.
 
 ## [1.15.2] - 2026-09-18
 

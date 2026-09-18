@@ -212,6 +212,7 @@ services:
       - OWNER_DESCRIPTION=${OWNER_DESCRIPTION:-}
       - SOCIAL_LINKS=${SOCIAL_LINKS:-}
       - BEACONFOLIO_ANALYTICS_ID=${BEACONFOLIO_ANALYTICS_ID:-}
+      - BEACONFOLIO_GTM_CONTAINER_ID=${BEACONFOLIO_GTM_CONTAINER_ID:-}
       # AI-crawler policy (#252): allow (default) | deny — rendered into the
       # SSR robots.txt via GET /config/site.
       - AI_CRAWLER_POLICY=${AI_CRAWLER_POLICY:-}
