@@ -35,6 +35,12 @@ const REGISTRY: Readonly<Record<string, { platform: string; icon: string }>> = {
     'bitbucket.org': { platform: 'Bitbucket', icon: '⌆' },
     'codeberg.org': { platform: 'Codeberg', icon: '⌇' },
     'sr.ht': { platform: 'SourceHut', icon: '⌐' },
+    // SourceHut splits its services across hosts: a profile lives on `sr.ht`
+    // but the repository people actually link to is on `git.sr.ht`, which is a
+    // separate hostname and so a separate registry key. Without this row the
+    // CHANGELOG's claim that SourceHut is curated holds for one of the two URLs
+    // a SourceHut user is likely to configure (review finding 3).
+    'git.sr.ht': { platform: 'SourceHut', icon: '⌐' },
     'dev.azure.com': { platform: 'Azure DevOps', icon: '⌂' },
     'linkedin.com': { platform: 'LinkedIn', icon: '§' },
     'stackoverflow.com': { platform: 'Stack Overflow', icon: '¶' },
@@ -50,6 +56,22 @@ const REGISTRY: Readonly<Record<string, { platform: string; icon: string }>> = {
 export const DEFAULT_ICON = '›';
 
 /**
+ * The second-level labels that are PUBLIC SUFFIXES rather than names, under a
+ * country-code TLD: `example.co.uk` is registered at `example`, not at `co`.
+ *
+ * This is deliberately a small list and not a length test. The obvious
+ * shortcut — "a second-to-last label of three characters or fewer is a
+ * suffix" — is wrong on ordinary hosts and was caught in review: it reads
+ * `code.bbc.com` as BBC's public suffix and labels the link CODE instead of
+ * BBC, does the same to `git.abc.com`, and turns SourceHut's real git host
+ * `git.zz.ht` into GIT rather than ZZ. A full Public Suffix List is ~10k
+ * entries and a dependency; these seven cover the ccTLD shapes a portfolio's
+ * links realistically use, and anything outside them degrades to dropping one
+ * label, which is the same answer the length test gave for `github.com`.
+ */
+const CCTLD_SECOND_LEVEL = new Set(['co', 'com', 'net', 'org', 'ac', 'gov', 'edu']);
+
+/**
  * Derive the display label for a host nobody registered — `git.example.co.uk`
  * becomes `EXAMPLE`. Takes the registrable label rather than the whole
  * hostname, because `GIT.EXAMPLE.CO.UK` is noise in a terminal prompt.
@@ -59,10 +81,18 @@ function deriveLabel(hostname: string): string {
     if (parts.length <= 1) {
         return hostname;
     }
-    // Drop a two-part public suffix (co.uk, com.br) when there is still a name
-    // left to show; otherwise drop one.
-    const tail = parts.length >= 3 && parts[parts.length - 2].length <= 3 ? 2 : 1;
-    return parts[Math.max(parts.length - tail - 1, 0)];
+    // Drop a two-part public suffix (`co.uk`, `com.br`) only when the LAST
+    // label is a ccTLD — a two-character TLD — and the one before it is a
+    // known suffix. `code.bbc.com` fails on the first test, `git.zz.ht` on the
+    // second, and both keep their real registrable label.
+    const last = parts[parts.length - 1];
+    const secondLast = parts[parts.length - 2];
+    const dropsTwo =
+        parts.length >= 3 && last.length === 2 && CCTLD_SECOND_LEVEL.has(secondLast);
+    // No floor needed: `dropsTwo` already requires three labels, so the index
+    // is 0 at worst. An unreachable `Math.max(..., 0)` here advertised an edge
+    // case that does not exist (review nit 4).
+    return dropsTwo ? parts[parts.length - 3] : parts[parts.length - 2];
 }
 
 /**
@@ -84,7 +114,13 @@ export function toProfileLinks(urls: readonly string[] | undefined): ProfileLink
     // where a repeated key is a reconciliation bug, not just a repeated row.
     const seen = new Set<string>();
     for (const raw of urls) {
-        if (typeof raw !== 'string' || !raw.trim()) {
+        // `typeof` only. A `!raw.trim()` blank-check was here and it was
+        // UNREACHABLE as behavior: `new URL('   ')` throws, so the catch below
+        // already drops a blank entry, and deleting the check left the whole
+        // suite green. The typeof guard is a different matter and stays — a
+        // non-string member whose `toString()` yields a valid URL would
+        // otherwise be coerced into a rendered link by the parser.
+        if (typeof raw !== 'string') {
             continue;
         }
         let parsed: URL;

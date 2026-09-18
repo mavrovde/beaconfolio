@@ -27,7 +27,10 @@ All notable changes to this project will be documented in this file.
   read the same list. GitHub, GitLab, Bitbucket, Codeberg, SourceHut, Azure DevOps and several
   social hosts get a curated label and glyph; **an unregistered host is rendered, not dropped**, with
   a label derived from its own domain, so adding a self-hosted GitLab or anything else is a config
-  edit and nothing else. Deriving the list from `SOCIAL_LINKS` rather than adding a second
+  edit and nothing else. That derivation takes the *registrable* label and recognises a two-part
+  public suffix by an explicit ccTLD list rather than by label length: the length shortcut reads an
+  ordinary three-letter subdomain as a suffix and would have labelled `code.bbc.com` CODE instead
+  of BBC (review finding). Deriving the list from `SOCIAL_LINKS` rather than adding a second
   `codeHosts` knob is deliberate: two lists of the same fact drift, and this one already had a
   consumer. A configured value that is not an absolute `http(s)` URL is dropped rather than escaped —
   it lands in an `[href]`, and Angular's sanitizer is the second line of defence there, not the
