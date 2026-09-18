@@ -285,8 +285,9 @@ target that four releases cannot meet is a target measuring the wrong thing.
 **immediately on every merge**, never batched. `Tokens (k)` and `Time of processing
 (min)` are the retired columns above: they are left EMPTY, not estimated — a plausible
 number in a measurement field is worse than a blank one. One caveat is load-bearing: the
-`Review rounds` field has disagreed with the thread every time it was checked (three
-measured instances, most recently #386's `4` against a thread of one), so **the thread is
+`Review rounds` field has disagreed with the thread on every occasion it was filled and
+checked — the instances are named in [note 3 of the trend
+table](../retrospectives/README.md), which is where that count lives — so **the thread is
 the instrument** — it is executable and re-derivable by anyone — and the field is not
 published from.
 
@@ -432,8 +433,8 @@ failure mode the process exists to prevent. The trade is deliberate:
   a live open redirect and a self-inflicted security bypass, both green on CI.
 - Most work is seen more than once — but **not always**, and the exception is not a
   saving. This bullet used to assert that mean rounds "stayed above 1.8 in every release
-  measured"; v1.15.1 and v1.15.2 measured **1.00**, which falsified it. Read the
-  per-release series in [the trend table](../retrospectives/README.md) — and read the
+  measured"; the trend table's two newest rows fall below that line, which falsified it.
+  Read the per-release series in [the trend table](../retrospectives/README.md) — and read the
   caveat beside those two rows before treating the drop as an improvement: both windows
   were reviewed by the session that wrote the code, and an author's own finding becomes a
   commit instead of a round ([v1.15.1 §4](../retrospectives/v1.15.1.md)).

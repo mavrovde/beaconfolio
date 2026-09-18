@@ -13,6 +13,11 @@
 # Usage:  scripts/retro_metrics.sh <prev-tag | prev-release-PR> <release-pr-number>
 #   e.g.  scripts/retro_metrics.sh v1.14.3 436     (lower bound = the tag's commit date)
 #   e.g.  scripts/retro_metrics.sh 436 441         (lower bound = THAT PR's mergedAt)
+#   e.g.  scripts/retro_metrics.sh pr:436 441      (explicit — never guessed)
+#   e.g.  scripts/retro_metrics.sh ref:v1.14.3 436 (explicit — never guessed)
+#
+# Env:  RETRO_PR_LIMIT (default 400) — the listing's TRUNCATION GUARD, not a page
+#       size. Filling it exits 2 with "cannot measure"; it never audits a prefix.
 #
 # PREFER THE SECOND FORM. The tag form bounds the window on the previous tag's
 # COMMIT date, which is not the same instant as the previous release PR's merge: at
@@ -61,22 +66,54 @@ if [ -z "$UPPER" ] || [ "$UPPER" = "null" ]; then
     exit 1
 fi
 
-# Lower bound. Two forms, and they are NOT equivalent — see the header.
+# Lower bound. Two KINDS, and they are NOT equivalent — see the header.
 #
-#   numeric $PREV -> the previous RELEASE PR's mergedAt, the same instant kind as
-#                    UPPER, and the bound is exclusive on both reads. Preferred.
-#   otherwise     -> the previous tag's commit date, normalised to UTC. Note 11: a
-#                    local +02:00 stamp string-compared against a Z value silently
-#                    mis-selects the corpus.
+#   PR number -> the previous RELEASE PR's mergedAt, the same instant kind as
+#                UPPER, and the bound is exclusive on both reads. Preferred.
+#   git ref   -> the previous tag's commit date, normalised to UTC. Note 11: a
+#                local +02:00 stamp string-compared against a Z value silently
+#                mis-selects the corpus.
+#
+# Which kind a BARE argument means was decided by "is it all digits?", and a
+# heuristic that guesses in silence is the exact class this script exists to
+# remove (PR #452, nit 7): a 7-hex SHA prefix that happens to be all decimal
+# (`4361234`) or a tag literally named `436` reads as a PR number and the window
+# is measured against the wrong instant with no warning. Two changes: the
+# explicit `pr:N` / `ref:X` forms say which you meant with no guessing at all,
+# and a bare all-digit argument that ALSO names a git commit now REFUSES instead
+# of picking one. `436` does not name a commit in this repo today, so every
+# published invocation (`retro_metrics.sh 436 441`, `retro_metrics.sh v1.14.3 436`)
+# is unchanged.
+PREV_REF="$PREV"
 case "$PREV" in
-    '' | *[!0-9]*)
-        LOWER="$(git log -1 --format=%cI "$PREV" | python3 -c 'import sys, datetime; print(datetime.datetime.fromisoformat(sys.stdin.read().strip()).astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))')"
+    pr:*)   PREV_KIND=pr;  PREV_REF="${PREV#pr:}" ;;
+    ref:*)  PREV_KIND=ref; PREV_REF="${PREV#ref:}" ;;
+    *[!0-9]*) PREV_KIND=ref ;;
+    *)
+        PREV_KIND=pr
+        if git rev-parse --verify --quiet "$PREV^{commit}" >/dev/null 2>&1; then
+            echo "FATAL: '$PREV' is all digits AND names a git commit — ambiguous." >&2
+            echo "       Say which: 'pr:$PREV' (previous release PR) or 'ref:$PREV' (git ref)." >&2
+            exit 1
+        fi
+        ;;
+esac
+case "$PREV_KIND:$PREV_REF" in
+    pr:|pr:*[!0-9]*)
+        echo "FATAL: 'pr:$PREV_REF' is not a PR number" >&2
+        exit 1
+        ;;
+esac
+
+case "$PREV_KIND" in
+    ref)
+        LOWER="$(git log -1 --format=%cI "$PREV_REF" | python3 -c 'import sys, datetime; print(datetime.datetime.fromisoformat(sys.stdin.read().strip()).astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))')"
         BOUND_KIND="tag commit date"
         ;;
-    *)
-        LOWER="$(gh pr view "$PREV" --repo "$REPO" --json mergedAt -q '.mergedAt')"
+    pr)
+        LOWER="$(gh pr view "$PREV_REF" --repo "$REPO" --json mergedAt -q '.mergedAt')"
         if [ -z "$LOWER" ] || [ "$LOWER" = "null" ]; then
-            echo "FATAL: PR #$PREV is not merged — no lower bound" >&2
+            echo "FATAL: PR #$PREV_REF is not merged — no lower bound" >&2
             exit 1
         fi
         BOUND_KIND="previous release PR mergedAt"
@@ -89,10 +126,38 @@ echo
 # ALWAYS eyeball the corpus against `git log <prev>..<tag>`. One asymmetry remains
 # in the TAG form and is the reason to prefer the PR form: a PR merged between the
 # tagged commit and the tag's creation is dropped by LOWER.
-echo "=== corpus (eyeball against: git log --oneline $PREV..HEAD) ==="
-CORPUS="$(gh pr list --repo "$REPO" --state merged --limit 100 \
-    --json number,mergedAt,changedFiles,additions,deletions,createdAt \
-    -q "[.[] | select(.mergedAt > \"$LOWER\" and .mergedAt <= \"$UPPER\")]")"
+echo "=== corpus (eyeball against: git log --oneline $PREV_REF..HEAD) ==="
+
+# The listing is bounded SERVER-SIDE and guarded against truncation. Both halves
+# of this were missing until PR #452's review (major 1), and both are exactly what
+# audit_no_verdict_merges.sh:229,248-252 already fixed at #399/#439:
+#
+#   (a) `gh pr list` without --search returns merged PRs in DEFAULT order, which
+#       is not merge order, so a fixed --limit takes an arbitrary prefix and the
+#       mergedAt filter then runs over a set that need not contain the window.
+#       MEASURED on this repo: `retro_metrics.sh v1.11.1 281` (the v1.12.0 window)
+#       returned 7 PRs at --limit 100 and 9 at --limit 400, against a published
+#       row of 10 — silently, with a confident mean printed under it.
+#   (b) A filled limit must be "cannot measure", never a quietly short corpus.
+#       The sibling exits 2 and says so; this one printed a number.
+#
+# `merged:>=DATE` bounds the SEARCH by merge date at day granularity — a superset
+# of the window, which the jq filter below then trims to the exact instants — so
+# the listing order no longer has to agree with the filter.
+LIMIT="${RETRO_PR_LIMIT:-400}"
+RAW="$(gh pr list --repo "$REPO" --state merged --limit "$LIMIT" \
+    --search "merged:>=${LOWER%%T*}" \
+    --json number,mergedAt,changedFiles,additions,deletions,createdAt)"
+printf '%s' "$RAW" | jq -e 'type == "array" and all(.[]; has("number") and has("mergedAt"))' >/dev/null 2>&1 \
+    || { echo "FATAL: gh pr list did not return the expected array — cannot measure" >&2; exit 2; }
+NRAW="$(printf '%s' "$RAW" | jq 'length')"
+if [ "$NRAW" -ge "$LIMIT" ]; then
+    echo "FATAL: the listing filled --limit $LIMIT ($NRAW rows) — possibly truncated." >&2
+    echo "       Raise RETRO_PR_LIMIT. Cannot measure." >&2
+    exit 2
+fi
+CORPUS="$(printf '%s' "$RAW" \
+    | jq "[.[] | select(.mergedAt > \"$LOWER\" and .mergedAt <= \"$UPPER\")]")"
 # Sorted in jq, numerically. `sort -n -k1.3` looks right and is not: it keys on the
 # substring after "#4", so a corpus spanning #99 and #433 comes out misordered.
 echo "$CORPUS" | jq -r 'sort_by(.number) | .[]

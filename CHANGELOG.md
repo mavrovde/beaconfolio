@@ -194,10 +194,22 @@ All notable changes to this project will be documented in this file.
   the previous release PR's `mergedAt` when a PR number is given (a tag or ref still works, and
   still bounds on the commit date, so every earlier invocation reproduces); the printed window
   states which of the two it used. Re-measured, v1.15.0's published row reproduces exactly.
+  **A second, worse defect in the same script was found in review and fixed in the same PR:** the
+  corpus was listed with a bare `gh pr list --limit 100` in DEFAULT order and filtered client-side,
+  so an older window silently came back short — the v1.12.0 window returned 7 PRs against a
+  published row of 10, with a confident mean printed under it. The listing is now bounded
+  server-side (`--search "merged:>=…"`) and `--limit` became a **truncation guard**
+  (`RETRO_PR_LIMIT`, default 400): filling it exits 2 with "cannot measure", the polarity
+  `scripts/audit_no_verdict_merges.sh` already used. The same shape was then found and fixed in
+  `/retro` step 1 and in `release-manager` step 11b, whose bare `--limit 100` relabels an arbitrary
+  prefix now that the repo is past 450 merged PRs. All nine published `PRs merged` and
+  `Median files/PR` cells were re-derived afterwards rather than spot-checked. An all-digit argument
+  that also names a git commit is now refused as ambiguous instead of guessed, with explicit `pr:`
+  and `ref:` forms.
 - **Release figures are no longer restated in the wiki articles.** `docs/wiki/delivery-statistics.md`
   carried a ten-row copy of the trend table and `docs/wiki/team-and-process.md` carried two prose
   figures; all three were stale, and one — "mean rounds have stayed above 1.8 in every release
-  measured" — was falsified by this PR's own measurement of **1.00** in both new windows. They are
+  measured" — was falsified by this PR's own measurement of the two new windows. They are
   **deleted and linked**, not refreshed: refreshing a copy recreates the same defect on a
   one-release fuse. The articles keep the analysis and lose the numbers.
 - **`bump_version.sh` reports whether the previous release's retrospective exists**, and the line

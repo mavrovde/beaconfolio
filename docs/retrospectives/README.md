@@ -63,7 +63,10 @@ now filled for 31 of 55 Project 3 items, including 8 of 8 in the `v1.14 reach` b
 change the reading: the total includes **#310, still `In Progress`**, whose 2 900k/640min covers host
 work that has not shipped; and `Review rounds` is still unset for all 8 items, so **do not publish
 from that field** — the thread is the instrument (executable, re-derivable by anyone) and the field
-disagreed with the thread the one time it was filled (5 recorded vs 3 posted on #240).
+disagreed with the thread the one time it was filled (5 recorded vs 3 posted on #240). **Second
+instance, v1.15.1:** #386 carries `Review rounds: 4` against a thread of one ([v1.15.1
+§4](v1.15.1.md)). Two occasions filled, two disagreements — this note is where that count lives, so
+other surfaces link here rather than restating it.
 ⁴ Rework share is measured in **verdicts**, not tokens — a redefinition, and v1.12.0's cell was
 re-derived under it (its originally published 75% was token-based). See "How to count consistently".
 ⁵ The two earliest cells count **different severity populations** (v1.12.0 blocker-only, v1.13.0
@@ -317,9 +320,28 @@ minutes ([v1.15.1 §5](v1.15.1.md), [v1.15.2 §5](v1.15.2.md)). **The corpus bou
 v1.15.1:** `scripts/retro_metrics.sh` now takes the previous RELEASE PR's number for the lower edge
 (`retro_metrics.sh 436 441`), not the previous tag, because the tag commit read `11:09:19Z` and its
 own release PR #436 merged at `11:09:20Z` — the mirror of note 12, and it put #436 into v1.15.1's
-corpus as a seventh PR. The tag form still works and says which bound kind it used, so every
-earlier row remains re-derivable (verified: `retro_metrics.sh v1.14.3 436` still returns v1.15.0's
-published row).
+corpus as a seventh PR. The tag form still works and says which bound kind it used.
+
+**Re-derivability, measured on every row rather than asserted from one sample.** The first draft of
+this note claimed "every earlier row remains re-derivable" on the strength of a single spot check;
+#452's review falsified it, because the script listed with a bare `--limit 100` in default order
+and silently returned a short corpus (the v1.12.0 window came back with 7 of its 10 PRs). With the
+server-side `merged:>=` bound and the truncation guard added in #452, the whole series was re-run:
+
+- **`PRs merged` re-derives for all nine rows** under the PR-number lower bound —
+  `245 281` → 10, `281 300` → 16, `300 327` → 11, `327 385` → 17, `385 406` → 14, `406 428` → 17,
+  `428 436` → 6, `436 441` → 6, `441 446` → 3.
+- **`Median files/PR` re-derives for all nine rows** (17, 14, 20, 8, 7, 8, 7, 9, 6).
+- **The TAG form over-counts three windows by exactly one PR** — v1.13.0 16→17, v1.14.1 17→18,
+  v1.14.3 17→18 — and in each the extra is the *previous release's own PR* (#281, #327, #406).
+  That is this note's one-second asymmetry, reproduced on three older windows, and it is the
+  measured argument for the PR-number bound.
+- **The verdict counts and the rates derived from them do NOT re-derive before v1.15.0, and were
+  never expected to:** those cells were counted with the matchers notes 1 and 5 describe, which
+  this instrument replaced (e.g. v1.12.0 publishes 24 loose verdicts / 2.4 mean; the instrument's
+  heading-anchored, merge-replayed count is 23 / 2.30). Only the three newest rows — v1.15.0
+  (`v1.14.3 436`: 6 / 11 / 1.83 / 50% / 45% / median 7), v1.15.1 and v1.15.2 — reproduce
+  **every** cell exactly.
 
 ²⁹ **The rate cells in these two rows are not a measurement of the gate, and must never be quoted
 alone.** Every one of the 9 verdicts across both windows was written by the session that authored

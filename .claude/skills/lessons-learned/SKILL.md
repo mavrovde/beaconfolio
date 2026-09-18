@@ -2241,6 +2241,19 @@ tests: nothing fails today, and the failing date is weeks out. And the author is
 person to notice, because they are re-reading the sentence they wrote rather than the code beside
 it. This is the class the v1.15.1 retrospective named **class T**.
 
+**The lesson failed on its own PR first — and that is the strongest evidence it has.** The PR that
+WROTE this entry (#452) shipped, in a file in its own diff, the second instance of exactly this
+`--limit` shape: `retro_metrics.sh` listed `gh pr list --state merged --limit 100` in DEFAULT order
+and filtered client-side, with no truncation guard. Worse than the instance above — #439's fails
+loudly (exit 2); this one printed a **short corpus under a confident mean**: the v1.12.0 window
+returned **7 PRs against a published row of 10**. The reviewer found it by running grep 1 on the
+diff, which the author had written down and not executed. When that grep was finally run over the
+whole toolkit it found **two further live instances**, both fixed in the same round:
+`.claude/commands/retro.md` step 1 (the runbook that drives this instrument) and
+`.claude/agents/release-manager.md` step 11b, whose bare `--limit 100` relabels an arbitrary prefix
+now that the repo is past 450 merged PRs. **Four instances of one shape across a toolkit, three of
+them found only when the grep was actually typed.** Writing the grep down is not running it.
+
 **The same window produced two neighbours worth recognising as the same family:**
 
 - **A control that is only ACCIDENTALLY right.** `retro_metrics.sh` printed its corpus with

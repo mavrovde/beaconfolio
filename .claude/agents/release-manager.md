@@ -161,7 +161,18 @@ and `backend/docker-entrypoint.sh` (`set -e`, `db_probe.py`) crash-loops — a f
 
     ```bash
     # git is the source of truth: a merge commit contained in a tag IS shipped.
-    for n in $(gh pr list --state merged --limit 100 --json number --jq '.[].number'); do
+    # BOUND THE LISTING (PR #452 major 1): `gh pr list --limit N` returns merged PRs
+    # in DEFAULT order, not merge order, so on a repo past 450 merged PRs a bare
+    # --limit 100 relabels an arbitrary prefix and silently skips the rest. Bound by
+    # merge date on the PREVIOUS tag and refuse a filled limit rather than flipping
+    # part of the set.
+    PREV=$(git tag --sort=-v:refname | sed -n '2p')
+    PRS=$(gh pr list --state merged --limit 200 \
+            --search "merged:>=$(git log -1 --format=%cs "$PREV")" \
+            --json number --jq '.[].number')
+    [ "$(printf '%s\n' "$PRS" | grep -c .)" -lt 200 ] \
+      || { echo "listing filled --limit 200 — raise it; do NOT relabel a prefix"; exit 1; }
+    for n in $PRS; do
       sha=$(gh pr view "$n" --json mergeCommit --jq '.mergeCommit.oid')
       if [ -n "$(git tag --contains "$sha" 2>/dev/null)" ]; then
         gh pr edit "$n" --remove-label awaiting-release --add-label shipped

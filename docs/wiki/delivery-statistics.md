@@ -6,9 +6,9 @@
 > window: what moved, why, and what was changed in response.
 
 > **Status (updated 2026-09-18): this page is the ANALYSIS of one window; the figures
-> live elsewhere.** Its window is v1.13.0 → v1.14.1. **Six releases have shipped since**
-> (v1.14.2, v1.14.3, v1.15.0, v1.15.1, v1.15.2 and counting), and the series — including
-> how the plan in the second half of this page actually scored — lives ONLY in the
+> live elsewhere.** Its window is v1.13.0 → v1.14.1. **Every release since has shipped
+> past it** — how many, and how each scored, is a figure, so it is not written here: the
+> series — including how the plan in the second half of this page actually scored — lives ONLY in the
 > canonical sites: the trend table in
 > [`docs/retrospectives/README.md`](../retrospectives/README.md) and the per-release
 > records in [`docs/retrospectives/`](../retrospectives/).
@@ -272,8 +272,10 @@ Stated in advance so it cannot be rationalized afterwards.
 
 ## Outcome (updated 2026-09-18 — links, not restated figures)
 
-The plan above has now met five more releases. The short version, each claim sourced
-where the numbers live:
+The plan above has since met every release that followed it (the count, like every other
+figure, is read off [the trend table](../retrospectives/README.md#the-trend-table) rather
+than maintained here — a counter in prose is a figure that rots on a one-release fuse).
+The short version, each claim sourced where the numbers live:
 
 - **The mechanisms shipped.** #377's scoped pre-push gate landed at v1.14.2 (a
   docs-only push measured in seconds — timings in the
@@ -302,7 +304,8 @@ where the numbers live:
   gained a queue gate and a previous-retrospective report (`bump_version.sh`, v1.15.0 and
   v1.15.1); the rule-13 verdict audit became order-aware with a named acknowledgement
   ledger (v1.15.1, #409); and a non-independent verdict must now disclose itself
-  (CLAUDE.md rule 13, v1.15.0 — measured at 9 of 9 across v1.15.1 and v1.15.2).
+  (CLAUDE.md rule 13, v1.15.0 — the rate is the `Non-independent verdicts` column of [the
+  trend table](../retrospectives/README.md), not a figure repeated here).
 
 ## Links
 
