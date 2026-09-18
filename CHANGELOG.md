@@ -268,6 +268,15 @@ All notable changes to this project will be documented in this file.
   argued that a permanently red alarm is a disabled alarm while adding a `--limit 100` truncation
   that the measured 39-PR-per-fortnight rate would have tripped within one, and #425's correction
   landed on one of two surfaces. The entry gives the three greps that find the second instance.
+- **`lessons-learned` §80 — a `Closes #NN` in a BRANCH commit closes the issue even when the PR
+  body says `Refs`.** Deciding not to auto-close is not done by editing the PR body: GitHub honours
+  a closing keyword anywhere in the pushed commit message, and a squash merge concatenates every
+  branch commit into the merge commit. Measured on #67/PR #455 — the body was deliberately changed
+  to `Refs #67` with a paragraph saying the issue must stay open until the link-preview criterion
+  was verified live, and the issue closed **two seconds** after the merge because the branch's
+  first commit still carried `Closes #67`. No harm resulted (the criterion then verified against
+  production), but it arrived there mechanically rather than by verification — which is what
+  issue-tracking rule 7 forbids. The entry gives the grep over commit BODIES that catches it.
 
 ### Fixed
 - **A blog post's structured data could publish the placeholder identity instead of the site's.**

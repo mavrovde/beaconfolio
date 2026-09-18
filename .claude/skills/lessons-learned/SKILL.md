@@ -2296,3 +2296,37 @@ half is that the *real* ceiling was written where the next reader meets it: the 
 `gh pr view` per in-window PR against roughly 1000 GraphQL calls/hour, so past ~900 the answer is a
 **bounded window**, not a bigger number. A magic number with its ceiling documented is a decision;
 one without is the next instance of this lesson.
+
+---
+
+## 80. `Closes #NN` in a BRANCH commit closes the issue even when the PR body says `Refs` (#67/#455)
+
+**Trap.** Deciding not to auto-close an issue is not done by editing the PR body. GitHub honours a
+closing keyword **anywhere in the pushed commit message**, and a squash merge concatenates every
+branch commit's body into the merge commit — so a `Closes #67` written in the *first* commit on the
+branch still closes the issue, two seconds after merge, no matter what the PR description says by
+the time it lands.
+
+**Measured (#67 / PR #455, 2026-09-18).** AC4 ("the OG image renders in a link-preview validator")
+had a half that could not be checked before the change was live. The PR body was deliberately
+changed from `Closes #67` to `Refs #67`, with a paragraph explaining that the issue must stay open
+until the card was verified on the rolled host. The issue closed at `22:09:17Z`, two seconds after
+the `22:09:15Z` merge, because commit `92bd4cdb` — the branch's first commit, written before that
+decision — carried `Closes #67` in its body and the squash inherited it.
+
+No harm resulted: the rollout completed and the criterion was then verified against production
+(`og:image` absolute, HTTP 200, `PNG 1200 x 630`), so the closed state became correct. But it
+arrived there mechanically rather than by verification, which is exactly what issue-tracking rule 7
+forbids — "never close on assumption".
+
+**How to apply.**
+- Decide the closing keyword **when you write the first commit**, not at merge time. If there is any
+  chance a criterion will be unverifiable before the change is live, write `Refs #NN` in the commit
+  body from the start.
+- To reverse the decision later, the PR body is not enough: the branch commit message is the thing
+  to change (`git rebase -i` / `git commit --amend` on the offending commit, then force-push), or
+  accept the auto-close and post the verification afterwards.
+- Before merging a PR whose issue must stay open, grep the actual commit bodies, not the PR body:
+  `git log origin/main..HEAD --format=%B | grep -niE '\b(closes|fixes|resolves) #'`
+- The same applies to the merge-gate check: `pre-merge-gate.sh` reads the PR body for `Closes #NN`,
+  so a branch-commit keyword the body does not mention is invisible to it in both directions.
