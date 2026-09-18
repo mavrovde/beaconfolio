@@ -1,12 +1,19 @@
 @if (isVisible) {
   <div
-    class="fixed bottom-0 left-0 w-full bg-black border-t border-terminal p-2 z-40 flex justify-between items-center text-xs font-mono text-secondary opacity-80 hover:opacity-100 transition-opacity">
-    <div class="flex gap-6">
+    class="fixed bottom-0 left-0 w-full bg-black border-t border-terminal p-2 z-40 flex justify-between items-center text-xs font-mono text-secondary group">
+    <!-- The dimming lives on the CONTENT, not on the bar. `opacity` on the bar
+         made its GROUND translucent too, and the ground is `.border-terminal`'s
+         `--fx-panel-bg` (an unlayered rule, so it wins over `bg-black`): the
+         page scrolled under a fixed bar at 80% and ghosted through it on all
+         four non-terminal presets, where the taller system-font metrics push a
+         row under it. Invisible on `terminal` only because that ground is dark
+         on dark (review round 1, finding 10). -->
+    <div class="flex gap-6 opacity-80 group-hover:opacity-100 transition-opacity">
       <span>> {{ 'STATS.SYSTEM_STATUS' | translate }}: <span class="text-primary">ONLINE</span></span>
       <span>> {{ 'STATS.UPTIME' | translate }}: <span class="text-primary" data-testid="footer-uptime">{{ uptime }}</span></span>
       <span>> {{ 'STATS.MEMORY' | translate }}: {{ memoryUsage }}MB</span>
     </div>
-    <div class="flex gap-6 px-4">
+    <div class="flex gap-6 px-4 opacity-80 group-hover:opacity-100 transition-opacity">
       <span>> {{ 'STATS.CLIENT' | translate }}: {{ visitorIp }}</span>
       <span>
         > FE: <span class="text-primary">v{{ frontendVersion }}</span> | BE: <span class="text-primary">v{{ backendVersion

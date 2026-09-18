@@ -19,6 +19,7 @@ const DTO = {
     availability: 'open',
     ai_crawler_policy: 'deny',
     gtm_container_id: 'GTM-TEST001',
+    theme: 'classic',
 };
 
 describe('SiteConfigService', () => {
@@ -54,7 +55,29 @@ describe('SiteConfigService', () => {
             analyticsId: 'G-TEST0001',
             aiCrawlerPolicy: 'deny',
             gtmContainerId: 'GTM-TEST001',
+            theme: 'classic',
         });
+    });
+
+    // #339: the theme is stamped into `data-theme` and matched by a
+    // `[data-theme="..."]` block in styles.css, so a name no block matches
+    // leaves the page on whatever `:root` holds — a half-themed render rather
+    // than a clean fallback. Absent (an older backend mid-deploy) and unknown
+    // therefore normalize the same way, to the preset that deployment already
+    // looked like.
+    it.each([
+        [undefined, 'terminal'],
+        ['terminal', 'terminal'],
+        ['modern', 'modern'],
+        ['neon-vaporwave', 'terminal'],
+        ['', 'terminal'],
+    ])('normalizes theme %s to %s', (wire, expected) => {
+        let got: string | undefined;
+        service.config$.subscribe((c) => (got = c.theme));
+        httpMock
+            .expectOne((r) => r.url.includes('/config/site'))
+            .flush({ ...DTO, theme: wire });
+        expect(got).toBe(expected);
     });
 
     it.each([

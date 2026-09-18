@@ -1,7 +1,12 @@
 import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
 
 import { RouterModule } from '@angular/router';
-import { SiteSettingsService, AVAILABILITY_STATES } from '../../../services/site-settings.service';
+import {
+  SiteSettingsService,
+  AVAILABILITY_STATES,
+  THEME_PRESETS,
+  THEME_DESCRIPTIONS,
+} from '../../../services/site-settings.service';
 import { StatsService, SystemStats } from '@beaconfolio/shared';
 
 @Component({
@@ -27,9 +32,58 @@ export class DashboardComponent implements OnInit {
   availabilitySaving = false;
   availabilityError: string | null = null;
 
+  // Theme (#339): which preset token set the PUBLIC site paints itself with.
+  // Chosen here, applied there on the next load — this panel does not restyle
+  // the admin SPA, which keeps its own neutral chrome on purpose.
+  readonly themePresets = THEME_PRESETS;
+  readonly themeDescriptions = THEME_DESCRIPTIONS;
+  theme = '';
+  themeSaving = false;
+  themeError: string | null = null;
+
   ngOnInit(): void {
     this.loadStats();
     this.loadAvailability();
+    this.loadTheme();
+  }
+
+  loadTheme(): void {
+    this.siteSettingsService.getTheme().subscribe({
+      next: (res) => {
+        this.theme = res.value;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Error loading theme:', err);
+        this.themeError = 'Failed to load theme';
+        this.cdr.detectChanges();
+      },
+    });
+  }
+
+  setTheme(value: string): void {
+    if (this.themeSaving || value === this.theme) {
+      return;
+    }
+    this.themeSaving = true;
+    this.themeError = null;
+    const previous = this.theme;
+    this.theme = value;
+    this.siteSettingsService.setTheme(value).subscribe({
+      next: (res) => {
+        this.theme = res.value;
+        this.themeSaving = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        console.error('Error saving theme:', err);
+        // Roll back so the control never lies about persisted state.
+        this.theme = previous;
+        this.themeError = 'Failed to save theme';
+        this.themeSaving = false;
+        this.cdr.detectChanges();
+      },
+    });
   }
 
   loadAvailability(): void {

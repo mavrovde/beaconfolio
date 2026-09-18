@@ -1,4 +1,9 @@
-"""Availability setting (#271): admin-editable at runtime, public on /config/site."""
+"""Runtime site settings: availability (#271) and theme (#339).
+
+Both are admin-editable at runtime and surfaced publicly on /config/site.
+"""
+
+import re
 
 import pytest
 from httpx import AsyncClient
@@ -7,6 +12,7 @@ from app.config import settings
 
 PUBLIC = f"{settings.api_prefix}/config/site"
 ADMIN = f"{settings.api_prefix}/admin/site-settings/availability"
+ADMIN_THEME = f"{settings.api_prefix}/admin/site-settings/theme"
 
 
 @pytest.mark.asyncio
@@ -121,3 +127,169 @@ async def test_states_vocabulary_matches_the_frontend_translations(
         assert f"'{state}'" in admin_svc, (
             f"site-settings.service.ts is missing state '{state}'"
         )
+
+
+# --------------------------------------------------------------------------
+# Theme presets (#339)
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_public_config_defaults_to_the_terminal_theme(client: AsyncClient):
+    """The acceptance criterion that protects every EXISTING deployment: with
+    nothing chosen, the site is still the terminal look it has always been."""
+    r = await client.get(PUBLIC)
+    assert r.status_code == 200
+    assert r.json()["theme"] == "terminal"
+
+
+@pytest.mark.asyncio
+async def test_admin_sets_theme_and_public_config_reflects_it(client: AsyncClient):
+    assert (await client.put(ADMIN_THEME, json={"value": "light"})).json() == {
+        "value": "light"
+    }
+    assert (await client.get(PUBLIC)).json()["theme"] == "light"
+
+    # Update path (the row exists now), not just insert.
+    assert (await client.put(ADMIN_THEME, json={"value": "classic"})).status_code == 200
+    assert (await client.get(PUBLIC)).json()["theme"] == "classic"
+    assert (await client.get(ADMIN_THEME)).json() == {"value": "classic"}
+
+
+@pytest.mark.asyncio
+async def test_every_preset_is_settable(client: AsyncClient):
+    """A preset in the vocabulary that the API rejects is a preset the admin
+    picker offers and nobody can select."""
+    from app.api.site_settings import THEME_PRESETS
+
+    for preset in THEME_PRESETS:
+        r = await client.put(ADMIN_THEME, json={"value": preset})
+        assert r.status_code == 200, preset
+        assert (await client.get(PUBLIC)).json()["theme"] == preset
+
+
+@pytest.mark.asyncio
+async def test_unknown_theme_is_422_and_changes_nothing(client: AsyncClient):
+    r = await client.put(ADMIN_THEME, json={"value": "neon-vaporwave"})
+    assert r.status_code == 422
+    assert "must be one of" in r.json()["detail"]
+    assert (await client.get(PUBLIC)).json()["theme"] == "terminal"
+
+
+@pytest.mark.asyncio
+async def test_theme_write_requires_admin_auth(normal_client: AsyncClient):
+    assert (
+        await normal_client.put(ADMIN_THEME, json={"value": "light"})
+    ).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_theme_router_gate_rejects_anonymous_reads_and_writes(
+    clean_client: AsyncClient,
+):
+    assert (await clean_client.get(ADMIN_THEME)).status_code == 401
+    assert (
+        await clean_client.put(ADMIN_THEME, json={"value": "light"})
+    ).status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_a_stored_value_outside_the_vocabulary_normalizes(client: AsyncClient):
+    """The write path validates; the READ path degrades. A row hand-edited in
+    the DB — or written by a newer version and read by an older one — must not
+    reach the browser, because an unknown name stamps a `data-theme` that no
+    stylesheet block matches and the page renders untokenized."""
+    from app.api.site_settings import THEME_KEY
+    from app.database import get_db
+    from app.main import app as fastapi_app
+    from app.models.site_setting import SiteSetting
+
+    async for db in fastapi_app.dependency_overrides[get_db]():
+        db.add(SiteSetting(key=THEME_KEY, value="from-the-future"))
+        await db.commit()
+        break
+
+    assert (await client.get(PUBLIC)).json()["theme"] == "terminal"
+    assert (await client.get(ADMIN_THEME)).json() == {"value": "terminal"}
+
+
+@pytest.mark.asyncio
+async def test_public_config_survives_a_db_failure_on_the_theme_read(
+    client: AsyncClient, monkeypatch
+):
+    """Same contract as availability: a DB outage costs the site its THEME,
+    never its bootstrap."""
+    from app.api import site_settings
+
+    async def boom(db):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(site_settings, "read_theme", boom)
+    r = await client.get(PUBLIC)
+    assert r.status_code == 200
+    assert r.json()["theme"] == "terminal"
+
+
+def _repo_root():
+    from pathlib import Path
+
+    return Path(__file__).resolve().parents[2]
+
+
+def test_every_theme_preset_has_a_stylesheet_block():
+    """The vocabulary and the stylesheet are ONE contract split across two
+    languages. A preset the API accepts but `styles.css` has no
+    `[data-theme="..."]` block for renders untokenized — the page keeps
+    whatever `:root` holds, which is a half-themed render rather than a clean
+    fallback. This pins the VOCABULARY only — a one-token block passes it.
+    The token CONTENTS are pinned by
+    `frontend/projects/public/src/app/theme-contract.spec.ts`, which reads the
+    same file (#339 review r1, major 3: this docstring used to claim both)."""
+    from app.api.site_settings import THEME_PRESETS
+
+    css = (
+        _repo_root() / "frontend" / "projects" / "public" / "src" / "styles.css"
+    ).read_text()
+    for preset in THEME_PRESETS:
+        assert f"[data-theme='{preset}']" in css, (
+            f"styles.css has no [data-theme='{preset}'] block"
+        )
+
+
+def test_theme_vocabulary_matches_both_frontend_copies():
+    """A TypeScript file cannot import Python, so the vocabulary is duplicated
+    in two places — the public app (which normalizes the wire value) and the
+    admin app (which renders the picker). This pins all three copies, the same
+    way the availability states are pinned."""
+    from app.api.site_settings import THEME_DEFAULT, THEME_PRESETS
+
+    root = _repo_root() / "frontend" / "projects"
+    public_svc = (
+        root / "public" / "src" / "app" / "services" / "site-config.service.ts"
+    ).read_text()
+    admin_svc = (
+        root / "admin" / "src" / "app" / "services" / "site-settings.service.ts"
+    ).read_text()
+
+    # BOTH directions (#339 review r1, minor 8). Looping over the Python tuple
+    # alone catches a preset the backend gained and a frontend missed, but not
+    # the live case in the other direction: a sixth preset added to the ADMIN
+    # list alone renders a picker button that 422s on click.
+    def _declared(source: str) -> set[str]:
+        match = re.search(r"THEME_PRESETS = \[(.*?)\]", source, re.DOTALL)
+        assert match, "no THEME_PRESETS array found"
+        return set(re.findall(r"'([a-z0-9-]+)'", match.group(1)))
+
+    expected = set(THEME_PRESETS)
+    assert _declared(public_svc) == expected, (
+        f"site-config.service.ts vocabulary differs: {_declared(public_svc) ^ expected}"
+    )
+    assert _declared(admin_svc) == expected, (
+        f"site-settings.service.ts vocabulary differs: {_declared(admin_svc) ^ expected}"
+    )
+
+    # The DEFAULT is load-bearing on its own: the public service derives it
+    # from the FIRST entry, so a reordering there would silently change what an
+    # unconfigured deployment renders.
+    assert THEME_DEFAULT == THEME_PRESETS[0]
+    assert f"THEME_PRESETS = ['{THEME_DEFAULT}'," in public_svc

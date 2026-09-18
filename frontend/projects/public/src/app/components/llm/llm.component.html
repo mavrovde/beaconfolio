@@ -126,7 +126,7 @@
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4">
               @for (agent of agents; track agent; let i = $index) {
                 <div
-                  class="agent-card p-5 border border-terminal-dim bg-black rounded-sm relative group transition-all hover:border-white hover:shadow-[0_0_15px_rgba(51,255,0,0.3)]">
+                  class="agent-card p-5 border border-terminal-dim bg-black rounded-sm relative group transition-all hover:border-white hover:fx-accent-glow">
                 <!-- Remove Button -->
                 @if (agents.length > 2) {
                   <button (click)="removeAgent(agent.id)"
@@ -239,7 +239,7 @@
                       {{ getAgentName(msg.agent) }}
                     </div>
                   </div>
-                  <div class="message-content bg-black p-4 rounded-lg text-primary whitespace-pre-wrap border border-primary/50 shadow-[inset_0_0_10px_rgba(51,255,0,0.1)]"
+                  <div class="message-content bg-black p-4 rounded-lg text-primary whitespace-pre-wrap border border-primary/50 fx-accent-glow-inset"
                     [class.rounded-tl-none]="msg.agent % 2 !== 0" [class.rounded-tr-none]="msg.agent % 2 === 0">
                     {{ msg.content }}
                   </div>
@@ -263,7 +263,7 @@
                       {{ getAgentName(currentAgentMessage.agent) }}
                     </div>
                   </div>
-                  <div class="message-content bg-black p-4 rounded-lg text-primary whitespace-pre-wrap border border-primary/50 shadow-[inset_0_0_10px_rgba(51,255,0,0.1)]"
+                  <div class="message-content bg-black p-4 rounded-lg text-primary whitespace-pre-wrap border border-primary/50 fx-accent-glow-inset"
                     [class.rounded-tl-none]="currentAgentMessage.agent % 2 !== 0"
                     [class.rounded-tr-none]="currentAgentMessage.agent % 2 === 0">
                     {{ currentAgentMessage.content }}<span class="animate-pulse">▋</span>

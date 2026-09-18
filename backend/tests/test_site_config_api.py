@@ -21,6 +21,7 @@ async def test_site_config_returns_all_fields(client: AsyncClient):
         "social_links",
         "analytics_id",
         "gtm_container_id",
+        "theme",
     ):
         assert field in data, f"missing field: {field}"
 

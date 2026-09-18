@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.site_settings import read_availability_or_default
+from app.api.site_settings import read_availability_or_default, read_theme_or_default
 from app.config import settings
 from app.database import get_db
 
@@ -43,6 +43,14 @@ class SiteConfig(BaseModel):
     # point of this product, hence allow-by-default; an owner who objects sets
     # AI_CRAWLER_POLICY=deny.
     ai_crawler_policy: str
+    # Runtime, admin-editable (#339) — which of the five preset token sets the
+    # public site paints itself with. Served here rather than from env because
+    # it is a choice the owner makes from the admin panel, not a deployment
+    # fact; the app stamps it onto the root element DURING SSR so the first
+    # byte already carries the right theme and there is no flash of the wrong
+    # one. Absent on an older backend; the client normalizes that to the
+    # default the same way it does `gtm_container_id`.
+    theme: str
 
 
 @router.get("/site", response_model=SiteConfig)
@@ -57,10 +65,14 @@ async def get_site_config(db: AsyncSession = Depends(get_db)) -> SiteConfig:
         social_links=[s.strip() for s in settings.social_links.split(",") if s.strip()],
         analytics_id=settings.analytics_id,
         gtm_container_id=settings.gtm_container_id,
-        # The one DB read on this endpoint. Identity must survive a DB outage
-        # exactly as it survives an unreachable backend on the client side —
-        # degrade to the default, never 500 the public site's bootstrap
-        # (#295 review: this endpoint was DB-free before availability).
+        # One of the TWO DB reads on this endpoint (the other is `theme`).
+        # Identity must survive a DB outage exactly as it survives an
+        # unreachable backend on the client side — degrade to the default,
+        # never 500 the public site's bootstrap (#295 review: this endpoint
+        # was DB-free before availability).
         availability=await read_availability_or_default(db),
         ai_crawler_policy=settings.ai_crawler_policy,
+        # Second DB read, same degrade-never-break contract as availability
+        # above: a DB outage must cost the site its THEME, not its bootstrap.
+        theme=await read_theme_or_default(db),
     )

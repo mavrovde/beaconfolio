@@ -40,6 +40,53 @@ All notable changes to this project will be documented in this file.
   demo persona at the same time. A URL repeated in the configured list is collapsed, because the
   template tracks its rows by URL and a repeated track key is a reconciliation bug rather than
   merely a repeated row.
+- **The public site's look is now an admin-selectable preset, not a hard-coded palette.** Five
+  themes ship — `terminal` (today's green phosphor, and the default), `dark`, `light`, `modern`
+  and `classic` — chosen from the admin dashboard, stored as a runtime `site_settings` row and
+  served on `/api/app/config/site` beside the rest of the site's identity. **`terminal`'s palette is
+  unchanged token for token** — every former literal moved into a token whose default value is that
+  same literal — but the compiled stylesheet is NOT byte-identical (42,792 B to 47,837 B; `#000`
+  serialises as `#000000`, and so on). It **renders** identically: a review-round diff of 40,159
+  computed declarations across `/`, `/cv`, `/llm` and `/blog` in Chromium found 32 differences and
+  every one is benign — four `body::before` samples caught at different phases of the live
+  `flicker` animation, four gradient serialisations, one in-flight fade-in and twenty readings of
+  the new custom properties. Two long-broken component stylesheets now paint
+  deliberately on every theme, `terminal` included. `cv.component.css` referenced eight custom
+  properties (`--surface-card`, `--text-primary`, `--primary-color`, `--primary-color-rgb`, …)
+  that have **zero declarations anywhere in the public app**: an unresolvable `var()` is
+  invalid-at-computed-value-time, so the CV card had no background and no border and the submit
+  button's gradient was `rgba(0, 0, 0, 0)` — a blank gap, measured at 1.00:1 contrast on `light`
+  and `modern`. It looked acceptable on `terminal` only by accident, inheriting green-on-black
+  from `body`. Likewise `/llm` hardcoded its zinc chat palette, and Angular component styles are
+  **unlayered**, so those literals beat every themed utility: the transcript measured 1.27:1 on
+  `light` and 1.19:1 on `classic` against 16.55:1 on `terminal` — invisible. Both files now paint
+  from the contract, which gains a third token group (`--fx-console-*`) and a `--color-green-500`
+  beside the red/blue/yellow the themes already override, and a unit gate reads the stylesheet and
+  fails if any preset omits a token or either file regains a colour literal.
+  The mechanism is Tailwind 4's own `@theme` variables. Utilities already compile to
+  `var(--color-black)` / `var(--color-white)`, so re-pointing those two tokens inside a
+  `[data-theme='…']` block re-themes all 37 `bg-black` and 27 `text-white` call sites with zero
+  component edits; inventing new `bg-surface`-style tokens would have themed only the components
+  rewritten to use them, which is how a half-themed site happens. Effects that are not colors
+  (the phosphor glow, the scanline) live in separate `--fx-*` tokens for the same reason.
+  **The theme is stamped onto the root element during SSR**, so the first byte already carries the
+  right one and there is no flash of the wrong theme on hydration; a value outside the vocabulary
+  normalizes to `terminal` on the server, so an unknown `data-theme` can never reach the browser
+  and render the page untokenized. The stamp runs from `AppComponent.ngOnInit`, deliberately
+  **not** from an app initializer: `ng build public` runs a route-extraction bootstrap with no
+  backend behind it, and an initializer that reads the config starts a request that never settles
+  — because the stream is `shareReplay(1)`, its source subscription is never torn down and an RxJS
+  `timeout` does not rescue it either, so the build aborts (measured: **33.479 s** to
+  `AbortError` versus **3.370 s** green from `ngOnInit`).
+  Two scope notes, so the record matches what ships. `body` now takes each preset's `--font-sans`
+  rather than a fixed `font-mono`, which is a no-op on `terminal` (both tokens are the same VT323
+  stack) and the only way `classic`'s serif or `modern`'s system stack can reach the page — but 58
+  `font-mono` utilities across 14 public templates still pin their own elements to monospace, so a
+  non-terminal preset is mixed rather than uniform until #67 makes fonts config-driven; the admin
+  picker's descriptions say "body" for that reason. And the fixed stats bar now dims its CONTENT
+  instead of itself: `opacity` on the bar also thinned its ground — supplied by the unlayered
+  `.border-terminal`, not by `bg-black` — so the page ghosted through it on every non-terminal
+  preset.
 
 ## [1.15.2] - 2026-09-18
 

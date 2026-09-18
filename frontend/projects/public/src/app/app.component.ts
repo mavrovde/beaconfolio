@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterOutlet } from '@angular/router';
 import { GoogleAnalyticsService } from './services/google-analytics.service';
 import { SeoService } from './services/seo.service';
+import { ThemeService } from './services/theme.service';
 import { CookieConsentComponent } from './components/cookie-consent/cookie-consent.component';
 import { SystemStatsComponent } from './components/stats/stats.component';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -34,6 +35,7 @@ export class AppComponent implements OnInit {
   private googleAnalyticsService = inject(GoogleAnalyticsService);
   private viewportScroller = inject(ViewportScroller);
   private seoService = inject(SeoService);
+  private themeService = inject(ThemeService);
   private sanitizer = inject(DomSanitizer);
 
   jsonLd$?: Observable<SafeHtml | null>;
@@ -43,6 +45,11 @@ export class AppComponent implements OnInit {
 
   ngOnInit() {
     this.googleAnalyticsService.initialize();
+    // The preset theme (#339), stamped on the root element from here rather
+    // than from an app initializer — see ThemeService for the build failure
+    // that rules the initializer out. It sits beside the GA call because both
+    // read the same `config$` at the same point in the render.
+    this.themeService.initialize();
     this.viewportScroller.setOffset([0, 80]);
 
     this.jsonLd$ = this.seoService.jsonLdSchema$.pipe(

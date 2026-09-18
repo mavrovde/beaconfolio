@@ -11,6 +11,33 @@ import { environment } from '../../environments/environment';
  */
 export const AVAILABILITY_STATES = ['open', 'listening', 'not_looking'] as const;
 
+/**
+ * The five preset themes (#339). Mirrors `THEME_PRESETS` in
+ * `backend/app/api/site_settings.py` — a TypeScript file cannot import Python,
+ * so a backend test reads THIS file and fails if the two copies drift.
+ *
+ * `terminal` is first and is the default: it is the pre-#339 look, and a
+ * deployment that never picks a theme has to keep rendering as it does now.
+ */
+export const THEME_PRESETS = ['terminal', 'dark', 'light', 'modern', 'classic'] as const;
+export const THEME_DEFAULT: string = THEME_PRESETS[0];
+
+/**
+ * Narrow any wire value to a known preset.
+ *
+ * An unknown name is NOT passed through: it would be stamped into
+ * `data-theme`, match no `[data-theme="..."]` block in `styles.css`, and leave
+ * the page on whatever `:root` happens to hold — a half-themed render rather
+ * than a clean fallback. The backend normalizes too; this is the second half
+ * of the same contract, for the deploy window where the client is newer than
+ * the server (or the server older than the vocabulary).
+ */
+export function normalizeTheme(value: string | undefined): string {
+    return value && (THEME_PRESETS as readonly string[]).includes(value)
+        ? value
+        : THEME_DEFAULT;
+}
+
 export interface SiteConfig {
     siteName: string;
     siteUrl: string;
@@ -28,6 +55,11 @@ export interface SiteConfig {
     /** AI-crawler policy (#252): 'allow' | 'deny'. Consumed by the SSR
      *  robots.txt; exposed here so the browser app reads ONE config shape. */
     aiCrawlerPolicy: string;
+    /** The chosen preset theme (#339), one of THEME_PRESETS. GUARANTEED to be
+     *  a known preset here — the projection normalizes an absent or unknown
+     *  wire value, because an unknown name stamps a `data-theme` that no
+     *  stylesheet block matches and the page renders untokenized. */
+    theme: string;
 }
 
 /** Backend wire shape (snake_case, see backend/app/api/site_config.py). */
@@ -47,6 +79,9 @@ interface SiteConfigDto {
     availability?: string;
     /** ABSENT on a pre-#252 backend — normalized to 'allow' in the projection. */
     ai_crawler_policy?: string;
+    /** ABSENT on a pre-#339 backend — normalized to 'terminal' in the
+     *  projection, which is also what that backend's site looked like. */
+    theme?: string;
 }
 
 /**
@@ -64,6 +99,7 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
     gtmContainerId: '',
     availability: 'listening',
     aiCrawlerPolicy: 'allow',
+    theme: THEME_DEFAULT,
 };
 
 @Injectable({
@@ -111,6 +147,10 @@ export class SiteConfigService {
                     dto.ai_crawler_policy?.toLowerCase() === 'deny'
                         ? 'deny'
                         : DEFAULT_SITE_CONFIG.aiCrawlerPolicy,
+                // Absent (older backend) OR unknown both normalize (#339) —
+                // see `normalizeTheme` for why passing an unknown name through
+                // is worse than ignoring it.
+                theme: normalizeTheme(dto.theme),
             })),
             catchError(() => of(DEFAULT_SITE_CONFIG)),
             shareReplay(1)
