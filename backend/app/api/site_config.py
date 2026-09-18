@@ -30,6 +30,10 @@ class SiteConfig(BaseModel):
     owner_description: str
     social_links: list[str]
     analytics_id: str
+    # GTM container id (#447). When non-empty the client installs the container
+    # and does NOT also install gtag — two installs of one measurement double
+    # count. Absent on an older backend; the client normalizes that to "".
+    gtm_container_id: str
     # Runtime, admin-editable (#271) — the job-search state the hero renders.
     # Public by design: its whole purpose is to be shown to visitors.
     availability: str
@@ -52,6 +56,7 @@ async def get_site_config(db: AsyncSession = Depends(get_db)) -> SiteConfig:
         owner_description=settings.owner_description,
         social_links=[s.strip() for s in settings.social_links.split(",") if s.strip()],
         analytics_id=settings.analytics_id,
+        gtm_container_id=settings.gtm_container_id,
         # The one DB read on this endpoint. Identity must survive a DB outage
         # exactly as it survives an unreachable backend on the client side —
         # degrade to the default, never 500 the public site's bootstrap

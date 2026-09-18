@@ -241,6 +241,14 @@ class Settings(BaseSettings):
     # Namespaced like the Gemini knobs (#141): an ambient generic name could
     # silently bind someone else's id.
     analytics_id: str = Field(default="", validation_alias="BEACONFOLIO_ANALYTICS_ID")
+    # Google Tag Manager container id (#447). Empty disables GTM; when set it
+    # takes precedence over ``analytics_id`` and the gtag install stands down,
+    # because GTM and gtag are two installs of the SAME measurement and running
+    # both double-counts every pageview. Namespaced like the other knobs (#141)
+    # so an ambient generic name cannot silently bind someone else's container.
+    gtm_container_id: str = Field(
+        default="", validation_alias="BEACONFOLIO_GTM_CONTAINER_ID"
+    )
     # AI-crawler policy (#252) — "allow" (default) or "deny", served on
     # GET {api_prefix}/config/site and rendered into the SSR robots.txt.
     # Allow-by-default is the product thesis: recruiter research runs through AI

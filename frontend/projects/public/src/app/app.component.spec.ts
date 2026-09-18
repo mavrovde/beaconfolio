@@ -32,20 +32,36 @@ describe('AppComponent', () => {
   let fixture: ComponentFixture<AppComponent>;
   let mockSeoService: { schemaSubject: BehaviorSubject<any>, jsonLdSchema$: any };
   let mockSanitizer: any;
+  let gaService: { initialize: any; gtmNoscriptUrl$: BehaviorSubject<any> };
+  let trustUrl: (url: string) => any;
 
   beforeEach(async () => {
     const mockGaService = {
       initialize: vi.fn(),
+      gtmNoscriptUrl$: new BehaviorSubject<any>(null),
     };
+    gaService = mockGaService;
 
     mockSeoService = {
       schemaSubject: new BehaviorSubject<any>(null),
       get jsonLdSchema$() { return this.schemaSubject.asObservable(); }
     };
 
+    // A resource-URL binding is sanitized by Angular itself, and only a value
+    // produced by the REAL DomSanitizer survives it (the check is an
+    // `instanceof`, so a duck-typed stub throws NG0904). Capture a real
+    // instance from a scratch TestBed before this suite overrides the token.
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({});
+    const realSanitizer = TestBed.inject(DomSanitizer);
+    TestBed.resetTestingModule();
+
     mockSanitizer = {
-      bypassSecurityTrustHtml: vi.fn().mockReturnValue('safe-html')
+      bypassSecurityTrustHtml: vi.fn().mockReturnValue('safe-html'),
+      bypassSecurityTrustResourceUrl: (url: string) =>
+        realSanitizer.bypassSecurityTrustResourceUrl(url)
     };
+    trustUrl = mockSanitizer.bypassSecurityTrustResourceUrl;
 
     await TestBed.configureTestingModule({
       imports: [AppComponent, RouterTestingModule],
@@ -65,6 +81,27 @@ describe('AppComponent', () => {
     fixture = TestBed.createComponent(AppComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
+  });
+
+  // The GTM <noscript> must render from the TEMPLATE, not as a side effect of
+  // initialize() (#447). The real initialize() installs nothing under SSR — it
+  // is guarded by isPlatformBrowser and returns early — so a visitor with
+  // JavaScript disabled receives only what the server put in the HTML. Here
+  // initialize() is a no-op mock, which stands in for exactly that: the iframe
+  // below is produced by the stream alone. Wire the iframe to initialize()'s
+  // side effects and this case goes red.
+  it('renders the GTM noscript iframe from the stream, not from initialize()', () => {
+    expect(fixture.debugElement.query(By.css('noscript iframe'))).toBeNull();
+
+    gaService.gtmNoscriptUrl$.next(
+      trustUrl('https://www.googletagmanager.com/ns.html?id=GTM-ABC1234')
+    );
+    fixture.detectChanges();
+
+    const iframe = fixture.debugElement.query(By.css('noscript iframe'));
+    expect(iframe).not.toBeNull();
+    expect(iframe.nativeElement.getAttribute('src'))
+      .toBe('https://www.googletagmanager.com/ns.html?id=GTM-ABC1234');
   });
 
   it('should create the app', () => {

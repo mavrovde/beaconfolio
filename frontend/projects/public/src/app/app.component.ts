@@ -19,6 +19,12 @@ import { ViewportScroller } from '@angular/common';
     @if (jsonLd$ | async; as jsonLd) {
       <div [innerHTML]="jsonLd"></div>
     }
+    <!-- GTM <noscript> (#447). Server-rendered on purpose: a visitor with no
+         JavaScript never runs Angular, so this is the only tag they can send. -->
+    @if (gtmNoscriptUrl$ | async; as gtmUrl) {
+      <noscript><iframe [src]="gtmUrl" height="0" width="0"
+        style="display:none;visibility:hidden"></iframe></noscript>
+    }
     <router-outlet></router-outlet>
     <app-cookie-consent></app-cookie-consent>
     <app-system-stats></app-system-stats>
@@ -31,6 +37,9 @@ export class AppComponent implements OnInit {
   private sanitizer = inject(DomSanitizer);
 
   jsonLd$?: Observable<SafeHtml | null>;
+
+  /** #447 — rendered by the template on BOTH platforms; see the service. */
+  readonly gtmNoscriptUrl$ = this.googleAnalyticsService.gtmNoscriptUrl$;
 
   ngOnInit() {
     this.googleAnalyticsService.initialize();
