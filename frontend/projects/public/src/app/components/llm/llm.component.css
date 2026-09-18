@@ -1,9 +1,12 @@
 :host {
     display: block;
     height: 100vh;
-    background: #000;
-    color: #a1a1aa;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background: var(--color-black);
+    color: var(--fx-console-fg);
+    /* The theme's own body family. A hardcoded 'Inter' here is exactly the
+     * un-themeable literal the token contract exists to remove: `classic`
+     * advertises a serif in the picker and rendered Inter regardless. */
+    font-family: var(--font-sans);
 }
 
 .terminal-container,
@@ -14,20 +17,21 @@
 }
 
 .font-mono {
-    font-family: 'JetBrains Mono', monospace;
+    /* The theme's monospace, not a fixed one — same reason as `:host`. */
+    font-family: var(--font-mono);
 }
 
 /* Glassmorphism & Premium Cards */
 .agent-card {
-    background: rgba(24, 24, 27, 0.4);
+    background: color-mix(in srgb, var(--fx-console-panel) 40%, transparent);
     backdrop-filter: blur(10px);
-    border: 1px solid rgba(63, 63, 70, 0.3);
+    border: 1px solid color-mix(in srgb, var(--fx-console-line) 30%, transparent);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .agent-card:hover {
-    border-color: rgba(0, 255, 0, 0.5);
-    background: rgba(24, 24, 27, 0.6);
+    border-color: color-mix(in srgb, var(--color-primary) 50%, transparent);
+    background: color-mix(in srgb, var(--fx-console-panel) 60%, transparent);
     transform: translateY(-2px);
     box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
 }
@@ -44,7 +48,7 @@ textarea {
 
 input::placeholder,
 textarea::placeholder {
-    color: rgba(161, 161, 170, 0.3);
+    color: color-mix(in srgb, var(--fx-console-fg) 30%, transparent);
 }
 
 .scrollbar-thin::-webkit-scrollbar {
@@ -56,14 +60,14 @@ textarea::placeholder {
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: #3f3f46;
+    background: var(--fx-console-line);
 }
 
 /* Buttons */
 .terminal-btn {
-    border: 1px solid rgba(63, 63, 70, 0.5);
-    background: rgba(0, 0, 0, 0.5);
-    color: #a1a1aa;
+    border: 1px solid color-mix(in srgb, var(--fx-console-line) 50%, transparent);
+    background: color-mix(in srgb, var(--color-black) 50%, transparent);
+    color: var(--fx-console-fg);
     font-size: 11px;
     letter-spacing: 0.1em;
     padding: 0.5rem 1.5rem;
@@ -76,8 +80,8 @@ textarea::placeholder {
 
 .terminal-btn:hover:not(:disabled) {
     border-color: var(--color-primary);
-    color: #fff;
-    background: rgba(51, 255, 0, 0.1);
+    color: var(--color-white);
+    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
 }
 
 .btn-primary {
@@ -87,7 +91,7 @@ textarea::placeholder {
 
 .btn-primary:hover:not(:disabled) {
     border-color: var(--color-primary);
-    color: #000;
+    color: var(--color-black);
     background: var(--color-primary);
 }
 
@@ -98,7 +102,7 @@ textarea::placeholder {
 
 .btn-danger:hover:not(:disabled) {
     border-color: var(--color-primary);
-    color: #000;
+    color: var(--color-black);
     background: var(--color-primary);
     opacity: 0.8;
 }
@@ -107,7 +111,7 @@ textarea::placeholder {
 .message-content {
     line-height: 1.6;
     font-size: 15px;
-    color: #e4e4e7;
+    color: var(--fx-console-fg-strong);
     position: relative;
 }
 
@@ -143,12 +147,12 @@ textarea::placeholder {
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb {
-    background: rgba(63, 63, 70, 0.5);
+    background: color-mix(in srgb, var(--fx-console-line) 50%, transparent);
     border-radius: 10px;
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-    background: rgba(161, 161, 170, 0.5);
+    background: color-mix(in srgb, var(--fx-console-fg) 50%, transparent);
 }
 
 /* Modes */
@@ -168,7 +172,7 @@ textarea::placeholder {
     left: 10%;
     width: 80%;
     height: 1px;
-    background: #fff;
+    background: var(--color-white);
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -176,14 +180,14 @@ textarea::placeholder {
 }
 
 .custom-scrollbar::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.2);
+    background: color-mix(in srgb, var(--color-black) 20%, transparent);
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgba(63, 63, 70, 0.4);
+    background: color-mix(in srgb, var(--fx-console-line) 40%, transparent);
     border-radius: 3px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgba(161, 161, 170, 0.4);
+    background: color-mix(in srgb, var(--fx-console-fg) 40%, transparent);
 }

@@ -43,10 +43,22 @@ All notable changes to this project will be documented in this file.
 - **The public site's look is now an admin-selectable preset, not a hard-coded palette.** Five
   themes ship — `terminal` (today's green phosphor, and the default), `dark`, `light`, `modern`
   and `classic` — chosen from the admin dashboard, stored as a runtime `site_settings` row and
-  served on `/api/app/config/site` beside the rest of the site's identity. **`terminal` is
-  byte-identical to the previous stylesheet**, verified in the COMPILED css rather than asserted:
-  every former literal moved into a token whose default value is that same literal, so a
-  deployment that never picks a theme renders exactly as it did before.
+  served on `/api/app/config/site` beside the rest of the site's identity. **`terminal`'s palette is
+  unchanged token for token** — every former literal moved into a token whose default value is that
+  same literal — but the compiled stylesheet is NOT byte-identical (42,792 B to 47,837 B; `#000`
+  serialises as `#000000`, and so on), and two long-broken component stylesheets now paint
+  deliberately on every theme, `terminal` included. `cv.component.css` referenced eight custom
+  properties (`--surface-card`, `--text-primary`, `--primary-color`, `--primary-color-rgb`, …)
+  that have **zero declarations anywhere in the public app**: an unresolvable `var()` is
+  invalid-at-computed-value-time, so the CV card had no background and no border and the submit
+  button's gradient was `rgba(0, 0, 0, 0)` — a blank gap, measured at 1.00:1 contrast on `light`
+  and `modern`. It looked acceptable on `terminal` only by accident, inheriting green-on-black
+  from `body`. Likewise `/llm` hardcoded its zinc chat palette, and Angular component styles are
+  **unlayered**, so those literals beat every themed utility: the transcript measured 1.27:1 on
+  `light` and 1.19:1 on `classic` against 16.55:1 on `terminal` — invisible. Both files now paint
+  from the contract, which gains a third token group (`--fx-console-*`) and a `--color-green-500`
+  beside the red/blue/yellow the themes already override, and a unit gate reads the stylesheet and
+  fails if any preset omits a token or either file regains a colour literal.
   The mechanism is Tailwind 4's own `@theme` variables. Utilities already compile to
   `var(--color-black)` / `var(--color-white)`, so re-pointing those two tokens inside a
   `[data-theme='…']` block re-themes all 37 `bg-black` and 27 `text-white` call sites with zero

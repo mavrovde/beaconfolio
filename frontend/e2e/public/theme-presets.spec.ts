@@ -109,6 +109,7 @@ test.describe('Theme presets', () => {
         expect(probe.ok()).toBe(true);
 
         const grounds: Record<string, string> = {};
+        const tokens: Record<string, Record<string, string>> = {};
         try {
             for (const preset of PRESETS) {
                 expect((await put(preset)).ok()).toBe(true);
@@ -128,24 +129,39 @@ test.describe('Theme presets', () => {
                     return out;
                 }, CONTRACT_TOKENS);
 
-                // The criterion, stated as an assertion: a MISSING token is an
-                // empty string here, and an empty token is a component painted
-                // with nothing — the partially-themed page AC5 forbids.
-                const missing = CONTRACT_TOKENS.filter((t) => resolved[t] === '');
-                expect(missing, `theme "${preset}" is missing tokens`).toEqual([]);
-
-                // And the tokens actually reach the page: `bg-black` compiles
-                // to var(--color-black), so the body's painted ground is the
+                // The tokens actually reach the page: `bg-black` compiles to
+                // var(--color-black), so the body's painted ground is the
                 // end-to-end proof that the indirection works in a browser.
                 expect(resolved['__bg']).not.toEqual('');
                 expect(resolved['__fg']).not.toEqual('');
                 grounds[preset] = resolved['__bg'];
+                tokens[preset] = resolved;
             }
 
-            // Not a tautology: `terminal` grounds on #000000 and `light` on
-            // #ffffff, so if the stylesheet were ignored — or every preset
-            // collapsed onto one set of values — these would be equal.
-            expect(grounds['light']).not.toEqual(grounds['terminal']);
+            // AC5, stated so that it CAN FAIL. The previous form filtered the
+            // resolved tokens for `''` — and every token has a `:root`
+            // declaration, so `documentElement` inherits one whatever
+            // `data-theme` says. Measured on this branch: `neon-vaporwave`
+            // reported 0 missing and so did removing the attribute, i.e. the
+            // assertion was vacuous (review round 1).
+            //
+            // A preset whose block is missing or partial resolves to
+            // TERMINAL's values — that is the observable. So every other
+            // preset must differ from terminal, both in its resolved token set
+            // and in the ground the page is actually painted with. The
+            // per-token completeness half now lives in the unit tier
+            // (`theme-contract.spec.ts`), which reads the stylesheet source and
+            // is killed by deleting a single token from one block.
+            for (const preset of PRESETS.filter((p) => p !== 'terminal')) {
+                expect(
+                    tokens[preset],
+                    `theme "${preset}" resolved identically to terminal — its block never applied`,
+                ).not.toEqual(tokens['terminal']);
+                expect(
+                    grounds[preset],
+                    `theme "${preset}" painted terminal's ground`,
+                ).not.toEqual(grounds['terminal']);
+            }
         } finally {
             await put('terminal');
         }

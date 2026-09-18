@@ -62,6 +62,27 @@
  *   --fx-panel-bg             `.border-terminal` ground
  *   --fx-active-shadow        active button shadow      (`none`)
  *   --fx-active-text-shadow   active button text glow   (`none`)
+ *
+ * ## Group 3 — console/form surfaces (`--fx-console-*`)
+ *
+ * Two component stylesheets paint their own chrome rather than using Tailwind
+ * utilities: `/llm` (the chat console) and `/cv` (the request form). Angular
+ * component styles are UNLAYERED, so they beat `@layer utilities` no matter
+ * what the utilities say — a literal there is not merely un-themed, it
+ * OVERRIDES the theme. Measured on this branch before the fix: the `/llm`
+ * transcript sat at 1.27:1 on `light` and 1.19:1 on `classic` (16.55:1 on
+ * `terminal`), i.e. invisible, and `/cv`'s submit button at 1.00:1 — a blank
+ * gap. These four tokens are what those two files paint from.
+ *
+ *   --fx-console-fg         dim body text on a console/form surface
+ *   --fx-console-fg-strong  high-emphasis text (the chat transcript)
+ *   --fx-console-panel      a glass panel's ground (alpha applied per use)
+ *   --fx-console-line       hairlines, scrollbar thumbs, input borders
+ *
+ * Alpha variants are `color-mix(in srgb, <token> N%, transparent)` rather than
+ * an `rgba()` literal or a token per opacity: a token cannot carry an alpha a
+ * call site chooses, and thirteen `--fx-console-line-30` tokens would be a
+ * worse contract than one token and a mix.
  * ========================================================================= */
 
 @theme {
@@ -87,6 +108,7 @@
   --color-red-500: #33ff00;
   --color-blue-500: #33ff00;
   --color-yellow-500: #33ff00;
+  --color-green-500: #33ff00;
   --color-terminal-bg: #0a0a0a;
   --color-terminal-dim: rgba(51, 255, 0, 0.5);
   --color-terminal-highlight: #33ff00;
@@ -112,6 +134,13 @@
   --fx-panel-bg: rgba(0, 20, 0, 0.8);
   --fx-active-shadow: 0 0 10px rgba(51, 255, 0, 0.6), inset 0 0 5px rgba(51, 255, 0, 0.2);
   --fx-active-text-shadow: 0 0 8px rgba(51, 255, 0, 0.8);
+  /* Group 3. These four are the zinc literals `llm.component.css` already
+   * carried, moved here unchanged, so terminal's console keeps its exact
+   * colours while every other theme can state its own. */
+  --fx-console-fg: #a1a1aa;
+  --fx-console-fg-strong: #e4e4e7;
+  --fx-console-panel: #18181b;
+  --fx-console-line: #3f3f46;
 }
 
 /* `terminal` is also spelled out explicitly, so an owner who picks it from the
@@ -128,6 +157,7 @@
   --color-red-500: #33ff00;
   --color-blue-500: #33ff00;
   --color-yellow-500: #33ff00;
+  --color-green-500: #33ff00;
   --color-terminal-bg: #0a0a0a;
   --color-terminal-dim: rgba(51, 255, 0, 0.5);
   --color-terminal-highlight: #33ff00;
@@ -153,6 +183,7 @@
   --color-red-500: #f87171;
   --color-blue-500: #60a5fa;
   --color-yellow-500: #fbbf24;
+  --color-green-500: #4ade80;
   --color-terminal-bg: #1a1c21;
   --color-terminal-dim: rgba(230, 230, 230, 0.5);
   --color-terminal-highlight: #ffffff;
@@ -171,6 +202,10 @@
   --fx-panel-bg: #1a1c21;
   --fx-active-shadow: none;
   --fx-active-text-shadow: none;
+  --fx-console-fg: #8a8f98;
+  --fx-console-fg-strong: #e6e6e6;
+  --fx-console-panel: #1a1c21;
+  --fx-console-line: #2c2f36;
 }
 
 [data-theme='light'] {
@@ -184,6 +219,7 @@
   --color-red-500: #cf222e;
   --color-blue-500: #0969da;
   --color-yellow-500: #9a6700;
+  --color-green-500: #1a7f37;
   --color-terminal-bg: #f6f8fa;
   --color-terminal-dim: rgba(31, 35, 40, 0.55);
   --color-terminal-highlight: #0969da;
@@ -202,6 +238,10 @@
   --fx-panel-bg: #f6f8fa;
   --fx-active-shadow: none;
   --fx-active-text-shadow: none;
+  --fx-console-fg: #57606a;
+  --fx-console-fg-strong: #1f2328;
+  --fx-console-panel: #f6f8fa;
+  --fx-console-line: #d0d7de;
 }
 
 [data-theme='modern'] {
@@ -215,6 +255,7 @@
   --color-red-500: #e11d48;
   --color-blue-500: #4f46e5;
   --color-yellow-500: #d97706;
+  --color-green-500: #059669;
   --color-terminal-bg: #ffffff;
   --color-terminal-dim: rgba(11, 18, 32, 0.55);
   --color-terminal-highlight: #4f46e5;
@@ -234,6 +275,10 @@
   --fx-panel-bg: #ffffff;
   --fx-active-shadow: 0 1px 2px rgba(79, 70, 229, 0.25);
   --fx-active-text-shadow: none;
+  --fx-console-fg: #475569;
+  --fx-console-fg-strong: #0b1220;
+  --fx-console-panel: #ffffff;
+  --fx-console-line: #e2e8f0;
 }
 
 [data-theme='classic'] {
@@ -247,6 +292,7 @@
   --color-red-500: #a03028;
   --color-blue-500: #2f5d7c;
   --color-yellow-500: #8a6d1f;
+  --color-green-500: #3f6f46;
   --color-terminal-bg: #f3ece1;
   --color-terminal-dim: rgba(43, 39, 36, 0.55);
   --color-terminal-highlight: #7a3b2e;
@@ -265,6 +311,10 @@
   --fx-panel-bg: #f3ece1;
   --fx-active-shadow: none;
   --fx-active-text-shadow: none;
+  --fx-console-fg: #6b6259;
+  --fx-console-fg-strong: #2b2724;
+  --fx-console-panel: #f3ece1;
+  --fx-console-line: #ddd2c2;
 }
 
 body {

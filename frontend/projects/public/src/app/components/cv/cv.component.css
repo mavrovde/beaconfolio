@@ -1,3 +1,22 @@
+/* ============================================================================
+ * This file painted from a vocabulary that DOES NOT EXIST (#339 review r1).
+ * `--surface-card`, `--surface-bg`, `--border-color`, `--text-primary`,
+ * `--text-secondary`, `--primary-color`, `--primary-dark` and
+ * `--primary-color-rgb` have **zero** declarations anywhere in the public app
+ * (grep, all of `projects/public`). An unresolvable `var()` is
+ * invalid-at-computed-value-time, so `background: var(--fx-panel-bg)` was
+ * `transparent`, `border: 1px solid var(--color-muted)` was NO border, and
+ * `.btn-primary`'s gradient was `rgba(0, 0, 0, 0)` — a blank gap where the
+ * submit button should be, measured at 1.00:1 on `light` and `modern`.
+ *
+ * It looked acceptable on `terminal` only by accident: green-on-black
+ * inherited from `body`. Theming the site is what made the accident visible.
+ * Every one of those names now maps to a real token from the contract in
+ * `styles.css`, so this form paints deliberately on all five presets — which
+ * IS a visible change on `terminal` too, and is stated as such in the
+ * CHANGELOG rather than hidden behind "no visual change".
+ * ========================================================================= */
+
 .cv-container {
     display: flex;
     justify-content: center;
@@ -8,7 +27,7 @@
 }
 
 .card {
-    background: var(--surface-card);
+    background: var(--fx-panel-bg);
     padding: 2.5rem;
     border-radius: 16px;
     /* A bit softer */
@@ -17,14 +36,14 @@
     width: 100%;
     max-width: 600px;
     /* Slightly wider for better breathing room */
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--color-muted);
     backdrop-filter: blur(10px);
     /* Glassmorphism hint if supported */
 }
 
 h1 {
     /* Changed from h2 to match HTML */
-    color: var(--text-primary);
+    color: var(--color-primary);
     text-align: center;
     margin-bottom: 0.5rem;
     font-size: 2rem;
@@ -33,7 +52,7 @@ h1 {
 }
 
 .subtitle {
-    color: var(--text-secondary);
+    color: var(--color-secondary);
     text-align: center;
     margin-bottom: 2.5rem;
     font-size: 1rem;
@@ -47,13 +66,13 @@ h1 {
 label {
     display: block;
     margin-bottom: 0.5rem;
-    color: var(--text-primary);
+    color: var(--color-primary);
     font-weight: 500;
     font-size: 0.95rem;
 }
 
 .required {
-    color: var(--primary-color);
+    color: var(--color-primary);
     margin-left: 2px;
 }
 
@@ -63,10 +82,10 @@ textarea {
     width: 100%;
     padding: 0.8rem 1rem;
     border-radius: 8px;
-    border: 1px solid var(--border-color);
-    background: var(--surface-bg);
+    border: 1px solid var(--color-muted);
+    background: var(--color-surface);
     /* Use a distinct background from card */
-    color: var(--text-primary);
+    color: var(--color-primary);
     font-size: 1rem;
     transition: all 0.2s ease;
 }
@@ -75,9 +94,9 @@ input[type="text"]:focus,
 input[type="email"]:focus,
 textarea:focus {
     outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(var(--primary-color-rgb), 0.15);
-    background: var(--surface-card);
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 15%, transparent);
+    background: var(--fx-panel-bg);
     /* Lighten slightly on focus */
 }
 
@@ -90,21 +109,21 @@ textarea:focus {
     margin-top: 2rem;
     margin-bottom: 2rem;
     padding: 1rem;
-    background: rgba(var(--primary-color-rgb), 0.05);
+    background: color-mix(in srgb, var(--color-primary) 5%, transparent);
     border-radius: 8px;
     border: 1px solid transparent;
     transition: border-color 0.2s;
 }
 
 .checkbox-group:hover {
-    border-color: var(--border-color);
+    border-color: var(--color-muted);
 }
 
 .checkbox-group input[type="checkbox"] {
     width: 1.25rem;
     height: 1.25rem;
     cursor: pointer;
-    accent-color: var(--primary-color);
+    accent-color: var(--color-primary);
     margin: 0;
     /* Removing default margins */
 }
@@ -121,12 +140,12 @@ textarea:focus {
 
 input.invalid,
 textarea.invalid {
-    border-color: #ef4444;
-    background-color: rgba(239, 68, 68, 0.02);
+    border-color: var(--color-red-500);
+    background-color: color-mix(in srgb, var(--color-red-500) 2%, transparent);
 }
 
 .error-msg {
-    color: #ef4444;
+    color: var(--color-red-500);
     font-size: 0.85rem;
     margin-top: 0.5rem;
     display: flex;
@@ -137,23 +156,26 @@ textarea.invalid {
 .char-count {
     text-align: right;
     font-size: 0.8rem;
-    color: var(--text-secondary);
+    color: var(--color-secondary);
     margin-top: 0.3rem;
 }
 
 .btn-primary {
     width: 100%;
     padding: 1rem;
-    background: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+    background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
     /* Gradient for premium feel */
-    color: white;
+    /* `--color-black` is the ROLE "contrast pair for --color-primary", not the
+     * literal black — on `light` it resolves to #ffffff. A `color: white`
+     * keyword was white on a white-ish gradient on three of five presets. */
+    color: var(--color-black);
     border: none;
     border-radius: 8px;
     font-size: 1.1rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
-    box-shadow: 0 4px 12px rgba(var(--primary-color-rgb), 0.3);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--color-primary) 30%, transparent);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -161,7 +183,7 @@ textarea.invalid {
 
 .btn-primary:hover:not(:disabled) {
     transform: translateY(-2px);
-    box-shadow: 0 6px 16px rgba(var(--primary-color-rgb), 0.4);
+    box-shadow: 0 6px 16px color-mix(in srgb, var(--color-primary) 40%, transparent);
     filter: brightness(1.1);
 }
 
@@ -172,7 +194,7 @@ textarea.invalid {
 .btn-primary:disabled {
     opacity: 0.7;
     cursor: not-allowed;
-    background: var(--text-secondary);
+    background: var(--color-secondary);
     /* Grey out */
     box-shadow: none;
 }
@@ -188,15 +210,15 @@ textarea.invalid {
 }
 
 .alert.success {
-    background: rgba(34, 197, 94, 0.1);
-    color: #22c55e;
-    border: 1px solid rgba(34, 197, 94, 0.2);
+    background: color-mix(in srgb, var(--color-green-500) 10%, transparent);
+    color: var(--color-green-500);
+    border: 1px solid color-mix(in srgb, var(--color-green-500) 20%, transparent);
 }
 
 .alert.error {
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-    border: 1px solid rgba(239, 68, 68, 0.2);
+    background: color-mix(in srgb, var(--color-red-500) 10%, transparent);
+    color: var(--color-red-500);
+    border: 1px solid color-mix(in srgb, var(--color-red-500) 20%, transparent);
 }
 
 .post-success-actions {
@@ -207,8 +229,8 @@ textarea.invalid {
 .btn-secondary {
     margin-top: 1rem;
     background: transparent;
-    border: 1px solid var(--border-color);
-    color: var(--text-primary);
+    border: 1px solid var(--color-muted);
+    color: var(--color-primary);
     padding: 0.75rem 1.5rem;
     border-radius: 8px;
     cursor: pointer;
@@ -216,17 +238,17 @@ textarea.invalid {
 }
 
 .btn-secondary:hover {
-    background: var(--surface-bg);
-    border-color: var(--primary-color);
-    color: var(--primary-color);
+    background: var(--color-surface);
+    border-color: var(--color-primary);
+    color: var(--color-primary);
 }
 
 .spinner {
     width: 24px;
     height: 24px;
-    border: 3px solid rgba(255, 255, 255, 0.3);
+    border: 3px solid color-mix(in srgb, var(--color-black) 30%, transparent);
     border-radius: 50%;
-    border-top-color: white;
+    border-top-color: var(--color-black);
     animation: spin 0.8s linear infinite;
 }
 
@@ -239,14 +261,14 @@ textarea.invalid {
 .privacy-statement {
     margin: 2rem 0 0 0;
     padding-top: 1.5rem;
-    border-top: 1px solid var(--border-color);
+    border-top: 1px solid var(--color-muted);
     opacity: 0.8;
 }
 
 .privacy-statement p {
     font-size: 0.8rem;
     line-height: 1.6;
-    color: var(--text-secondary);
+    color: var(--color-secondary);
     margin: 0;
 }
 
