@@ -141,6 +141,36 @@ if [ "${RELEASE_QUEUE_GATE:-1}" != "0" ]; then
     fi
 fi
 
+# --- Previous-release retrospective report (v1.15.1 retro) --------------------
+# Rule 8 makes the retrospective a release STEP, not an optional extra — "a
+# release is finished when what it taught is written down, not when the tag is
+# pushed". Measured: v1.15.0 and v1.15.1 BOTH tagged, closed their issues and ran
+# the release-time security check without producing
+# docs/retrospectives/vX.Y.Z.md, and #446's own release verdict said so in
+# writing ("the v1.15.0 /retro remains outstanding and is a mandatory release
+# step in its own right") and shipped anyway. Two prose reminders in two
+# consecutive cuts produced zero retrospectives; the release-queue gate sitting
+# three lines above produced two `empty (checked)` lines in two release PR
+# bodies. So this is the same finding as the queue gate's, one step later —
+# assert at the layer that can enforce (lessons §30).
+#
+# REPORTS, never refuses. A missing retrospective must not block a hotfix, and
+# the retro for release N is legitimately written after N is cut. What it must
+# not do is be INVISIBLE: the line lands in the cut's output and therefore in the
+# release PR body, where the merge reviewer reads it. RELEASE_RETRO_GATE=0
+# silences it (named, like RELEASE_QUEUE_GATE=0/PR_MERGE_GATE=0, so a deliberate
+# skip is visible in history rather than indistinguishable from a passing check).
+if [ "${RELEASE_RETRO_GATE:-1}" != "0" ]; then
+    prev_retro="docs/retrospectives/v$current_version.md"
+    if [ -f "$prev_retro" ]; then
+        echo "Previous release retrospective ($prev_retro): present."
+    else
+        echo "WARNING: previous release retrospective MISSING ($prev_retro)." >&2
+        echo "Rule 8 makes it a release step. Run /retro for v$current_version, or re-run with" >&2
+        echo "RELEASE_RETRO_GATE=0 if this cut is deliberately ahead of it." >&2
+    fi
+fi
+
 if [ "$DRY_RUN" -eq 1 ]; then
     echo "Dry run — no files modified. Would update:"
     echo "  VERSION"

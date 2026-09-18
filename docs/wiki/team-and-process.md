@@ -274,15 +274,22 @@ the full table is committed as an appendix to
 [`docs/retrospectives/v1.14.1.md`](../retrospectives/v1.14.1.md), because a number held
 only in a machine-local scratch file is not something a reader can check. (Subagent
 totals only; main-loop tokens are not included, so the true cycle cost is higher —
-state the caveat rather than implying precision the measurement lacks.) The two
-releases since have NOT repeated that capture — each retro says so explicitly rather
-than summing the partial board fields, and #386 stays open on exactly this criterion.
+state the caveat rather than implying precision the measurement lacks.) **No release
+since has repeated it** — four in a row said so explicitly rather than summing the
+partial board fields, and at v1.15.0 the conclusion was drawn: the two cost columns were
+**retired** rather than carried as a permanently unmet target, and #386 closed on that
+resolution at v1.15.1 (note 21 in [the trend table](../retrospectives/README.md)). A
+target that four releases cannot meet is a target measuring the wrong thing.
 
-**GitHub Project 3** carries per-item `Tokens (k)`, `Time of processing (min)`,
-`Review rounds`, `Agent` and `Model`, updated **immediately on every merge**, never
-batched. One caveat is load-bearing: the `Review rounds` field has disagreed with the
-thread when filled, so **the thread is the instrument** — it is executable and
-re-derivable by anyone — and the field is not published from.
+**GitHub Project 3** carries per-item `Review rounds`, `Agent` and `Model`, updated
+**immediately on every merge**, never batched. `Tokens (k)` and `Time of processing
+(min)` are the retired columns above: they are left EMPTY, not estimated — a plausible
+number in a measurement field is worse than a blank one. One caveat is load-bearing: the
+`Review rounds` field has disagreed with the thread on every occasion it was filled and
+checked — the instances are named in [note 3 of the trend
+table](../retrospectives/README.md), which is where that count lives — so **the thread is
+the instrument** — it is executable and re-derivable by anyone — and the field is not
+published from.
 
 ### Report what you measured, not what you expect
 
@@ -328,9 +335,11 @@ series stays comparable. **The numbers are not restated here** — a copy of the
 table in this article went stale within one release and restating figures outside the
 canonical site is itself a counted defect class in this repository (the v1.14.1 retro
 PR was blocked on a full round of exactly that — counted in
-[v1.14.2 §3](../retrospectives/v1.14.2.md)). Read the series there; as one current
-data point, v1.14.3 measured **2.00 mean review rounds per PR** with a *rising* median
-PR size ([the v1.14.3 retrospective](../retrospectives/v1.14.3.md)).
+[v1.14.2 §3](../retrospectives/v1.14.2.md)). Read the series there. **No current data
+point is quoted here** — this article used to carry one ("v1.14.3 measured 2.00 mean
+review rounds"), and it was stale two releases later; the fix for a stale figure is to
+delete it and link, not to refresh it, because refreshing recreates the same defect on a
+one-release fuse.
 
 The counting conventions are not pedantry — they were written because four hand counts
 of the same window (30, 32, 34, 29) were reported and **none reproduced**. Two lessons
@@ -366,10 +375,12 @@ targets needing to. **A target measured against a wrong baseline is worse than n
 target** — it produces confident reporting of a change that did not happen. How the
 targets actually scored, and how the prediction discipline evolved from them, is in
 each release's retrospective ([v1.14.2](../retrospectives/v1.14.2.md) §6/§8,
-[v1.14.3](../retrospectives/v1.14.3.md) §7/§8); the standing outcome after three
-releases is that the **process** clauses (no unreviewed merges, defect classes,
-rounds) became checkable and mostly held, while the **telemetry** clause has missed
-three times running — the v1.14.3 prediction makes it binary.
+[v1.14.3](../retrospectives/v1.14.3.md) §7/§8, [v1.15.1](../retrospectives/v1.15.1.md)
+§7); the standing outcome after six releases is that the **process** clauses (no
+unreviewed merges, defect classes, rounds) became checkable and mostly held, while the
+**telemetry** clause missed four times running and was then resolved *as written* — the
+v1.14.3 prediction made it binary, the binary answer was "no", and the columns were
+retired instead of re-promised.
 
 ---
 
@@ -420,9 +431,13 @@ failure mode the process exists to prevent. The trade is deliberate:
   measured end-to-end ([v1.14.1](../retrospectives/v1.14.1.md)). The justification is
   the defect list in [§ What review actually catches](#what-review-actually-catches) —
   a live open redirect and a self-inflicted security bypass, both green on CI.
-- Most work is seen at least twice: the mean-rounds figure has stayed above 1.8 in
-  every release measured, and the per-release series is in
-  [the trend table](../retrospectives/README.md).
+- Most work is seen more than once — but **not always**, and the exception is not a
+  saving. This bullet used to assert that mean rounds "stayed above 1.8 in every release
+  measured"; the trend table's two newest rows fall below that line, which falsified it.
+  Read the per-release series in [the trend table](../retrospectives/README.md) — and read the
+  caveat beside those two rows before treating the drop as an improvement: both windows
+  were reviewed by the session that wrote the code, and an author's own finding becomes a
+  commit instead of a round ([v1.15.1 §4](../retrospectives/v1.15.1.md)).
 - Cost is dominated by outliers, not by the median — in the release measured
   end-to-end, two PRs consumed most of the review spend ([v1.14.1](../retrospectives/v1.14.1.md)).
 
@@ -454,6 +469,7 @@ fail.**
 ## Links
 
 `CLAUDE.md` · `docs/retrospectives/` · `docs/wiki/production-deployment.md` ·
-`.claude/skills/` · Issues #386 (KPIs/telemetry, open), #377 (scoped pre-push gate,
+`.claude/skills/` · Issues #386 (KPIs/telemetry — closed at v1.15.1 by the telemetry
+retirement), #409 (order-aware verdict audit, shipped v1.15.1), #377 (scoped pre-push gate,
 shipped v1.14.2), #393 (mutation contracts, shipped v1.14.3), #246 (AI-config drift
 check), #310 (host lifecycle, → v1.17.0).

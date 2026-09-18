@@ -29,21 +29,28 @@ Update this when you add a retro. These are the numbers worth watching; everythi
 
 **The three KPI columns #386 asks for already exist** and are named here so the criterion is
 checkable rather than re-added: *rounds/PR* = **Mean rounds**, *tokens/PR* = **Tokens / merged
-PR**, *round-1 approval rate* = **Approved r1**. v1.14.2 adds two columns its own evidence
-demanded — **Merged w/o valid APPROVE** (tracked only in prose footnotes until now, and v1.14.2
+PR**, *round-1 approval rate* = **Approved r1**. **v1.15.1 adds `Non-independent verdicts`** — the share
+of a window's canonical verdicts written by the session that authored the PR, disclosed under
+CLAUDE.md rule 13. It is a COLUMN and not a footnote because v1.15.1 and v1.15.2 each posted
+`100% round-1 approvals` on `100% solo verdicts`, and those two cells must be visible together or
+the first will be quoted alone. It is measurable **only** from the disclosure paragraph — reviewer
+and author share one GitHub identity here, so nothing mechanical can derive it. v1.14.2 adds two
+columns its own evidence demanded — **Merged w/o valid APPROVE** (tracked only in prose footnotes until now, and v1.14.2
 introduced a second failure mode: merging against a *standing* REQUEST CHANGES) and **Class G**
 (fake-greens, the class #393 guards). Both are back-filled only where a release's own record
 measured them; **`n-a` means not measured, never estimated.**
 
-| Release | PRs merged | Verdicts (loose / canonical-heading) | Mean rounds | Approved r1 | Rework share of verdicts | "Claim not measured" (F) findings | Class G findings | Merged w/o valid APPROVE | Median files/PR | Tokens ⚰️ | Tokens / merged PR ⚰️ | Agent-time ⚰️ |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| [v1.12.0](v1.12.0.md) | 10 | 24 / n-a¹ | **2.4** | 20% (2/10) | 58%⁴ | **9**⁵ | n-a | n-a | 17 | 9.07M² | 907k² | 28.1h² |
-| [v1.13.0](v1.13.0.md) | 16 | 52 / **50** | **3.13** | **0% (0/16)** | 68%⁴ | **12**⁵ | n-a | 0 | 14 | not recorded³ | n-a³ | 23.5h tag→tag |
-| [v1.14.0](v1.14.0.md) | 11 | 23 / **20** | **1.82** | 27% (3/11)⁶ | 45%⁷ | **4**⁵ | n-a | 1 (#321) | 20 | **8.38M**³ | 762k³ | **35.5h**³ · 53.0h tag→tag |
-| [v1.14.1](v1.14.1.md) | 17¹¹ | 44 / **41**¹⁰ | **2.41**¹⁰ | **29% (5/17)** | 59%⁸ | **5**⁵ | **2** | 1 (#355) | 8 | **2.60M**⁹ | **153k**⁹ | **6.0h**⁹ · 107h tag→tag |
-| [v1.14.2](v1.14.2.md) | 14¹² | 40 / **38**¹³ | **2.71**¹³ | **0% (0/14)**¹³ | 63%¹³ | **22**⁵ ¹⁴ | **8** | **6 of 14 (43%)**¹⁵ | 7 | not recorded¹⁶ | n-a¹⁶ | n-a¹⁶ · **20.1h tag→tag** |
-| [v1.14.3](v1.14.3.md) | 17 | 36 / **34**¹⁷ | **2.00**¹⁷ | **18% (3/17)**¹⁷ | 50%¹⁷ | **8**⁵ (2 on the retro PR) | **9**¹⁸ | **1 (#412)**¹⁹ | 8 | partial²⁰ | n-a²⁰ | n-a²⁰ · **15.8h tag→tag** |
-| [v1.15.0](v1.15.0.md) | **6**²² | 11 / **11**²³ | **1.83** | **50% (3/6)**²⁴ | 45%²³ | **7**⁵ (5 on doc surfaces) | **0**²⁵ | **0** | 7 | retired²¹ | retired²¹ | retired²¹ · 71.6h tag→tag²⁶ |
+| Release | PRs merged | Verdicts (loose / canonical-heading) | Mean rounds | Approved r1 | Rework share of verdicts | "Claim not measured" (F) findings | Class G findings | Merged w/o valid APPROVE | Non-independent verdicts | Median files/PR | Tokens ⚰️ | Tokens / merged PR ⚰️ | Agent-time ⚰️ |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| [v1.12.0](v1.12.0.md) | 10 | 24 / n-a¹ | **2.4** | 20% (2/10) | 58%⁴ | **9**⁵ | n-a | n-a | n-a²⁷ | 17 | 9.07M² | 907k² | 28.1h² |
+| [v1.13.0](v1.13.0.md) | 16 | 52 / **50** | **3.13** | **0% (0/16)** | 68%⁴ | **12**⁵ | n-a | 0 | n-a²⁷ | 14 | not recorded³ | n-a³ | 23.5h tag→tag |
+| [v1.14.0](v1.14.0.md) | 11 | 23 / **20** | **1.82** | 27% (3/11)⁶ | 45%⁷ | **4**⁵ | n-a | 1 (#321) | n-a²⁷ | 20 | **8.38M**³ | 762k³ | **35.5h**³ · 53.0h tag→tag |
+| [v1.14.1](v1.14.1.md) | 17¹¹ | 44 / **41**¹⁰ | **2.41**¹⁰ | **29% (5/17)** | 59%⁸ | **5**⁵ | **2** | 1 (#355) | n-a²⁷ | 8 | **2.60M**⁹ | **153k**⁹ | **6.0h**⁹ · 107h tag→tag |
+| [v1.14.2](v1.14.2.md) | 14¹² | 40 / **38**¹³ | **2.71**¹³ | **0% (0/14)**¹³ | 63%¹³ | **22**⁵ ¹⁴ | **8** | **6 of 14 (43%)**¹⁵ | n-a²⁷ | 7 | not recorded¹⁶ | n-a¹⁶ | n-a¹⁶ · **20.1h tag→tag** |
+| [v1.14.3](v1.14.3.md) | 17 | 36 / **34**¹⁷ | **2.00**¹⁷ | **18% (3/17)**¹⁷ | 50%¹⁷ | **8**⁵ (2 on the retro PR) | **9**¹⁸ | **1 (#412)**¹⁹ | n-a²⁷ | 8 | partial²⁰ | n-a²⁰ | n-a²⁰ · **15.8h tag→tag** |
+| [v1.15.0](v1.15.0.md) | **6**²² | 11 / **11**²³ | **1.83** | **50% (3/6)**²⁴ | 45%²³ | **7**⁵ (5 on doc surfaces) | **0**²⁵ | **0**³⁰ | **3 of 11 (27%)**²⁷ | 7 | retired²¹ | retired²¹ | retired²¹ · 71.6h tag→tag²⁶ |
+| [v1.15.1](v1.15.1.md) | **6**²⁸ | 6 / **6** | **1.00**²⁹ | **100% (6/6)**²⁹ | **0%**²⁹ | **0**²⁹ | **0** in review²⁹ | **0** | **6 of 6 (100%)**²⁷ | **9** | retired²¹ | retired²¹ | retired²¹ · 4.03h tag→tag²⁸ |
+| [v1.15.2](v1.15.2.md) | **3**²⁸ | 3 / **3** | **1.00**²⁹ | **100% (3/3)**²⁹ | **0%**²⁹ | **0**²⁹ | **0**²⁹ | **0** | **3 of 3 (100%)**²⁷ | 6 | retired²¹ | retired²¹ | retired²¹ · 1.60h tag→tag²⁸ |
 
 ¹ v1.12.0's verdict headings predate the mandated form, so a canonical-heading re-count undercounts
 that window (15). From v1.13.0 the heading is charter-mandated **and** gate-enforced, so this column
@@ -56,7 +63,10 @@ now filled for 31 of 55 Project 3 items, including 8 of 8 in the `v1.14 reach` b
 change the reading: the total includes **#310, still `In Progress`**, whose 2 900k/640min covers host
 work that has not shipped; and `Review rounds` is still unset for all 8 items, so **do not publish
 from that field** — the thread is the instrument (executable, re-derivable by anyone) and the field
-disagreed with the thread the one time it was filled (5 recorded vs 3 posted on #240).
+disagreed with the thread the one time it was filled (5 recorded vs 3 posted on #240). **Second
+instance, v1.15.1:** #386 carries `Review rounds: 4` against a thread of one ([v1.15.1
+§4](v1.15.1.md)). Two occasions filled, two disagreements — this note is where that count lives, so
+other surfaces link here rather than restating it.
 ⁴ Rework share is measured in **verdicts**, not tokens — a redefinition, and v1.12.0's cell was
 re-derived under it (its originally published 75% was token-based). See "How to count consistently".
 ⁵ The two earliest cells count **different severity populations** (v1.12.0 blocker-only, v1.13.0
@@ -294,7 +304,103 @@ defensible claim stays *"no merge that reached the gate carried an uncovered com
 this window by the empty bypass log and by 6 of 6 merges carrying pre-merge verdicts.
 See [v1.15.0.md §7](v1.15.0.md).
 
-**Standing prediction (set by v1.15.0, checked at the next release):** class-F blocker+major
+²⁷ **`Non-independent verdicts` is back-filled only where a release's own record measured it, and
+`n-a` everywhere else means NOT MEASURED — not "zero".** The pre-v1.15.0 rows are `n-a` because the
+disclosure clause did not exist until v1.15.0's change D, so nothing distinguishes a solo verdict
+from an independent one in those windows; assuming they were all independent would invent a
+baseline. v1.15.0's cell (3 of 11 verdicts, on 2 of 6 PRs) comes from its §4 table; v1.15.1's and
+v1.15.2's are 9 of 9 verdicts across both windows, each carrying the disclosure — measured by
+matching the disclosure paragraph in every verdict body, **after stripping markdown emphasis**: a
+first matcher for `not an independent` returned 8 of 9, because #437 writes
+`— **not** an independent` and the bold splits the phrase (v1.15.1 §4).
+
+²⁸ **6 PRs and 3 PRs, and the tag→tag spans ARE the work this time.** Unlike v1.15.0's 71.6h idle
+gap, v1.15.1's 4.03h and v1.15.2's 1.60h are continuous sessions with per-PR lead times of 12–75
+minutes ([v1.15.1 §5](v1.15.1.md), [v1.15.2 §5](v1.15.2.md)). **The corpus bound changed at
+v1.15.1:** `scripts/retro_metrics.sh` now takes the previous RELEASE PR's number for the lower edge
+(`retro_metrics.sh 436 441`), not the previous tag, because the tag commit read `11:09:19Z` and its
+own release PR #436 merged at `11:09:20Z` — the mirror of note 12, and it put #436 into v1.15.1's
+corpus as a seventh PR. The tag form still works and says which bound kind it used.
+
+**Re-derivability, measured on every row rather than asserted from one sample.** The first draft of
+this note claimed "every earlier row remains re-derivable" on the strength of a single spot check;
+#452's review falsified it, because the script listed with a bare `--limit 100` in default order
+and silently returned a short corpus (the v1.12.0 window came back with 7 of its 10 PRs). With the
+server-side `merged:>=` bound and the truncation guard added in #452, the whole series was re-run:
+
+- **`PRs merged` re-derives for all nine rows** under the PR-number lower bound —
+  `245 281` → 10, `281 300` → 16, `300 327` → 11, `327 385` → 17, `385 406` → 14, `406 428` → 17,
+  `428 436` → 6, `436 441` → 6, `441 446` → 3.
+- **`Median files/PR` re-derives for all nine rows** (17, 14, 20, 8, 7, 8, 7, 9, 6).
+- **The TAG form over-counts FOUR of the nine windows by exactly one PR**, and in each the extra is
+  the *previous release's own PR*: three older windows — v1.13.0 16→17 (#281), v1.14.1 17→18
+  (#327), v1.14.3 17→18 (#406) — **plus v1.15.1 itself**, this note's motivating case
+  (`ref:v1.15.0 441` → **7**, extra #436, against 6 under the PR form). The other five agree with
+  the PR form exactly. So the asymmetry is not a v1.15.1 curiosity: it reproduces on four of nine
+  windows, which is the measured argument for the PR-number bound. *(Round 2 of #452 caught this
+  cell at "three windows" — the count had silently excluded the very window the sentence two
+  paragraphs above uses as its example.)*
+- **The verdict counts and the rates derived from them do NOT re-derive before v1.15.0, and were
+  never expected to:** those cells were counted with the matchers notes 1 and 5 describe, which
+  this instrument replaced (e.g. v1.12.0 publishes 24 loose verdicts / 2.4 mean; the instrument's
+  heading-anchored, merge-replayed count is 23 / 2.30). Only the three newest rows — v1.15.0
+  (`v1.14.3 436`: 6 / 11 / 1.83 / 50% / 45% / median 7), v1.15.1 and v1.15.2 — reproduce
+  **every** cell exactly.
+
+²⁹ **The rate cells in these two rows are not a measurement of the gate, and must never be quoted
+alone.** Every one of the 9 verdicts across both windows was written by the session that authored
+the PR (the owner directed the window to run solo). A finding an author makes while reviewing their
+own diff becomes another commit *before* the verdict is posted, not a REQUEST CHANGES followed by a
+fix — so `mean rounds 1.00` and `rework share 0%` mean the rework happened before the clock started,
+not that there was none: two of v1.15.1's six PRs carry a defect found and fixed pre-merge. The
+class-F and class-G cells have the same defect one level down — they count what a session caught
+re-reading itself. **The control that shows what that misses:** v1.15.0's record states its bypass
+log "holds nothing for this window"; the log holds `2026-09-18T10:13:18Z bypass PR=435`, and #435
+merged three seconds later, inside that window. Self-review re-measured eleven claims on that PR in
+a table and missed the twelfth. See [v1.15.1 §3 and §4](v1.15.1.md) for the full analysis and for
+which cells remain comparable with the 14–17 PR windows (median files/PR: yes; the rate cells: no).
+Note the falsifier that did **not** fire at v1.15.1: median files/PR ROSE 7 → 9, and the window
+contains an 89-file PR — the rounds did not fall because the work got small. At v1.15.2 it fell to
+6, close to the ~5 ambiguity floor, and that row is read accordingly.
+
+³⁰ **v1.15.0's `Merged w/o valid APPROVE` cell stands at 0 — the merge it concerns was gated — but
+the sentence that release's record used to support it does not.** #435 merged with
+`PR_MERGE_GATE=0` (one line in the bypass log at `10:13:18Z`; merge at `10:13:21Z`) while carrying a
+covering pre-merge APPROVE posted at `10:12:15Z` naming the head `9be3b678`. So nothing merged
+unreviewed and the cell is right; the claim "the bypass log holds nothing for this window" is wrong.
+Corrected here rather than in three places — the analysis is in [v1.15.1 §3](v1.15.1.md).
+**A second, live defect fell out of it:** #392 specifies that a bypass leaves *both* a log line and
+a PR comment; **no comment was ever posted on #435**, because the comment is emitted from a detached
+background subshell with all output and failures discarded — filed as **#453**. An empty bypass log
+is still positive evidence; an absent bypass **comment** is not, and this convention should not be
+read as if it were.
+
+**v1.15.0's prediction: 4 pass, 1 n/a, 1 partial — scored at v1.15.1.** Merged with no valid
+APPROVE **0 of 6** and stale approvals **0 of 6** ✅ (checked against the bypass log, which is empty
+for that window — note 30). Disclosure **6 of 6 = 100%** ✅, and its falsifier (b) did not apply:
+with no independent verdicts at all the clause was maximally testable rather than vacuous. Release
+cut with an empty queue ✅ — `Release queue for 'release:v1.15.1': empty (checked).` quoted in #441's
+body **at cut time**, satisfying falsifier (c); v1.15.2 repeated it on #446. Mean rounds **1.00**
+with zero PRs at ≥4 verdicts ✅ and the median-files control did not fire (7 → 9). Class G **n/a** a
+third window running — both instances were in *new* scripts, killed by their own new self-tests
+before review, so #393's existing contracts had nothing to cover. ⚠️ **Class F scores 0 on the
+letter and is reported as unmeasured on the intent**: with the author as reviewer, "how many
+unmeasured claims reached review" is unanswerable, and the one checkable claim from the previous
+record was false (note 30). See [v1.15.1 §7](v1.15.1.md) and [v1.15.2 §7](v1.15.2.md).
+
+**Standing prediction (set by v1.15.1, checked at the next release):** see
+[v1.15.1 §8](v1.15.1.md) for the six clauses and [v1.15.2 §8](v1.15.2.md) for the two it adds.
+In brief — **at least one INDEPENDENT `pr-reviewer` verdict in the window** (scored against its
+largest PR, `n/a` if the solo directive still stands); class-F blocker+major **≤4 and ≤2 on
+documentation surfaces**, plus a new control: **re-measure one load-bearing evidence sentence from
+the previous retrospective and report whether it reproduced**; zero merges with no valid APPROVE
+and zero stale approvals; **100% disclosure** (now a hold at 9 of 9); a cut with an empty release
+queue **and** the previous release's retrospective present, both from the `bump_version.sh` output
+captured at cut time; **class T ≤1**; a **release-time security check posted on every release PR
+before its merge**; and **every issue a release closes present on Project 3 with its
+`release:vX.Y.Z` label before the cut**.
+
+**Superseded — the v1.15.0 standing prediction** (kept for the record): class-F blocker+major
 **≤4 AND ≤2 of them on retro/wiki documentation surfaces** (the second half is the real test of
 `scripts/retro_metrics.sh`); zero merges with no valid APPROVE and zero stale approvals; **every
 non-independent verdict carries the rule-13 disclosure** (100%, reported as an independent/solo
@@ -314,6 +420,11 @@ appearance of success and nothing else; the control is that §5 and the trend ro
 populated. (e) The older falsifier still stands: if mean rounds rise back above 3.0 while classes
 F, G and S stay low, the constraint has moved to material difficulty and the answer is not another
 charter paragraph.
+
+*(Those are v1.15.0's falsifiers, kept because they were scored above. The LIVE set belongs to the
+standing prediction and is in [v1.15.1 §8](v1.15.1.md) — including the two that only exist because
+of this window: an independent-review clause can be satisfied trivially by reviewing the easiest PR,
+and class T cannot be counted at all unless the retro names the files it grepped.)*
 
 ## How to count consistently
 
@@ -343,18 +454,54 @@ So the series stays comparable, count the same way every time:
   posted on #240). **Run this, do not count by hand** — four hand counts (30, 32, 34, 29)
   were reported for v1.12.0 and none reproduced:
 
+  **`scripts/retro_metrics.sh` RUNS the canonical half of this, with the server-side bound and the
+  truncation guard — run it rather than pasting.** The two blocks below are kept because they show
+  the loose and the anchored matcher *side by side*, which the script does not; both were themselves
+  instances of the `--limit` defect until #452 round 2 (the first returned **7** for the v1.12.0
+  window against the correct **10**), which is why they now carry the same bound and guard.
+
   ```bash
   # The corpus is every PR MERGED BETWEEN THE TAGS — not `git log <prev>..<tag>`,
   # which cites issue numbers as well as PRs and sweeps in PRs that merged before
   # the previous tag. Both published counts for v1.12.0 (29/14 and 32/12) came
   # from getting the CORPUS wrong, not the matcher.
-  PREV=$(git log -1 --format=%aI <prev-tag>); CUR=$(git log -1 --format=%aI <tag>)
-  gh pr list --state merged --limit 100 --json number,mergedAt,reviews,comments \
-    --jq "[.[] | select(.mergedAt > \"$PREV\" and .mergedAt <= \"$CUR\")]
+  #
+  # TWO bounds, both load-bearing:
+  #   * the DATES are rendered in UTC. `%aI`/`%cI`/`%cs` render in the COMMIT's own
+  #     offset, and a `+02:00` string compared against a `Z` value mis-selects the
+  #     corpus (note 11). Measured: `%cs` on 5012056c (2026-09-19T00:09:14+02:00)
+  #     gives 2026-09-19 — one day LATE, silently dropping every merge 22:09Z..24:00Z.
+  #   * the LISTING is bounded server-side and `--limit` is a truncation guard, not a
+  #     page size: `gh pr list` runs in DEFAULT order, so a bare limit filtered
+  #     client-side returns an arbitrary prefix.
+  PREV=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ <prev-tag>)
+  CUR=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ <tag>)
+  LIM=400
+  PRS=$(gh pr list --state merged --limit $LIM --search "merged:>=${PREV%%T*}" \
+          --json number,mergedAt,reviews,comments)
+  [ "$(printf '%s' "$PRS" | jq length)" -lt $LIM ] \
+    || echo "TRUNCATED at $LIM — raise it; this count cannot be measured"
+  printf '%s' "$PRS" \
+    | jq "[.[] | select(.mergedAt > \"$PREV\" and .mergedAt <= \"$CUR\")]
           | map([(.reviews[]?.body),(.comments[]?.body)]
                 | map(select(test(\"APPROVE|REQUEST CHANGES\"))) | length)
           | add"
   ```
+
+  **What the corrected block returns, and why it is not the published number.** Measured on the
+  v1.12.0 window at #452 round 2: the OLD bare-`--limit 100` form returned **5** PRs where the
+  reviewer measured **7** on what looked like the same command. The tempting explanation — "the
+  default order is not stable" — is wrong, and measurement says so: re-run within one moment and
+  the old form is perfectly repeatable (`%aI`-rendered bounds → 6, 6, 6; UTC-rendered bounds →
+  5, 5). Two other things moved instead. The two runs **rendered the window bounds differently**,
+  which shifts which PRs fall inside the window, and the `--limit 100` prefix **shifts as the
+  repository grows**, so a reading taken before #455 merged is not the same corpus as one taken
+  after. Neither is a stability property of `gh`; both are the defect the corrected form removes,
+  which returns **9 PRs / 22 loose verdicts**. The published row is **10 / 24**, and the
+  difference is one PR: **#281, the v1.12.0 release PR itself, merged at `07:53:36Z` — one second
+  after its own tag commit's `07:53:35Z`** — carrying exactly 2 verdicts. 9 + 1 = 10 and 22 + 2 =
+  24. That is note 28's one-second asymmetry demonstrated a third time, and it is why the corpus of
+  record is `retro_metrics.sh` bounded on the release PR's `mergedAt`, not this block.
 
   Case matters: a lowercase "approve" in prose is not a verdict, and matching case-insensitively
   inflated the v1.12.0 count by one. And run the widened sweep even when you expect nothing:
@@ -374,8 +521,9 @@ So the series stays comparable, count the same way every time:
   still contains pre-mandate releases:
 
   ```bash
-  gh pr list --state merged --limit 100 --json number,mergedAt,reviews,comments \
-    --jq "[.[] | select(.mergedAt > \"$PREV\" and .mergedAt <= \"$CUR\")]
+  # Same corpus, same bound and guard as the block above (PRS/PREV/CUR/LIM are reused).
+  printf '%s' "$PRS" \
+    | jq "[.[] | select(.mergedAt > \"$PREV\" and .mergedAt <= \"$CUR\")]
           | map([(.reviews[]?.body),(.comments[]?.body)]
                 | map(select(split(\"\n\") | map(select(test(\"\\\\S\"))) | (.[0]//\"\")
                              | test(\"REQUEST CHANGES|APPROVED?\"))) | length)

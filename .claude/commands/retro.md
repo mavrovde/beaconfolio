@@ -16,18 +16,31 @@ This is a **mandatory step of the release process** (owner directive 2026-09-06,
 ```bash
 PREV=$(git tag --sort=-v:refname | sed -n '2p')     # the tag before this one
 git log --oneline "$PREV..$TAG" | cat                # what shipped
-gh pr list --repo mavrovde/beaconfolio --state merged --limit 50 \
+# BOUND THE LISTING SERVER-SIDE. `gh pr list --limit N` returns merged PRs in
+# DEFAULT order, which is not merge order, so a bare --limit takes an arbitrary
+# prefix and a client-side mergedAt filter then runs over a set that need not
+# contain the window — measured on this repo at PR #452: the v1.12.0 window
+# returned 7 of its 10 PRs at --limit 100, silently.
+# The date is rendered in UTC: `%cs` uses the COMMIT's own offset, so a tag cut between
+# 22:00Z and midnight bounds a day LATE and silently drops its own window's tail
+# (measured on 5012056c: `%cs` -> 2026-09-19; UTC -> 2026-09-18). Note 11's hazard.
+gh pr list --repo mavrovde/beaconfolio --state merged --limit 200 \
+  --search "merged:>=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%d "$PREV")" \
   --json number,title,labels,mergedAt,url
 ```
 
-Keep only PRs merged inside the window. Note which issues they closed.
+Keep only PRs merged inside the window. Note which issues they closed. **The corpus of
+record is the one `scripts/retro_metrics.sh` prints in step 2** — it applies the exact
+instants and carries a truncation guard; this listing is for labels and titles.
 
 ## 2. Gather the evidence (do NOT skip to conclusions)
 
 **First, the numbers — run the instrument, don't hand-count:**
 
 ```bash
-scripts/retro_metrics.sh <prev-tag> <release-PR-number>   # e.g. v1.14.3 436
+scripts/retro_metrics.sh <prev-release-PR> <release-PR-number>   # e.g. 436 441
+# a tag still works and still bounds on the tag COMMIT date (`ref:v1.14.3 436`),
+# which re-admits the previous release's own PR — prefer the PR form.
 ```
 
 It prints the corpus, median files/PR, canonical verdicts (heading-anchored AND replayed at

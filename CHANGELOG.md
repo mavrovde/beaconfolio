@@ -184,6 +184,64 @@ All notable changes to this project will be documented in this file.
   reads. 16.89 kB of headroom keeps it able to fire on the next real growth; the 1 MB error ceiling
   is unchanged. Admin is unaffected at **438.96 kB**.
 
+### Changed
+- **The two missing release retrospectives (v1.15.1, v1.15.2) are written, and the instrument that
+  produces their figures was fixed first.** Rule 8 makes a retrospective a release step; both
+  releases shipped without one, and the v1.15.2 review thread had already named the gap. Writing
+  them exposed a defect in `scripts/retro_metrics.sh`: the window's lower bound was the previous
+  TAG's commit date, which lands one second *before* the previous release PR's merge, so that PR —
+  already counted by its own release — reappeared in the next release's corpus. The bound is now
+  the previous release PR's `mergedAt` when a PR number is given (a tag or ref still works, and
+  still bounds on the commit date, so every earlier invocation reproduces); the printed window
+  states which of the two it used. Re-measured, v1.15.0's published row reproduces exactly.
+  **A second, worse defect in the same script was found in review and fixed in the same PR:** the
+  corpus was listed with a bare `gh pr list --limit 100` in DEFAULT order and filtered client-side,
+  so an older window silently came back short — the v1.12.0 window returned 7 PRs against a
+  published row of 10, with a confident mean printed under it. The listing is now bounded
+  server-side (`--search "merged:>=…"`) and `--limit` became a **truncation guard**
+  (`RETRO_PR_LIMIT`, default 400): filling it exits 2 with "cannot measure", the polarity
+  `scripts/audit_no_verdict_merges.sh` already used. The same shape was then found and fixed in
+  `/retro` step 1 and in `release-manager` step 11b, whose bare `--limit 100` relabels an arbitrary
+  prefix now that the repo is past 450 merged PRs. All nine published `PRs merged` and
+  `Median files/PR` cells were re-derived afterwards rather than spot-checked. An all-digit argument
+  that also names a git commit is now refused as ambiguous instead of guessed, with explicit `pr:`
+  and `ref:` forms. **Round 2 then ran that grep over the WHOLE toolkit, which round 1 had claimed
+  to do and had not:** three more live sites — both of `docs/retrospectives/README.md`'s canonical
+  *"Run this, do not count by hand"* commands (one returned the wrong corpus) and
+  `.claude/skills/release-retro/SKILL.md`, four lines below a sibling in the same file that was
+  already bounded — plus four listings with **no `--limit` at all**, silently capped at gh's default
+  of 30 (the open-issue backlog measured exactly 30 that day). **Eleven invocations across seven
+  files**, and the sweep's command and output are printed in the PR so the next reader can check it
+  rather than trust it. The dates in those snippets are rendered in **UTC**: `git log --format=%cs`
+  uses the commit's own offset, so a tag cut between 22:00Z and midnight bounds a day late and
+  silently drops its own window's tail (measured on `5012056c`: `%cs` → `2026-09-19`, UTC →
+  `2026-09-18`).
+- **`scripts/retro_metrics.test.sh` — the instrument's five refusal arms are now pinned.** It grew a
+  truncation guard, a strict array parse, an ambiguity refusal, a malformed-argument refusal and two
+  unmerged-bound refusals, and its output is cited in a permanent trend table; the evidence that a
+  silent rot goes unnoticed is the script's own history. Seventeen hermetic cases (stubbed `gh`,
+  throwaway git repos, no network) plus a **10 killed / 0 survived / 0 invalid** mutation contract —
+  one mutant per arm, each asserted on the script's own message rather than its exit code, because
+  several arms share one. One case is argv-observed: it pins that the listing still carries
+  `--search`, a property invisible in the output and therefore exactly the one that rotted. Runs in
+  CI (`deploy.yml`), not in the pre-push gate, whose sub-minute budget this does not belong in.
+- **Release figures are no longer restated in the wiki articles.** `docs/wiki/delivery-statistics.md`
+  carried a ten-row copy of the trend table and `docs/wiki/team-and-process.md` carried two prose
+  figures; all three were stale, and one — "mean rounds have stayed above 1.8 in every release
+  measured" — was falsified by this PR's own measurement of the two new windows. They are
+  **deleted and linked**, not refreshed: refreshing a copy recreates the same defect on a
+  one-release fuse. The articles keep the analysis and lose the numbers.
+- **`bump_version.sh` reports whether the previous release's retrospective exists**, and the line
+  lands in the release PR body where the merge reviewer reads it. It reports and never refuses — a
+  missing retrospective must not block a hotfix — and `RELEASE_RETRO_GATE=0` silences it for a cut
+  that is deliberately ahead of the write-up. Four cases in `test-bump-version.sh` pin it,
+  including that it keys on the *previous* version rather than the new one.
+- **`lessons-learned` §79 — apply your PR's own argument to your PR's own file.** Two of this
+  window's defects were the PR's thesis not applied to the second instance in the same file: #439
+  argued that a permanently red alarm is a disabled alarm while adding a `--limit 100` truncation
+  that the measured 39-PR-per-fortnight rate would have tripped within one, and #425's correction
+  landed on one of two surfaces. The entry gives the three greps that find the second instance.
+
 ## [1.15.2] - 2026-09-18
 
 ### Changed

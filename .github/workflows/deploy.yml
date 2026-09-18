@@ -425,6 +425,15 @@ jobs:
       # file byte-identically and drop duplicated entries, not just headings.
       - name: Self-test the CHANGELOG dedup tool
         run: bash scripts/dedup_changelog_unreleased.test.sh --mutations
+      # Retro-instrument contract (#452 round 2): retro_metrics.sh gained five
+      # REFUSAL arms this release (truncation guard, strict array parse, ambiguity
+      # refusal, malformed pr:, the two unmerged-bound checks) and its output is
+      # cited in a permanent trend table. Its predecessor defect — a bare
+      # `--limit 100` returning 7 of a window's 10 PRs — sat there from the
+      # script's creation until a reviewer typed a grep. Hermetic: stubbed gh,
+      # throwaway git repos, no network.
+      - name: Self-test the retrospective metrics instrument
+        run: bash scripts/retro_metrics.test.sh --mutations
       # SSR hydration-barrier contract: an e2e test that types into a
       # server-rendered page before Angular attaches has its input wiped by
       # setUpControl's writeValue, and fails 120s later at a disabled button.
