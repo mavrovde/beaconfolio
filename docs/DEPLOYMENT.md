@@ -114,7 +114,7 @@ curl -s https://<public-host>/api/app/stats/public    # backend_version == IMAGE
 curl -s -o /dev/null -w '%{http_code}' https://<public-host>/admin/login  # -> 404 (freshness probe)
 ```
 
-Optional notification channels (#263): `BEACONFOLIO_TELEGRAM_BOT_TOKEN` + `BEACONFOLIO_TELEGRAM_CHAT_ID` (Telegram) and `BEACONFOLIO_NOTIFY_WEBHOOK_URL` (Slack/Mattermost/ntfy) — empty = channel off.
+Optional notification channels (#263, #431): `BEACONFOLIO_TELEGRAM_BOT_TOKEN` + `BEACONFOLIO_TELEGRAM_CHAT_ID` (Telegram), `BEACONFOLIO_NOTIFY_WEBHOOK_URL` (Slack/Mattermost/Discord/ntfy/Gotify), `BEACONFOLIO_MATRIX_HOMESERVER` + `BEACONFOLIO_MATRIX_ACCESS_TOKEN` + `BEACONFOLIO_MATRIX_ROOM_ID` (Matrix), and `BEACONFOLIO_SMS_GATEWAY_URL` + `BEACONFOLIO_SMS_GATEWAY_USER` + `BEACONFOLIO_SMS_GATEWAY_PASSWORD` + `BEACONFOLIO_SMS_GATEWAY_TO` (self-hosted Android SMS gateway) — empty = channel off, and a channel needs *all* of its parts. See README → "Owner notifications" for the per-provider verdict table, including why WhatsApp/Viber/Signal/Messenger/LINE/WeChat are deferred.
 
 The backend runs `alembic upgrade head` on start (schema is created on first
 boot) and seeds the admin user from `ADMIN_PASSWORD`. Ollama pulls its models on

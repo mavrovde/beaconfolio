@@ -1,0 +1,224 @@
+name: PR E2E Evidence
+
+# Split out of `pr-evidence.yml` by #433's review round 1 (finding 4). The two
+# tiers had to live in separate FILES, not separate jobs, because a workflow's
+# `on.pull_request.types` cannot filter by LABEL NAME: keeping `labeled` in the
+# integration tier's triggers meant every unrelated label created a run of it.
+#
+# That cost the integration tier twice over, both measured on #433:
+#   1. `concurrency` is evaluated BEFORE a job's `if`, so a `labeled` event
+#      CANCELLED the in-flight evidence and then skipped itself — 5 runs at
+#      head `f55a7e8c`, 2 cancelled + 3 skipped, one queued 11m15s first, and
+#      ZERO evidence on a PR created with `gh pr create --label` (the
+#      labels-at-creation flow the issue policy mandates).
+#   2. Even once the cancellation was gated, the skipped run still POSTED a
+#      check-run under the integration job's own name, so `gh pr checks` read
+#      `PR Integration Evidence (WireMock Stack): skipping` while the real,
+#      passing run sat invisible in the run history — a reviewer reading the
+#      check list concludes the tier never ran.
+# A trigger-dependent job `name:` was tried and rejected: GitHub does not
+# evaluate the expression for a SKIPPED job, so the check-run was published
+# with the raw `${{ ... }}` text as its name. Measured, not assumed.
+#
+# With the split, an unrelated label starts only THIS workflow, which skips
+# under its own honest name (`PR E2E Evidence (run-e2e label)` — skipped is
+# this tier's normal state, it is on-demand), and the integration tier's name
+# now means only the integration tier.
+#
+# KNOWN RESIDUAL, seen and accepted rather than missed (#433 review round 2,
+# non-blocking finding 3): the masking class still exists INSIDE this tier.
+# Once `run-e2e` is on the PR, a FURTHER label satisfies the `contains(...)`
+# clause but fails the `label.name == 'run-e2e'` clause, so it skips and posts
+# a `skipped` check-run under this job's name — potentially over a passing
+# browser run. It is strictly narrower than the bug that was fixed (it needs
+# `run-e2e` to be applied already, and it can never mask the ALWAYS-ON
+# integration tier, which is the lane a merger actually reads), and the clean
+# cure is the same one that failed here — GitHub will not evaluate a `name:`
+# expression for a skipped job — so closing it needs a different topology
+# (e.g. `workflow_dispatch`, or a repository_dispatch relay). Not worth that
+# complexity for an on-demand tier whose normal state is `skipped`.
+#
+# Everything else about this tier is unchanged from #380: expensive (4 image
+# builds + full prod topology + Playwright), so it is SUMMONED with the
+# `run-e2e` label rather than run on every PR; a measured local run remains
+# valid evidence where the label is not used; `deploy.yml` still runs it on
+# every push to `main` as the backstop. Security posture per rule 10: empty
+# paid key, ephemeral JWT signing, no registry login, no image push.
+
+on:
+  pull_request:
+    branches: [main]
+    # `labeled` is what makes the summon work without a new push.
+    types: [opened, synchronize, reopened, labeled]
+    paths:
+      - "backend/**"
+      - "frontend/**"
+      - "proxy/**"
+      - "docker-compose*.yml"
+      - ".github/workflows/pr-evidence-e2e.yml"
+
+# Its own group, so this tier and the integration tier never cancel each other.
+# The label guard stays: a non-`run-e2e` label must not kill an in-flight
+# browser run either (same `concurrency`-before-`if` reasoning as above).
+concurrency:
+  group: pr-evidence-e2e-${{ github.event.pull_request.number }}
+  cancel-in-progress: >-
+    ${{ github.event.action != 'labeled' || github.event.label.name == 'run-e2e' }}
+
+env:
+  REGISTRY: ${{ vars.REGISTRY || 'ghcr.io' }}
+  IMAGE_NAME: ${{ vars.IMAGE_NAME || github.repository }}
+  # Local-only tag: images are built with `load: true` and never pushed.
+  IMAGE_TAG: pr-${{ github.sha }}
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e-evidence:
+    name: PR E2E Evidence (run-e2e label)
+    # Summoned, not automatic: a reviewer (or the author) adds the `run-e2e`
+    # label when the PR's failure mode needs a real browser (#380 option 3).
+    # The second clause keeps non-run-e2e labels from restarting (and, via
+    # cancel-in-progress, killing) the evidence runs — same reasoning as above.
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'run-e2e') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'run-e2e')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Map admin.localhost to loopback (admin E2E)
+        run: echo "127.0.0.1 admin.localhost" | sudo tee -a /etc/hosts
+
+      - name: Prune pre-run (free space)
+        run: |
+          docker system prune -a -f --volumes
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build backend image (local)
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          push: false
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+      - name: Build public frontend image (local)
+        uses: docker/build-push-action@v7
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: false
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+      - name: Build admin frontend image (local)
+        uses: docker/build-push-action@v7
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile.admin
+          push: false
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-admin-frontend:${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+      - name: Build proxy image (local)
+        uses: docker/build-push-action@v7
+        with:
+          context: ./proxy
+          push: false
+          load: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-proxy:${{ env.IMAGE_TAG }}
+          cache-from: type=gha
+
+      # From here the steps mirror deploy.yml's e2e-tests job — same env
+      # posture (empty paid key, test-scoped allowlist, ephemeral JWT), same
+      # readiness gates, same public/admin split.
+      - name: Start Full Stack (Prod Topology)
+        env:
+          POSTGRES_USER: admin
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: beaconfolio
+          IMAGE_REPO: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          BEACONFOLIO_GEMINI_API_KEY: ""
+          ADMIN_ALLOWED_CIDRS: 0.0.0.0/0
+          JWT_ALLOW_EPHEMERAL_SECRET: "true"
+          # #337: same as deploy.yml's e2e job — the prod-compose-only stack
+          # needs the widened stream budget injected via env, or the CPU-only
+          # runner fails the unmocked NDJSON contract spec on the 30s default.
+          LLM_STREAM_TIMEOUT_SECONDS: "120.0"
+        run: |
+          docker compose -f docker-compose.prod.yml up -d
+
+      - name: Set up Node.js (for Playwright)
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install Frontend dependencies
+        working-directory: ./frontend
+        run: npm i --legacy-peer-deps
+
+      - name: Get installed Playwright version
+        id: playwright-version
+        working-directory: ./frontend
+        run: |
+          PW_VERSION=$(jq -r '.packages["node_modules/@playwright/test"].version' package-lock.json)
+          echo "version=$PW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Cache Playwright Browsers
+        id: cache-playwright
+        uses: actions/cache@v6
+        with:
+          path: ms-playwright
+          key: playwright-browsers-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      - name: Install Playwright Browsers
+        if: steps.cache-playwright.outputs.cache-hit != 'true'
+        working-directory: ./frontend
+        run: npx playwright install --with-deps
+
+      - name: Wait for Stack Ready
+        run: |
+          echo "Waiting for proxy to respond on port 80..."
+          timeout 180s bash -c 'until curl -s -o /dev/null -w "%{http_code}" http://localhost:80 | grep "200\|302"; do sleep 2; done'
+          echo "Stack is up!"
+
+      - name: Seed E2E Data
+        run: docker compose -f docker-compose.prod.yml exec -T backend python scripts/seed_e2e_user.py
+
+      - name: E2E · Public Site
+        working-directory: ./frontend
+        env:
+          BASE_URL: http://localhost:80
+          ADMIN_BASE_URL: http://admin.localhost
+        run: npx playwright test --project=public-e2e
+
+      - name: E2E · Admin Console
+        working-directory: ./frontend
+        env:
+          BASE_URL: http://localhost:80
+          ADMIN_BASE_URL: http://admin.localhost
+        run: npx playwright test --project=admin-e2e
+
+      - name: Upload Playwright Report
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pr-playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.prod.yml logs --tail 120 backend frontend admin-frontend proxy
