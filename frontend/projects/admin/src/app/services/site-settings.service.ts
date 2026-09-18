@@ -11,9 +11,11 @@ import { environment } from '../../environments/environment';
  *  copies drift. */
 export const AVAILABILITY_STATES = ['open', 'listening', 'not_looking'] as const;
 
-/** The five presets (#339). `terminal` is first and is the default — it is
- *  today's look, so a deployment that never picks one is unaffected. */
-export const THEME_PRESETS = ['terminal', 'dark', 'light', 'modern', 'classic'] as const;
+/** The theme vocabulary is **not declared here** (#67) — it lives once in
+ *  `@beaconfolio/shared`, which both apps consume. A preset listed in the
+ *  admin console alone used to render a picker button whose write the API
+ *  rejects with a 422; there is no second list to get that wrong now. */
+export { THEME_PRESETS } from '@beaconfolio/shared';
 
 /** A one-line description per preset, shown beside the picker so the choice is
  *  legible without opening the public site in five tabs.

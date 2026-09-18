@@ -6,6 +6,7 @@ import { FormsModule } from '@angular/forms';
 import { of, throwError, BehaviorSubject } from 'rxjs';
 import { ChangeDetectorRef } from '@angular/core';
 import { vi, describe, it, expect, beforeEach } from 'vitest';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 describe('ProfileComponent', () => {
   let component: ProfileComponent;
@@ -28,6 +29,7 @@ describe('ProfileComponent', () => {
     await TestBed.configureTestingModule({
       imports: [ProfileComponent, FormsModule, TranslatePipe],
       providers: [
+        ...provideTestBrand(),
         { provide: AuthService, useValue: authServiceSpy },
         ChangeDetectorRef
       ]

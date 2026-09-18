@@ -2,7 +2,11 @@
   <div class="container mx-auto px-6 py-3 flex justify-between items-center">
     <div class="flex items-center gap-4 shrink-0">
       <a href="#" class="text-xl font-bold text-primary hover:text-white transition-colors font-mono shrink-0">
-        >_ SM
+        @if (logoUrl$ | async; as logoUrl) {
+          <img [src]="logoUrl" [alt]="(wordmark$ | async) ?? ''" class="h-6 w-auto inline-block" />
+        } @else {
+          {{ wordmark$ | async }}
+        }
       </a>
 
       <!-- Terminal-Style Year Slider -->

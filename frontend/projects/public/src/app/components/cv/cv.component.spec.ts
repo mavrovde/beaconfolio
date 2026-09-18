@@ -7,6 +7,7 @@ import { ReactiveFormsModule } from '@angular/forms';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { TranslatePipe } from '@beaconfolio/shared';
 import { Pipe, PipeTransform } from '@angular/core';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 // Mock TranslatePipe
 @Pipe({ name: 'translate', standalone: true })
@@ -31,6 +32,7 @@ describe('CvComponent', () => {
         await TestBed.configureTestingModule({
             imports: [ReactiveFormsModule, HttpClientTestingModule, CvComponent],
             providers: [
+              ...provideTestBrand(),
                 provideRouter([]),
                 { provide: CvService, useValue: cvService }
             ]

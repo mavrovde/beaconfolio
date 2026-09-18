@@ -248,22 +248,33 @@ def test_every_theme_preset_has_a_stylesheet_block():
     from app.api.site_settings import THEME_PRESETS
 
     css = (
-        _repo_root() / "frontend" / "projects" / "public" / "src" / "styles.css"
+        _repo_root()
+        / "frontend"
+        / "projects"
+        / "shared"
+        / "src"
+        / "styles"
+        / "theme.css"
     ).read_text()
     for preset in THEME_PRESETS:
         assert f"[data-theme='{preset}']" in css, (
-            f"styles.css has no [data-theme='{preset}'] block"
+            f"theme.css has no [data-theme='{preset}'] block"
         )
 
 
-def test_theme_vocabulary_matches_both_frontend_copies():
-    """A TypeScript file cannot import Python, so the vocabulary is duplicated
-    in two places — the public app (which normalizes the wire value) and the
-    admin app (which renders the picker). This pins all three copies, the same
-    way the availability states are pinned."""
+def test_theme_vocabulary_matches_the_one_frontend_copy():
+    """A TypeScript file cannot import Python, so the vocabulary exists twice:
+    here, and once in `@beaconfolio/shared` (#67 collapsed the public and admin
+    copies into that one). This pins the two remaining copies against each
+    other, and pins that a THIRD copy has not reappeared in either app — the
+    admin one was the live risk, because a preset listed there alone renders a
+    picker button whose write the API rejects with a 422."""
     from app.api.site_settings import THEME_DEFAULT, THEME_PRESETS
 
     root = _repo_root() / "frontend" / "projects"
+    shared = (
+        root / "shared" / "src" / "lib" / "theme" / "theme-presets.ts"
+    ).read_text()
     public_svc = (
         root / "public" / "src" / "app" / "services" / "site-config.service.ts"
     ).read_text()
@@ -271,25 +282,33 @@ def test_theme_vocabulary_matches_both_frontend_copies():
         root / "admin" / "src" / "app" / "services" / "site-settings.service.ts"
     ).read_text()
 
-    # BOTH directions (#339 review r1, minor 8). Looping over the Python tuple
-    # alone catches a preset the backend gained and a frontend missed, but not
-    # the live case in the other direction: a sixth preset added to the ADMIN
-    # list alone renders a picker button that 422s on click.
     def _declared(source: str) -> set[str]:
         match = re.search(r"THEME_PRESETS = \[(.*?)\]", source, re.DOTALL)
         assert match, "no THEME_PRESETS array found"
         return set(re.findall(r"'([a-z0-9-]+)'", match.group(1)))
 
+    # BOTH directions (#339 review r1, minor 8): looping over the Python tuple
+    # alone catches a preset the backend gained and the frontend missed, but
+    # not one the frontend gained and the backend rejects.
     expected = set(THEME_PRESETS)
-    assert _declared(public_svc) == expected, (
-        f"site-config.service.ts vocabulary differs: {_declared(public_svc) ^ expected}"
-    )
-    assert _declared(admin_svc) == expected, (
-        f"site-settings.service.ts vocabulary differs: {_declared(admin_svc) ^ expected}"
+    assert _declared(shared) == expected, (
+        f"theme-presets.ts vocabulary differs: {_declared(shared) ^ expected}"
     )
 
-    # The DEFAULT is load-bearing on its own: the public service derives it
-    # from the FIRST entry, so a reordering there would silently change what an
+    # And no app may grow its own list again. `export { THEME_PRESETS } from`
+    # is a re-export, not a declaration, so the ARRAY LITERAL is what is
+    # forbidden here — that is the shape that can drift.
+    for name, source in (
+        ("site-config.service.ts", public_svc),
+        ("site-settings.service.ts", admin_svc),
+    ):
+        assert not re.search(r"THEME_PRESETS = \[", source), (
+            f"{name} declares its own THEME_PRESETS array again — "
+            "the vocabulary lives in @beaconfolio/shared"
+        )
+
+    # The DEFAULT is load-bearing on its own: the shared module derives it from
+    # the FIRST entry, so a reordering there would silently change what an
     # unconfigured deployment renders.
     assert THEME_DEFAULT == THEME_PRESETS[0]
-    assert f"THEME_PRESETS = ['{THEME_DEFAULT}'," in public_svc
+    assert f"THEME_PRESETS = ['{THEME_DEFAULT}'," in shared

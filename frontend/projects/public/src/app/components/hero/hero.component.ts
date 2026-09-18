@@ -1,7 +1,7 @@
 import { Component, Input, PLATFORM_ID, inject } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { Observable, map } from 'rxjs';
-import { TranslatePipe } from '@beaconfolio/shared';
+import { ShellChromeService, TranslatePipe } from '@beaconfolio/shared';
 import { Profile } from '../../services/profile.service';
 import { SiteConfigService } from '../../services/site-config.service';
 import { environment } from '../../../environments/environment';
@@ -15,6 +15,15 @@ import { environment } from '../../../environments/environment';
 })
 export class HeroComponent {
   private platformId = inject(PLATFORM_ID);
+  private shell = inject(ShellChromeService);
+
+  // Shell chrome, from config (#67). The literals these replace were
+  // `user@portfolio…` — a hostname no deployment but the original owned, in a
+  // template no forker should have to edit. FIELDS, not template calls: each
+  // accessor returns a fresh observable, so calling one from the template
+  // would re-subscribe on every change-detection pass.
+  readonly chrome$ = this.shell.chrome$;
+  readonly prompt$ = this.shell.prompt();
 
   @Input() profile: Profile | null = null;
 

@@ -9,6 +9,7 @@ import { createInInjectionContext, MockTranslatePipe } from '@beaconfolio/shared
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SeoService } from '../../services/seo.service';
 import { SiteConfigService, SiteConfig } from '../../services/site-config.service';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 describe('BlogComponent (cov2 branch coverage)', () => {
   let component: BlogComponent;
@@ -43,6 +44,7 @@ describe('BlogComponent (cov2 branch coverage)', () => {
    *  `siteConfig` exercises the `{ optional: true }` path the old `siteConfig?` gave. */
   const makeServerComponent = (opts: { seo?: unknown; siteConfig?: unknown } = {}) =>
     createInInjectionContext(BlogComponent, [
+      ...provideTestBrand(),
       { provide: BlogService, useValue: blogServiceSpy },
       { provide: SeoService, useValue: opts.seo ?? {} },
       { provide: Router, useValue: {} },
@@ -77,6 +79,7 @@ describe('BlogComponent (cov2 branch coverage)', () => {
     await TestBed.configureTestingModule({
       imports: [BlogComponent, MockTranslatePipe],
       providers: [
+        ...provideTestBrand(),
         { provide: BlogService, useValue: blogServiceSpy },
         { provide: LanguageService, useValue: languageServiceMock },
         provideRouter([]),

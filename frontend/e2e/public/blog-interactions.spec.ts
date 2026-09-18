@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { config } from '../config';
-import { waitForPostQueryable } from '../helpers';
+import { fetchBrand, hasShellChrome, shellPrompt, waitForPostQueryable } from '../helpers';
 
 test.describe('Blog Interactions', () => {
     test.beforeEach(async ({ page }) => {
@@ -169,9 +169,25 @@ test.describe('Blog Interactions', () => {
         await expect(page).toHaveURL(new RegExp(`/blog/${missingSlug}$`));
     });
 
-    test('should support terminal commands in UI', async ({ page }) => {
-        // Verify terminal aesthetics on the list page
-        await expect(page.locator('text=user@portfolio:~/blog$')).toBeVisible();
+    test('should support terminal commands in UI', async ({ page, request }) => {
+        // Verify terminal aesthetics on the list page. The prompt is DERIVED
+        // from the served site name since #67, so the expectation is derived
+        // too — asserting `user@portfolio:~/blog$` again would re-pin the
+        // hardcoding this issue removed, and would pass for a forker whose
+        // header still advertised somebody else's site.
+        const brand = await fetchBrand(request);
+        if (hasShellChrome(brand.theme)) {
+            const prompt = shellPrompt(brand, '~/blog');
+            await expect(page.getByText(prompt).first()).toBeVisible();
+            // The guard that keeps the line above falsifiable: the configured
+            // identity must actually differ from the literal it replaced, or a
+            // revert to the hardcoded template would still pass.
+            expect(prompt).not.toBe('user@portfolio:~/blog$');
+        } else {
+            // The other half of #67: a serif document preset must not greet a
+            // visitor with a shell prompt at all.
+            await expect(page.getByText(/^\w+@[\w.-]+:~/)).toHaveCount(0);
+        }
 
         // Verify grep search input exists
         await expect(page.getByPlaceholder('search semantically...')).toBeVisible();

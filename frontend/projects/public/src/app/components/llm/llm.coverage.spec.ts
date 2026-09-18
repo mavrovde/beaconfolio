@@ -5,6 +5,7 @@ import { LlmService } from '@beaconfolio/shared';
 import { FormsModule } from '@angular/forms';
 import { provideRouter } from '@angular/router';
 import { PLATFORM_ID } from '@angular/core';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 class MockLlmService {
   chat = vi.fn().mockResolvedValue(undefined);
@@ -22,6 +23,7 @@ describe('LlmComponent additional branch coverage (browser)', () => {
     await TestBed.configureTestingModule({
       imports: [LlmComponent, FormsModule],
       providers: [
+        ...provideTestBrand(),
         { provide: LlmService, useValue: llmService },
         { provide: PLATFORM_ID, useValue: 'browser' },
         provideRouter([]),
@@ -266,6 +268,7 @@ describe('LlmComponent non-standalone init (line 80 else)', () => {
     await TestBed.configureTestingModule({
       imports: [LlmComponent, FormsModule],
       providers: [
+        ...provideTestBrand(),
         { provide: LlmService, useClass: MockLlmService },
         { provide: PLATFORM_ID, useValue: 'browser' },
         provideRouter([]),
@@ -289,6 +292,7 @@ describe('LlmComponent server-platform branches', () => {
     await TestBed.configureTestingModule({
       imports: [LlmComponent, FormsModule],
       providers: [
+        ...provideTestBrand(),
         { provide: LlmService, useClass: MockLlmService },
         { provide: PLATFORM_ID, useValue: 'server' },
         provideRouter([]),
@@ -328,6 +332,7 @@ describe('LlmComponent timer restart branch (line 474)', () => {
     await TestBed.configureTestingModule({
       imports: [LlmComponent, FormsModule],
       providers: [
+        ...provideTestBrand(),
         { provide: LlmService, useClass: MockLlmService },
         { provide: PLATFORM_ID, useValue: 'browser' },
         provideRouter([]),

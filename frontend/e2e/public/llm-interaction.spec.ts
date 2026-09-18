@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { API_PREFIX } from '../config';
+import { fetchBrand, hasShellChrome, shellPrompt } from '../helpers';
 
 test.describe('LLM Terminal', () => {
     test.beforeEach(async ({ page }) => {
@@ -21,9 +22,20 @@ test.describe('LLM Terminal', () => {
         await page.waitForSelector('.terminal-container');
     });
 
-    test('should display terminal with initial state', async ({ page }) => {
+    test('should display terminal with initial state', async ({ page, request }) => {
         await expect(page.locator('.terminal-container')).toBeVisible();
-        await expect(page.getByText('user@portfolio:~/llm$', { exact: true }).first()).toBeVisible();
+
+        // Derived, not restated (#67): the prompt tracks the CONFIGURED site
+        // name now, so a re-hardcoded `user@portfolio` would fail here — the
+        // e2e stack's identity derives to something else entirely.
+        const brand = await fetchBrand(request);
+        if (hasShellChrome(brand.theme)) {
+            const prompt = shellPrompt(brand, '~/llm');
+            await expect(page.getByText(prompt, { exact: true }).first()).toBeVisible();
+            expect(prompt).not.toBe('user@portfolio:~/llm$');
+        } else {
+            await expect(page.getByText(/^\w+@[\w.-]+:~/)).toHaveCount(0);
+        }
     });
 
     test('should handle multi-chunk streaming response', async ({ page }) => {

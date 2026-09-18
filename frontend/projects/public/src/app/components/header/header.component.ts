@@ -1,14 +1,14 @@
 import { ChangeDetectorRef, Component, PLATFORM_ID, inject } from '@angular/core';
-import { isPlatformBrowser } from '@angular/common';
+import { CommonModule, isPlatformBrowser } from '@angular/common';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
-import { Language, LanguageService } from '@beaconfolio/shared';
+import { Language, LanguageService, ShellChromeService } from '@beaconfolio/shared';
 import { YearsService } from '../../services/years.service';
 import { TranslatePipe } from '@beaconfolio/shared';
 
 @Component({
   selector: 'app-header',
   standalone: true,
-  imports: [TranslatePipe, RouterLink, RouterLinkActive],
+  imports: [CommonModule, TranslatePipe, RouterLink, RouterLinkActive],
   templateUrl: './header.component.html',
   styleUrls: ['./header.component.css'],
 })
@@ -18,6 +18,17 @@ export class HeaderComponent {
   private router = inject(Router);
   private platformId = inject(PLATFORM_ID);
   private cdr = inject(ChangeDetectorRef);
+
+  private shell = inject(ShellChromeService);
+
+  // The brand mark, from config (#67). It was the literal `>_ SM` — the
+  // owner's own initials, with terminal chrome baked in, in a template a
+  // forker would have had to edit. Both halves are streams so the `async`
+  // pipe renders them: a configured logo image wins, otherwise the wordmark
+  // (initials from `ownerName`, `>_`-prefixed only under a shell-chrome
+  // preset). FIELDS, not calls — see ShellChromeService on why.
+  readonly logoUrl$ = this.shell.logoUrl$;
+  readonly wordmark$ = this.shell.wordmark$;
 
   currentLang: Language = 'en';
   years: number[] = [];

@@ -1,8 +1,12 @@
 <div class="mt-12">
-  <div class="flex flex-col md:flex-row gap-2 mb-4">
-    <span class="text-secondary opacity-70">user@portfolio:~$</span>
-    <span class="text-primary">./send-message.sh</span>
-  </div>
+  <!-- Decorative shell caption above a form whose fields are all labelled;
+       it disappears entirely under a preset that renders no chrome (#67). -->
+  @if (prompt$ | async; as prompt) {
+    <div class="flex flex-col md:flex-row gap-2 mb-4">
+      <span class="text-secondary opacity-70">{{ prompt }}</span>
+      <span class="text-primary">./send-message.sh</span>
+    </div>
+  }
 
   <form [formGroup]="contactForm" (ngSubmit)="onSubmit()" class="pl-0 md:pl-8 space-y-4 max-w-2xl"
     aria-label="contact form">

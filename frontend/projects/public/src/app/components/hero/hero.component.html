@@ -13,9 +13,16 @@
             class="relative w-full h-full object-cover rounded-none border-2 border-primary grayscale hover:grayscale-0 transition-all duration-500" />
         </div>
         <div class="mb-4">
-          <span class="text-sm font-mono text-secondary">
-            user@portfolio:~$ ./welcome.sh --location="{{ profile.location }}"
-          </span>
+          <!-- The location, dressed as a shell command only where that fits
+               the preset (#67). The VALUE is content and survives either way;
+               the prompt and the `./welcome.sh` costume do not. -->
+          @if (chrome$ | async) {
+            <span class="text-sm font-mono text-secondary">
+              {{ prompt$ | async }} ./welcome.sh --location="{{ profile.location }}"
+            </span>
+          } @else {
+            <span class="text-sm font-mono text-secondary">{{ profile.location }}</span>
+          }
         </div>
         <h1 class="text-3xl md:text-5xl font-bold mb-6 font-mono text-primary">
           {{ 'SECTION.HI' | translate }} {{ profile.name }}<span class="terminal-cursor"></span>

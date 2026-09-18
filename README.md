@@ -174,13 +174,35 @@ Then open <http://localhost:4200> (public site) and <http://admin.localhost:4200
    container id wins and the gtag install stands down, so you never send two copies of the same
    pageview) · `PUBLIC_SERVER_NAME`/`ADMIN_SERVER_NAME` (your
    domain) · `IMAGE_REPO` (your registry, for prod).
-2. Admin panel: upload your **Profile Data** JSON and your **CV** (Content → replaces the demo).
+2. **Look and feel — no template edits, no rebuild** (#339/#67). The *theme* is an admin choice:
+   Settings → Theme picks one of `terminal` (default), `dark`, `light`, `modern`, `classic`, and
+   the name is stamped into `data-theme` during SSR, so the first byte already carries it. The
+   *assets* are five `.env` knobs, and **every one is empty by default, where empty means "keep
+   the bundled asset"** — set none and the site looks exactly as it does now:
+
+   | Knob | What it replaces | Empty = |
+   |---|---|---|
+   | `BEACONFOLIO_BRAND_FAVICON_URL` | the tab icon on BOTH the public site and the admin console | the shipped `assets/favicon.png` |
+   | `BEACONFOLIO_BRAND_LOGO_URL` | the header brand mark | a text wordmark built from `OWNER_NAME`'s initials |
+   | `BEACONFOLIO_BRAND_OG_IMAGE_URL` | `og:image`/`twitter:image` on every share preview | the shipped `assets/og-image.png` (1200×630) |
+   | `BEACONFOLIO_BRAND_FONT_CSS_URL` | the webfont **stylesheet** `index.html` links | the preset's own face |
+   | `BEACONFOLIO_BRAND_FONT_FAMILY` | the CSS `font-family` list that actually paints | the preset's own family |
+
+   Each takes an absolute URL or a site-relative path (`/assets/…`); a relative social card is
+   resolved against `SITE_URL`, because a relative `og:image` is invalid for every crawler. The
+   last two are a **pair**: a stylesheet loads a face, a family selects one, and setting only the
+   first changes nothing visible. They are served on `GET /api/app/config/site` with the rest of
+   the identity, so a **prebuilt image rebrands on restart** — the reason they are env vars rather
+   than files in the bundle. The terminal preset's shell chrome (`user@your-site:~$`, the `>_`
+   wordmark prefix) is derived from `SITE_NAME`/`OWNER_NAME` and disappears entirely under the
+   four document presets.
+3. Admin panel: upload your **Profile Data** JSON and your **CV** (Content → replaces the demo).
    Your **portrait** is a runtime upload too (#333), but has **no panel button yet** — it is one
    authenticated API call: `POST /api/app/admin/profile/photo` (JPEG/PNG ≤ 5 MB, checked by
    content) — the hero swaps to it immediately, it lives in the DB (survives every rollout), and
    with no upload the bundled placeholder renders. `/linkedin-sync` step 3 wraps the call and can
    source the image from your LinkedIn avatar; remove with `DELETE` on the same route.
-3. Optional: LinkedIn import (`importer/README.md`), Gemini key (`BEACONFOLIO_GEMINI_API_KEY` —
+4. Optional: LinkedIn import (`importer/README.md`), Gemini key (`BEACONFOLIO_GEMINI_API_KEY` —
    empty keeps the free local Ollama).
 
 ### Manual start (the same stack, no wizard)

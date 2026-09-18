@@ -6,6 +6,7 @@ import { TranslatePipe } from '@beaconfolio/shared';
 import { MockTranslatePipe } from '@beaconfolio/shared/testing';
 import { Profile } from '../../services/profile.service';
 import { DEFAULT_SITE_CONFIG, SiteConfigService } from '../../services/site-config.service';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 describe('ContactComponent', () => {
   let component: ContactComponent;
@@ -31,6 +32,7 @@ describe('ContactComponent', () => {
     await TestBed.configureTestingModule({
       imports: [ContactComponent],
       providers: [
+        ...provideTestBrand(),
         {
           provide: SiteConfigService,
           useValue: { config$: of({ ...DEFAULT_SITE_CONFIG, socialLinks }) },

@@ -1,6 +1,6 @@
 import { Component, OnInit, Input, PLATFORM_ID, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule, isPlatformBrowser } from '@angular/common';
-import { BlogService, BlogPost, BlogSearchResult } from '@beaconfolio/shared';
+import { BlogService, BlogPost, BlogSearchResult, ShellChromeService } from '@beaconfolio/shared';
 import { Observable, map, of, take } from 'rxjs';
 import { TranslatePipe } from '@beaconfolio/shared';
 import { Router, RouterModule } from '@angular/router';
@@ -27,6 +27,15 @@ export class BlogComponent implements OnInit {
   // plain `inject()` THROWS where the old code simply saw `undefined` — the component reads it as
   // `this.siteConfig?.config$` precisely because the public app can render without it.
   private siteConfig = inject(SiteConfigService, { optional: true });
+  private shell = inject(ShellChromeService);
+
+  // Shell chrome, from config (#67). The literals these replace were
+  // `user@portfolio…` — a hostname no deployment but the original owned, in a
+  // template no forker should have to edit. FIELDS, not template calls: each
+  // accessor returns a fresh observable, so calling one from the template
+  // would re-subscribe on every change-detection pass.
+  readonly chrome$ = this.shell.chrome$;
+  readonly account$ = this.shell.account();
 
   @Input() standalone = true;
   // Pagination State

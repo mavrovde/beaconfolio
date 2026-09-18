@@ -23,8 +23,14 @@ import { join } from 'node:path';
  * red in the unit tier, on every push, without a stack.
  */
 
+/**
+ * The ONE stylesheet both apps import (#67). It used to live in this app's own
+ * `src/styles.css`; that file is now two `@import` lines, and the admin app
+ * imports the same shared file, so this contract covers BOTH apps rather than
+ * only the one whose directory it sits in.
+ */
 const STYLES = readFileSync(
-    join(__dirname, '..', 'styles.css'),
+    join(__dirname, '..', '..', '..', 'shared', 'src', 'styles', 'theme.css'),
     'utf-8',
 );
 

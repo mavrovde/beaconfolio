@@ -8,6 +8,7 @@ import { of, throwError, BehaviorSubject } from 'rxjs';
 import { MockTranslatePipe } from '@beaconfolio/shared/testing';
 import { PLATFORM_ID } from '@angular/core';
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 describe('BlogPostComponent', () => {
     let component: BlogPostComponent;
@@ -45,6 +46,7 @@ describe('BlogPostComponent', () => {
         await TestBed.configureTestingModule({
             imports: [BlogPostComponent, MockTranslatePipe],
             providers: [
+              ...provideTestBrand(),
                 provideRouter([]),
         {
             provide: SiteConfigService,
@@ -206,6 +208,7 @@ describe('BlogPostComponent Server Rendering', () => {
         await TestBed.configureTestingModule({
             imports: [BlogPostComponent, MockTranslatePipe],
             providers: [
+              ...provideTestBrand(),
                 provideRouter([]),
         {
             provide: SiteConfigService,

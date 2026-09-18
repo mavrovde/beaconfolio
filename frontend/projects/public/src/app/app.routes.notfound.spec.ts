@@ -9,6 +9,7 @@ import { routes } from './app.routes';
 import { NotFoundComponent } from './components/not-found/not-found.component';
 import { SeoService } from './services/seo.service';
 import { YearsService } from './services/years.service';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 /**
  * #324 — the wildcard route itself. Without the `**` entry an unmatched URL
@@ -54,6 +55,7 @@ describe('app routes — wildcard 404 (#324)', () => {
             responseInit = { status: 200, headers: new Headers() };
             TestBed.configureTestingModule({
                 providers: [
+                  ...provideTestBrand(),
                     provideZonelessChangeDetection(),
                     provideRouter(routes),
                     { provide: PLATFORM_ID, useValue: 'server' },

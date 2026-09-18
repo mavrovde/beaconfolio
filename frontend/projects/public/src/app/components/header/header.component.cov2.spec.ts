@@ -7,6 +7,7 @@ import { LanguageService } from '@beaconfolio/shared';
 import { MockLanguageService } from '@beaconfolio/shared/testing';
 import { YearsService } from '../../services/years.service';
 import { of } from 'rxjs';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 class MockYearsService {
   getYears() {
@@ -23,6 +24,7 @@ describe('HeaderComponent (cov2)', () => {
     await TestBed.configureTestingModule({
       imports: [HeaderComponent],
       providers: [
+        ...provideTestBrand(),
         provideRouter([]),
         { provide: LanguageService, useClass: MockLanguageService },
         { provide: YearsService, useClass: MockYearsService },

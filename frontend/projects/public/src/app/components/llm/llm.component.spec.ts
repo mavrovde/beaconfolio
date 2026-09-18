@@ -7,6 +7,7 @@ import { provideRouter, Router } from '@angular/router';
 import { ChangeDetectorRef, PLATFORM_ID } from '@angular/core';
 import { createInInjectionContext } from '@beaconfolio/shared/testing';
 import { SeoService } from '../../services/seo.service';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 class MockLlmService {
     chat = vi.fn().mockResolvedValue(undefined);
@@ -25,6 +26,7 @@ describe('LlmComponent', () => {
         await TestBed.configureTestingModule({
             imports: [LlmComponent, FormsModule],
             providers: [
+              ...provideTestBrand(),
                 { provide: LlmService, useValue: llmService },
                 { provide: PLATFORM_ID, useValue: 'browser' },
                 provideRouter([])
@@ -789,6 +791,7 @@ describe('LlmComponent', () => {
             it('SSR should return early in saveState, loadState, clearState', () => {
                 // No constructor arguments since #425 — the 'server' platform comes from a provider.
                 const serverComponent = createInInjectionContext(LlmComponent, [
+      ...provideTestBrand(),
                     { provide: LlmService, useValue: {} },
                     { provide: ChangeDetectorRef, useValue: {} },
                     { provide: Router, useValue: {} },

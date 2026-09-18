@@ -8,6 +8,7 @@ import { of, throwError } from 'rxjs';
 import { createInInjectionContext, MockTranslatePipe } from '@beaconfolio/shared/testing';
 import { SeoService } from '../../services/seo.service';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 describe('BlogComponent', () => {
   let component: BlogComponent;
@@ -42,6 +43,7 @@ describe('BlogComponent', () => {
    *  Built through the injection context because the component takes no constructor args (#425). */
   const makeServerComponent = () =>
     createInInjectionContext(BlogComponent, [
+      ...provideTestBrand(),
       { provide: BlogService, useValue: blogServiceSpy },
       { provide: SeoService, useValue: {} },
       { provide: Router, useValue: {} },
@@ -110,6 +112,7 @@ describe('BlogComponent', () => {
     await TestBed.configureTestingModule({
       imports: [BlogComponent, MockTranslatePipe],
       providers: [
+        ...provideTestBrand(),
         { provide: BlogService, useValue: blogServiceSpy },
         { provide: LanguageService, useValue: languageServiceMock },
         provideRouter([])

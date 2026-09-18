@@ -113,3 +113,98 @@ describe('SeoService canonical URL handling', () => {
     });
   });
 });
+
+/**
+ * The configured social card (#67) — the third of the three sources
+ * `resolveCard` arbitrates, and the one a forker sets.
+ */
+describe('SeoService social card resolution (#67)', () => {
+  const card = (over: Record<string, unknown>) => ({
+    provide: SiteConfigService,
+    useValue: {
+      config$: of({
+        ...DEFAULT_SITE_CONFIG,
+        siteName: 'Acme Portfolio',
+        siteUrl: 'https://acme.example',
+        ...over,
+      }),
+    },
+  });
+
+  const spyOnMeta = (provider: unknown) => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({ providers: [SeoService, Title, Meta, provider as never] });
+    const updateTag = vi.spyOn(TestBed.inject(Meta), 'updateTag');
+    return { seo: TestBed.inject(SeoService), updateTag };
+  };
+
+  // The CDN case, and the reason `resolveCard` tests the value before joining
+  // it: prefixing `https://acme.example` onto an absolute URL would produce a
+  // card no crawler can fetch.
+  it('emits an absolute configured card verbatim, without joining the site URL', () => {
+    const { seo, updateTag } = spyOnMeta(
+      card({ ogImageUrl: 'https://cdn.example/social/acme.png' }),
+    );
+
+    seo.updateSeo({});
+
+    expect(updateTag).toHaveBeenCalledWith({
+      property: 'og:image',
+      content: 'https://cdn.example/social/acme.png',
+    });
+    expect(updateTag).toHaveBeenCalledWith({
+      name: 'twitter:image',
+      content: 'https://cdn.example/social/acme.png',
+    });
+  });
+
+  it('resolves a site-relative configured card against the site URL', () => {
+    const { seo, updateTag } = spyOnMeta(card({ ogImageUrl: '/assets/acme-card.png' }));
+
+    seo.updateSeo({});
+
+    expect(updateTag).toHaveBeenCalledWith({
+      property: 'og:image',
+      content: 'https://acme.example/assets/acme-card.png',
+    });
+  });
+
+  // A hand-written env value is as likely to omit the leading slash as to
+  // carry it; joining it raw would yield `https://acme.exampleassets/...`.
+  it('inserts the separator a hand-written value omits', () => {
+    const { seo, updateTag } = spyOnMeta(card({ ogImageUrl: 'assets/acme-card.png' }));
+
+    seo.updateSeo({});
+
+    expect(updateTag).toHaveBeenCalledWith({
+      property: 'og:image',
+      content: 'https://acme.example/assets/acme-card.png',
+    });
+  });
+
+  // Precedence, measured rather than asserted: a page that ships its own
+  // artwork keeps it, so the deployment-wide knob rebrands everything EXCEPT
+  // the pages that legitimately opted out.
+  it('lets a page image win over the configured card', () => {
+    const { seo, updateTag } = spyOnMeta(card({ ogImageUrl: '/assets/acme-card.png' }));
+
+    seo.updateSeo({ image: '/assets/images/post.png' });
+
+    expect(updateTag).toHaveBeenCalledWith({
+      property: 'og:image',
+      content: 'https://acme.example/assets/images/post.png',
+    });
+  });
+
+  // Empty means the bundled asset — the whole contract of the five knobs.
+  it('falls back to the bundled card when nothing is configured', () => {
+    const { seo, updateTag } = spyOnMeta(card({ ogImageUrl: '' }));
+
+    seo.updateSeo({});
+
+    expect(updateTag).toHaveBeenCalledWith({
+      property: 'og:image',
+      content: `https://acme.example${OG_IMAGE_PATH}`,
+    });
+  });
+});

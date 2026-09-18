@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
 import { catchError, map, shareReplay } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
+import { Brand, THEME_DEFAULT, normalizeTheme } from '@beaconfolio/shared';
 
 /**
  * Site identity (#65) — everything the public app shows about its owner.
@@ -12,31 +13,13 @@ import { environment } from '../../environments/environment';
 export const AVAILABILITY_STATES = ['open', 'listening', 'not_looking'] as const;
 
 /**
- * The five preset themes (#339). Mirrors `THEME_PRESETS` in
- * `backend/app/api/site_settings.py` — a TypeScript file cannot import Python,
- * so a backend test reads THIS file and fails if the two copies drift.
- *
- * `terminal` is first and is the default: it is the pre-#339 look, and a
- * deployment that never picks a theme has to keep rendering as it does now.
+ * The theme vocabulary is **not declared here** (#67). It lives once, in
+ * `@beaconfolio/shared`, because both apps need it and only the Python copy
+ * has a real reason to be separate. Re-exported so existing imports from this
+ * service keep working and so there is one obvious place to look from the
+ * public app's side.
  */
-export const THEME_PRESETS = ['terminal', 'dark', 'light', 'modern', 'classic'] as const;
-export const THEME_DEFAULT: string = THEME_PRESETS[0];
-
-/**
- * Narrow any wire value to a known preset.
- *
- * An unknown name is NOT passed through: it would be stamped into
- * `data-theme`, match no `[data-theme="..."]` block in `styles.css`, and leave
- * the page on whatever `:root` happens to hold — a half-themed render rather
- * than a clean fallback. The backend normalizes too; this is the second half
- * of the same contract, for the deploy window where the client is newer than
- * the server (or the server older than the vocabulary).
- */
-export function normalizeTheme(value: string | undefined): string {
-    return value && (THEME_PRESETS as readonly string[]).includes(value)
-        ? value
-        : THEME_DEFAULT;
-}
+export { THEME_PRESETS, THEME_DEFAULT, normalizeTheme } from '@beaconfolio/shared';
 
 export interface SiteConfig {
     siteName: string;
@@ -60,6 +43,15 @@ export interface SiteConfig {
      *  wire value, because an unknown name stamps a `data-theme` that no
      *  stylesheet block matches and the page renders untokenized. */
     theme: string;
+    /** Brand assets (#67). Each is GUARANTEED present and may be `''`, which
+     *  means "use the bundled asset" — the shipped favicon/OG card, a wordmark
+     *  from `ownerName`, the stylesheet `index.html` already links. See
+     *  `Brand` in `@beaconfolio/shared` for the full contract. */
+    faviconUrl: string;
+    logoUrl: string;
+    ogImageUrl: string;
+    fontCssUrl: string;
+    fontFamily: string;
 }
 
 /** Backend wire shape (snake_case, see backend/app/api/site_config.py). */
@@ -82,6 +74,15 @@ interface SiteConfigDto {
     /** ABSENT on a pre-#339 backend — normalized to 'terminal' in the
      *  projection, which is also what that backend's site looked like. */
     theme?: string;
+    /** ABSENT on a pre-#67 backend — all five normalize to '' in the
+     *  projection, which is the same value as "not configured", so a deploy
+     *  window where the frontend leads the backend renders the bundled
+     *  assets rather than nothing. */
+    brand_favicon_url?: string;
+    brand_logo_url?: string;
+    brand_og_image_url?: string;
+    brand_font_css_url?: string;
+    brand_font_family?: string;
 }
 
 /**
@@ -100,7 +101,33 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
     availability: 'listening',
     aiCrawlerPolicy: 'allow',
     theme: THEME_DEFAULT,
+    faviconUrl: '',
+    logoUrl: '',
+    ogImageUrl: '',
+    fontCssUrl: '',
+    fontFamily: '',
 };
+
+/**
+ * This app's config as the shared library's brand contract (#67).
+ *
+ * The public app already fetches `/config/site`; handing the projection to
+ * `@beaconfolio/shared` through `SITE_BRAND_SOURCE` (wired in `app.config.ts`)
+ * is what stops `ThemeService`, `BrandAssetsService` and `ShellChromeService`
+ * from each opening a second request for fields this stream already carries.
+ */
+export function toBrand(config: SiteConfig): Brand {
+    return {
+        theme: config.theme,
+        siteName: config.siteName,
+        ownerName: config.ownerName,
+        faviconUrl: config.faviconUrl,
+        logoUrl: config.logoUrl,
+        ogImageUrl: config.ogImageUrl,
+        fontCssUrl: config.fontCssUrl,
+        fontFamily: config.fontFamily,
+    };
+}
 
 @Injectable({
     providedIn: 'root'
@@ -151,6 +178,15 @@ export class SiteConfigService {
                 // see `normalizeTheme` for why passing an unknown name through
                 // is worse than ignoring it.
                 theme: normalizeTheme(dto.theme),
+                // Absent on a pre-#67 backend, and '' is this field's own
+                // "use the bundled asset" value — so, exactly as with
+                // `gtm_container_id`, the fallback and the documented
+                // off-switch are deliberately the same thing.
+                faviconUrl: dto.brand_favicon_url?.trim() ?? '',
+                logoUrl: dto.brand_logo_url?.trim() ?? '',
+                ogImageUrl: dto.brand_og_image_url?.trim() ?? '',
+                fontCssUrl: dto.brand_font_css_url?.trim() ?? '',
+                fontFamily: dto.brand_font_family?.trim() ?? '',
             })),
             catchError(() => of(DEFAULT_SITE_CONFIG)),
             shareReplay(1)

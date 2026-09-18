@@ -9,8 +9,10 @@ import { DomSanitizer } from '@angular/platform-browser';
 import { firstValueFrom, of } from 'rxjs';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Component } from '@angular/core';
+import { ThemeService } from '@beaconfolio/shared';
 import { CookieConsentComponent } from './components/cookie-consent/cookie-consent.component';
 import { SystemStatsComponent } from './components/stats/stats.component';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 @Component({ selector: 'app-cookie-consent', standalone: true, template: '' })
 class MockCookieConsentComponent { }
@@ -25,8 +27,13 @@ describe('AppComponent jsonLd stream', () => {
     await TestBed.configureTestingModule({
       imports: [AppComponent, RouterTestingModule],
       providers: [
+        ...provideTestBrand(),
         { provide: GoogleAnalyticsService, useValue: { initialize: vi.fn() } },
         { provide: ViewportScroller, useValue: { setOffset: vi.fn() } },
+        // The shared ThemeService (#67) — stubbed here because this spec is
+        // about the JSON-LD stream; its own behaviour is covered in the
+        // shared library, against a real DOCUMENT.
+        { provide: ThemeService, useValue: { initialize: vi.fn(), apply: vi.fn() } },
         {
           provide: SiteConfigService,
           useValue: {

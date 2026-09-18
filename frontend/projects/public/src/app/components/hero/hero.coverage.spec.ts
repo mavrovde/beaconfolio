@@ -4,6 +4,7 @@ import { PLATFORM_ID } from '@angular/core';
 import { HeroComponent } from './hero.component';
 import { TranslatePipe } from '@beaconfolio/shared';
 import { MockTranslatePipe } from '@beaconfolio/shared/testing';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 describe('HeroComponent (server platform)', () => {
   let component: HeroComponent;
@@ -12,7 +13,7 @@ describe('HeroComponent (server platform)', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [HeroComponent],
-      providers: [{ provide: PLATFORM_ID, useValue: 'server' }],
+      providers: [...provideTestBrand(), { provide: PLATFORM_ID, useValue: 'server' }],
     })
       .overrideComponent(HeroComponent, {
         remove: { imports: [TranslatePipe] },

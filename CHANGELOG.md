@@ -87,6 +87,42 @@ All notable changes to this project will be documented in this file.
   instead of itself: `opacity` on the bar also thinned its ground — supplied by the unlayered
   `.border-terminal`, not by `bg-black` — so the page ghosted through it on every non-terminal
   preset.
+- **Favicon, logo, social card and webfont are now configuration, so a prebuilt image rebrands on
+  restart.** #65 made the owner's *identity* a runtime value; everything visual stayed baked into
+  the bundle — the favicon and the font link in `index.html`, the share card in `SeoService`, the
+  `>_ SM` wordmark in a template, and a `user@portfolio:~$` prompt hardcoded across seven public
+  and admin templates. A forker could change none of it without editing source and rebuilding.
+  Five namespaced knobs — `BEACONFOLIO_BRAND_FAVICON_URL`, `_LOGO_URL`, `_OG_IMAGE_URL`,
+  `_FONT_CSS_URL`, `_FONT_FAMILY` — now ride the existing `/api/app/config/site` payload, and
+  **every one defaults to empty, where empty means "use the bundled asset"**: set none and the
+  site is byte-for-byte what it was. Absent (an older backend mid-deploy) and empty are
+  deliberately the same value, exactly as for `gtm_container_id`. They are env-driven rather than
+  DB-backed because the *theme* is a choice the owner flips between sessions while the brand
+  assets are a deployment fact set once beside `SITE_URL`; making them rows would have bought an
+  admin screen and a migration for values that change when the deployment does.
+  The font pair is two knobs on purpose: a stylesheet URL only *loads* a face, and the family that
+  paints is chosen by the preset — so the family override is written as an inline custom property
+  on the root element, which is the one place a config value beats a `[data-theme]` block without
+  editing the shared stylesheet, and it sets **both** `--font-sans` and `--font-mono` because
+  `classic` pairs a serif body with a monospace code face and overriding one would restyle half
+  the page. The social card resolves from three sources, most specific first — the page's own
+  artwork, the configured card, the bundled one — and an absolute URL is emitted verbatim while a
+  relative one is joined to `SITE_URL` (a relative `og:image` is invalid for every crawler), with
+  the separator inserted when a hand-written value omits it.
+  Two things found by measurement rather than assumed. The shipped `favicon.png` **is a JPEG**, so
+  the `type="image/png"` both apps declared was already wrong; the attribute is now removed rather
+  than guessed, since a configured icon can be any format. And the terminal prompt is no longer a
+  literal anywhere: `ShellChromeService` derives `user@<site-name>:~$`, the account half, a full
+  command line and the wordmark from the served identity, and returns **empty** under the four
+  document presets — a serif, document-like theme that still greets a visitor with `user@host:~$`
+  reads as a rendering bug. That removed the last `admin@beaconfolio.com` literal from the admin
+  console's own screens. The three shared consumers cost **one** HTTP request between them, not
+  three, via an optional `SITE_BRAND_SOURCE` token the public app fills with the config stream it
+  already has — measured against the real `appConfig.providers`, not a re-declared copy, because
+  every extra in-flight request is another thing `ng build`'s route extraction can hang on. The
+  three e2e assertions that pinned the old literals now derive their expectations from what the
+  API serves, and assert the derived value differs from the literal it replaced — a re-hardcoded
+  template fails there instead of passing.
 
 ## [1.15.2] - 2026-09-18
 

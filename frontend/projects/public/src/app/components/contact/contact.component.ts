@@ -3,7 +3,7 @@ import { AsyncPipe } from '@angular/common';
 import { map } from 'rxjs/operators';
 import { Observable } from 'rxjs';
 
-import { TranslatePipe } from '@beaconfolio/shared';
+import { ShellChromeService, TranslatePipe } from '@beaconfolio/shared';
 import { Profile } from '../../services/profile.service';
 import { SiteConfigService } from '../../services/site-config.service';
 import { ProfileLink, toProfileLinks } from '../../profile-links/profile-links';
@@ -20,6 +20,13 @@ export class ContactComponent {
   @Input() profile: Profile | null = null;
 
   private siteConfig = inject(SiteConfigService);
+
+  // Shell chrome, from config (#67). The literals these replace were
+  // `user@portfolio…` — a hostname no deployment but the original owned, in a
+  // template no forker should have to edit. FIELDS, not template calls: each
+  // accessor returns a fresh observable, so calling one from the template
+  // would re-subscribe on every change-detection pass.
+  readonly prompt$ = inject(ShellChromeService).prompt();
 
   /**
    * Code-host and social profiles (#93), from the SAME runtime list that feeds
