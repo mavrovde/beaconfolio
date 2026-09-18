@@ -1,11 +1,13 @@
+import { ChangeDetectorRef, PLATFORM_ID } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { BlogComponent } from './blog.component';
 import { BlogService } from '@beaconfolio/shared';
 import { LanguageService } from '@beaconfolio/shared';
 import { of, throwError, ReplaySubject, firstValueFrom } from 'rxjs';
-import { MockTranslatePipe } from '@beaconfolio/shared/testing';
+import { createInInjectionContext, MockTranslatePipe } from '@beaconfolio/shared/testing';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { SeoService } from '../../services/seo.service';
 import { SiteConfigService, SiteConfig } from '../../services/site-config.service';
 
 describe('BlogComponent (cov2 branch coverage)', () => {
@@ -34,6 +36,20 @@ describe('BlogComponent (cov2 branch coverage)', () => {
       status: 200,
       json: () => Promise.resolve(data),
     } as Response);
+
+  /** A component on the 'server' platform, outside the fixture — the SSR branches.
+   *  The component takes no constructor arguments since #425, so its dependencies are
+   *  resolved from an injector holding exactly the stubs a case cares about. Omitting
+   *  `siteConfig` exercises the `{ optional: true }` path the old `siteConfig?` gave. */
+  const makeServerComponent = (opts: { seo?: unknown; siteConfig?: unknown } = {}) =>
+    createInInjectionContext(BlogComponent, [
+      { provide: BlogService, useValue: blogServiceSpy },
+      { provide: SeoService, useValue: opts.seo ?? {} },
+      { provide: Router, useValue: {} },
+      { provide: ChangeDetectorRef, useValue: { markForCheck: () => undefined } },
+      { provide: PLATFORM_ID, useValue: 'server' },
+      ...(opts.siteConfig ? [{ provide: SiteConfigService, useValue: opts.siteConfig }] : []),
+    ]);
 
   beforeEach(async () => {
     blogServiceSpy = {
@@ -90,9 +106,7 @@ describe('BlogComponent (cov2 branch coverage)', () => {
   // Line 46 false branch: standalone=false skips SEO update
   it('should skip SEO update when not standalone', () => {
     const seoSpy = { updateSeo: vi.fn() };
-    const c = new BlogComponent(
-      blogServiceSpy, seoSpy as any, {} as any, { markForCheck: () => undefined } as any, 'server', undefined
-    );
+    const c = makeServerComponent({ seo: seoSpy });
     c.standalone = false;
     c.ngOnInit();
     expect(seoSpy.updateSeo).not.toHaveBeenCalled();
@@ -103,10 +117,7 @@ describe('BlogComponent (cov2 branch coverage)', () => {
   it('composes SEO off the config stream — nothing is applied before the config arrives (#255 blocker 1)', () => {
     const late = new ReplaySubject<SiteConfig>(1);
     const seoSpy = { updateSeo: vi.fn() };
-    const c = new BlogComponent(
-      blogServiceSpy, seoSpy as any, {} as any, { markForCheck: () => undefined } as any, 'server',
-      { config$: late } as any
-    );
+    const c = makeServerComponent({ seo: seoSpy, siteConfig: { config$: late } });
     c.standalone = true;
     c.ngOnInit();
     // The SSR ordering: ngOnInit runs in a microtask, the config HTTP response is a macrotask.
@@ -122,9 +133,7 @@ describe('BlogComponent (cov2 branch coverage)', () => {
 
   it('falls back to the neutral default identity when no SiteConfigService is available', () => {
     const seoSpy = { updateSeo: vi.fn() };
-    const c = new BlogComponent(
-      blogServiceSpy, seoSpy as any, {} as any, { markForCheck: () => undefined } as any, 'server', undefined
-    );
+    const c = makeServerComponent({ seo: seoSpy });
     c.standalone = true;
     c.ngOnInit();
     expect(seoSpy.updateSeo).toHaveBeenCalledWith(
@@ -138,15 +147,10 @@ describe('BlogComponent (cov2 branch coverage)', () => {
     // TestBed component: mock config emits 'Mock Owner' -> 'mock'
     expect(await firstValueFrom(component.unixUser$)).toBe('mock');
     // no service at all -> the FRONTEND neutral fallback (DEFAULT_SITE_CONFIG)
-    const bare = new BlogComponent(
-      blogServiceSpy, {} as any, {} as any, { markForCheck: () => undefined } as any, 'server', undefined
-    );
+    const bare = makeServerComponent();
     expect(await firstValueFrom(bare.unixUser$)).toBe('portfolio');
     // empty owner name -> 'owner'
-    const emptyCfg = new BlogComponent(
-      blogServiceSpy, {} as any, {} as any, { markForCheck: () => undefined } as any, 'server',
-      { config$: of({ ownerName: '' }) } as any
-    );
+    const emptyCfg = makeServerComponent({ siteConfig: { config$: of({ ownerName: '' }) } });
     expect(await firstValueFrom(emptyCfg.unixUser$)).toBe('owner');
   });
 
@@ -194,9 +198,7 @@ describe('BlogComponent (cov2 branch coverage)', () => {
 
   // Line 92-95 branch: dedupe existing ids in SSR getPosts path (non-browser)
   it('should dedupe posts by id in SSR getPosts path', () => {
-    const serverComponent = new BlogComponent(
-      blogServiceSpy, {} as any, {} as any, { markForCheck: () => undefined } as any, 'server', undefined
-    );
+    const serverComponent = makeServerComponent();
     serverComponent.posts = [{ ...mockPosts[0] }] as any;
     blogServiceSpy.getPosts.mockReturnValueOnce(
       of({ items: mockPosts, total: 1, page: 1, page_size: 10, total_pages: 1 })
@@ -240,9 +242,7 @@ describe('BlogComponent (cov2 branch coverage)', () => {
 
   // Line 229 + 234: sharePost non-browser branch uses https://beaconfolio.com and skips both browser branches
   it('should build https://beaconfolio.com url and skip browser actions on SSR sharePost', async () => {
-    const serverComponent = new BlogComponent(
-      blogServiceSpy, {} as any, {} as any, { markForCheck: () => undefined } as any, 'server', undefined
-    );
+    const serverComponent = makeServerComponent();
     const post = { ...mockPosts[0], slug: 'test-post', title: 'Test Post' } as any;
     // Should not throw even though navigator is not used on SSR
     await expect(serverComponent.sharePost(post)).resolves.toBeUndefined();

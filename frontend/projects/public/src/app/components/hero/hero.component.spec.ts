@@ -1,3 +1,4 @@
+import { PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { of } from 'rxjs';
@@ -7,7 +8,7 @@ import { Profile } from '../../services/profile.service';
 import { vi } from 'vitest';
 
 import { TranslatePipe } from '@beaconfolio/shared';
-import { MockTranslatePipe } from '@beaconfolio/shared/testing';
+import { createInInjectionContext, MockTranslatePipe } from '@beaconfolio/shared/testing';
 
 describe('HeroComponent', () => {
   let component: HeroComponent;
@@ -118,10 +119,12 @@ describe('HeroComponent', () => {
   });
 
   it('scrollTo should return early if not in browser environment', () => {
-    const serverComponent = new HeroComponent(
-      'server', // Any non-browser string works; Angular checks it strictly under the hood
-      { config$: of({ availability: 'listening' }) } as unknown as SiteConfigService,
-    );
+    // No constructor arguments since #425 — both dependencies come from the injection context.
+    const serverComponent = createInInjectionContext(HeroComponent, [
+      // Any non-browser string works; Angular checks it strictly under the hood
+      { provide: PLATFORM_ID, useValue: 'server' },
+      { provide: SiteConfigService, useValue: { config$: of({ availability: 'listening' }) } },
+    ]);
     
     const event = new Event('click');
     const preventDefaultSpy = vi.spyOn(event, 'preventDefault');

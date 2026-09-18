@@ -1,5 +1,5 @@
-import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { CvService } from '../../services/cv.service';
 import { HeaderComponent } from '../header/header.component';
@@ -9,22 +9,22 @@ import { SeoService } from '../../services/seo.service';
 @Component({
     selector: 'app-cv',
     standalone: true,
-    imports: [CommonModule, ReactiveFormsModule, TranslatePipe, HeaderComponent],
+    imports: [ReactiveFormsModule, TranslatePipe, HeaderComponent],
     templateUrl: './cv.component.html',
     styleUrl: './cv.component.css'
 })
 export class CvComponent implements OnInit {
+    private fb = inject(FormBuilder);
+    private cvService = inject(CvService);
+    private seoService = inject(SeoService);
+    private cdr = inject(ChangeDetectorRef);
+
     cvForm: FormGroup;
     isLoading = false;
     successMessage: string | null = null;
     errorMessage: string | null = null;
 
-    constructor(
-        private fb: FormBuilder,
-        private cvService: CvService,
-        private seoService: SeoService,
-        private cdr: ChangeDetectorRef
-    ) {
+    constructor() {
         this.cvForm = this.fb.group({
             name: ['', [Validators.required, Validators.minLength(2)]],
             email: ['', [Validators.required, Validators.email]],

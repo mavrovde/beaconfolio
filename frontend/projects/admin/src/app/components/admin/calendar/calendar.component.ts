@@ -141,10 +141,11 @@ export class CalendarComponent implements OnInit {
         // Snap the <select> back to the model value: ngModel writes the DOM
         // only when the bound value CHANGES, and a rejected PATCH left the
         // user's rejected choice on screen. Fresh row identities force the
-        // re-render (no trackBy, so the rows rebuild).
-        // New ROW objects, not just new arrays: ngFor without trackBy keys on
-        // object identity, so `[...d.interviews]` (same objects) rebuilt
-        // nothing — measured by this component's own spec.
+        // re-render.
+        // New ROW objects, not just new arrays: the template's
+        // `@for (interview of day.interviews; track interview)` keys on OBJECT
+        // IDENTITY (as the `*ngFor` it replaced did), so `[...d.interviews]`
+        // (same objects) rebuilt nothing — measured by this component's own spec.
         this.days = this.days.map((d) => ({
           ...d,
           interviews: d.interviews.map((i) => ({ ...i })),

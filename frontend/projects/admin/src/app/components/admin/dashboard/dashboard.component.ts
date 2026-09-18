@@ -1,5 +1,5 @@
-import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
+
 import { RouterModule } from '@angular/router';
 import { SiteSettingsService, AVAILABILITY_STATES } from '../../../services/site-settings.service';
 import { StatsService, SystemStats } from '@beaconfolio/shared';
@@ -7,11 +7,15 @@ import { StatsService, SystemStats } from '@beaconfolio/shared';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [CommonModule, RouterModule],
+  imports: [RouterModule],
   templateUrl: './dashboard.component.html',
   styleUrls: ['./dashboard.component.css'],
 })
 export class DashboardComponent implements OnInit {
+  private statsService = inject(StatsService);
+  private siteSettingsService = inject(SiteSettingsService);
+  private cdr = inject(ChangeDetectorRef);
+
   stats: SystemStats | null = null;
   loading = true;
   error: string | null = null;
@@ -22,12 +26,6 @@ export class DashboardComponent implements OnInit {
   availability = '';
   availabilitySaving = false;
   availabilityError: string | null = null;
-
-  constructor(
-    private statsService: StatsService,
-    private siteSettingsService: SiteSettingsService,
-    private cdr: ChangeDetectorRef,
-  ) {}
 
   ngOnInit(): void {
     this.loadStats();

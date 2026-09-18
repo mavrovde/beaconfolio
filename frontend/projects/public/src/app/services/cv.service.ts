@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -22,9 +22,9 @@ export interface CvResponse {
     providedIn: 'root'
 })
 export class CvService {
-    private apiUrl = `${environment.apiUrl}${environment.apiPrefix}/cv`;
+    private http = inject(HttpClient);
 
-    constructor(private http: HttpClient) { }
+    private apiUrl = `${environment.apiUrl}${environment.apiPrefix}/cv`;
 
     requestCv(payload: CvRequestPayload): Observable<CvResponse> {
         return this.http.post<CvResponse>(`${this.apiUrl}/request`, payload);

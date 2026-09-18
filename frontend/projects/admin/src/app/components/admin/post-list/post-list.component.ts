@@ -1,5 +1,5 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, inject } from '@angular/core';
+
 import { RouterModule } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { BlogService } from '@beaconfolio/shared';
@@ -10,22 +10,20 @@ import { Subscription } from 'rxjs';
 @Component({
   selector: 'app-post-list',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule],
+  imports: [RouterModule, FormsModule],
   templateUrl: './post-list.component.html',
   styleUrls: ['./post-list.component.css'],
 })
 export class PostListComponent implements OnInit, OnDestroy {
+  private blogService = inject(BlogService);
+  private cdr = inject(ChangeDetectorRef);
+
   table = new ServerTableHelper<BlogPost>('created_at', 'desc', 10);
   loading = true;
   error: string | null = null;
   deletingIds = new Set<number>();
 
   private subscription?: Subscription;
-
-  constructor(
-    private blogService: BlogService,
-    private cdr: ChangeDetectorRef,
-  ) { }
 
   ngOnInit() {
     // Subscribe to parameter changes

@@ -1,172 +1,182 @@
 <div class="cv-manager">
-    <div class="header">
-        <h1 class="page-title">&gt; {{ 'ADMIN.CV_MANAGER' | translate }}</h1>
-    </div>
+  <div class="header">
+    <h1 class="page-title">&gt; {{ 'ADMIN.CV_MANAGER' | translate }}</h1>
+  </div>
 
-    <div class="tabs">
-        <button [class.active]="activeTab === 'requests'" (click)="activeTab = 'requests'" class="tab-btn">
-            &gt; {{ 'ADMIN.CV_REQUESTS' | translate }}
-        </button>
-        <button [class.active]="activeTab === 'versions'" (click)="activeTab = 'versions'" class="tab-btn">
-            &gt; {{ 'ADMIN.CV_VERSIONS' | translate }}
-        </button>
-    </div>
+  <div class="tabs">
+    <button [class.active]="activeTab === 'requests'" (click)="activeTab = 'requests'" class="tab-btn">
+      &gt; {{ 'ADMIN.CV_REQUESTS' | translate }}
+    </button>
+    <button [class.active]="activeTab === 'versions'" (click)="activeTab = 'versions'" class="tab-btn">
+      &gt; {{ 'ADMIN.CV_VERSIONS' | translate }}
+    </button>
+  </div>
 
-    <div class="tab-content">
-        <!-- Requests Tab -->
-        <div *ngIf="activeTab === 'requests'">
-            <div class="controls-bar">
-                <div class="search-box">
-                    <span class="prompt">> SEARCH:</span>
-                    <input type="text" [(ngModel)]="requestsTable.searchText"
-                        (keyup.enter)="requestsTable.setSearch(requestsTable.searchText)"
-                        placeholder="Enter keywords..." class="terminal-input" />
-                </div>
-            </div>
-
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th (click)="requestsTable.toggleSort('name')" class="sortable">Name {{
-                                requestsTable.isSorted('name') ? (requestsTable.getSortDirection('name') === 'asc' ? '▲'
-                                : '▼') : '' }}</th>
-                            <th (click)="requestsTable.toggleSort('email')" class="sortable">Email {{
-                                requestsTable.isSorted('email') ? (requestsTable.getSortDirection('email') === 'asc' ?
-                                '▲' : '▼') : '' }}</th>
-                            <th (click)="requestsTable.toggleSort('company')" class="sortable">Company {{
-                                requestsTable.isSorted('company') ? (requestsTable.getSortDirection('company') === 'asc'
-                                ? '▲' : '▼') : '' }}</th>
-                            <th (click)="requestsTable.toggleSort('cv_version')" class="sortable">CV Version {{
-                                requestsTable.isSorted('cv_version') ? (requestsTable.getSortDirection('cv_version') ===
-                                'asc' ? '▲' : '▼') : '' }}</th>
-                            <th (click)="requestsTable.toggleSort('created_at')" class="sortable">Requested {{
-                                requestsTable.isSorted('created_at') ? (requestsTable.getSortDirection('created_at') ===
-                                'asc' ? '▲' : '▼') : '' }}</th>
-                            <th (click)="requestsTable.toggleSort('subscribe_to_updates')" class="sortable">Subscribed
-                                {{
-                                requestsTable.isSorted('subscribe_to_updates') ?
-                                (requestsTable.getSortDirection('subscribe_to_updates') ===
-                                'asc' ? '▲' : '▼') : '' }}</th>
-                            <th>Description</th>
-                            <th>Download status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr *ngFor="let req of requestsTable.items">
-                            <td>{{ req.name }}</td>
-                            <td>{{ req.email }}</td>
-                            <td>{{ req.company }}</td>
-                            <td>{{ req.cv_version }}</td>
-                            <td>{{ req.created_at | date:'short' }}</td>
-                            <td>
-                                <span [class]="req.subscribe_to_updates ? 'status-active' : 'status-inactive'">
-                                    {{ (req.subscribe_to_updates ? 'ADMIN.YES' : 'ADMIN.NO') | translate }}
-                                </span>
-                            </td>
-                            <td>
-                                <div class="message-preview" [title]="req.position_description">
-                                    {{ req.position_description || 'N/A' }}
-                                </div>
-                            </td>
-                            <td class="status-cell">
-                                <span [class]="req.downloaded_at ? 'status-yes' : 'status-no'">
-                                    {{ req.downloaded_at ? 'YES' : 'NO' }}
-                                </span>
-                                <span *ngIf="req.download_count" class="count-badge">Count: {{ req.download_count
-                                    }}</span>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <!-- Pagination -->
-                <div class="pagination">
-                    <button [disabled]="requestsTable.currentPage === 1"
-                        (click)="requestsTable.setPage(requestsTable.currentPage - 1)" class="btn-page">&lt;
-                        PREV</button>
-                    <span class="page-info">Page {{ requestsTable.currentPage }} of {{ requestsTable.totalPages
-                        }}</span>
-                    <button [disabled]="requestsTable.currentPage === requestsTable.totalPages"
-                        (click)="requestsTable.setPage(requestsTable.currentPage + 1)" class="btn-page">NEXT
-                        &gt;</button>
-                </div>
-            </div>
+  <div class="tab-content">
+    <!-- Requests Tab -->
+    @if (activeTab === 'requests') {
+      <div>
+        <div class="controls-bar">
+          <div class="search-box">
+            <span class="prompt">> SEARCH:</span>
+            <input type="text" [(ngModel)]="requestsTable.searchText"
+              (keyup.enter)="requestsTable.setSearch(requestsTable.searchText)"
+              placeholder="Enter keywords..." class="terminal-input" />
+          </div>
         </div>
-
-        <!-- Versions Tab -->
-        <div *ngIf="activeTab === 'versions'">
-            <div class="upload-section card">
-                <h3>&gt; UPLOAD_NEW_VERSION</h3>
-                <form [formGroup]="uploadForm" (ngSubmit)="onUpload()" class="upload-form">
-                    <div class="form-group text-primary">
-                        <label for="cv-upload-version">VERSION:</label>
-                        <input id="cv-upload-version" type="text" formControlName="version" class="terminal-input" placeholder="e.g. v1.1.0" />
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th (click)="requestsTable.toggleSort('name')" class="sortable">Name {{
+                  requestsTable.isSorted('name') ? (requestsTable.getSortDirection('name') === 'asc' ? '▲'
+                : '▼') : '' }}</th>
+                <th (click)="requestsTable.toggleSort('email')" class="sortable">Email {{
+                  requestsTable.isSorted('email') ? (requestsTable.getSortDirection('email') === 'asc' ?
+                '▲' : '▼') : '' }}</th>
+                <th (click)="requestsTable.toggleSort('company')" class="sortable">Company {{
+                  requestsTable.isSorted('company') ? (requestsTable.getSortDirection('company') === 'asc'
+                ? '▲' : '▼') : '' }}</th>
+                <th (click)="requestsTable.toggleSort('cv_version')" class="sortable">CV Version {{
+                  requestsTable.isSorted('cv_version') ? (requestsTable.getSortDirection('cv_version') ===
+                'asc' ? '▲' : '▼') : '' }}</th>
+                <th (click)="requestsTable.toggleSort('created_at')" class="sortable">Requested {{
+                  requestsTable.isSorted('created_at') ? (requestsTable.getSortDirection('created_at') ===
+                'asc' ? '▲' : '▼') : '' }}</th>
+                <th (click)="requestsTable.toggleSort('subscribe_to_updates')" class="sortable">Subscribed
+                  {{
+                  requestsTable.isSorted('subscribe_to_updates') ?
+                  (requestsTable.getSortDirection('subscribe_to_updates') ===
+                'asc' ? '▲' : '▼') : '' }}</th>
+                <th>Description</th>
+                <th>Download status</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (req of requestsTable.items; track req) {
+                <tr>
+                  <td>{{ req.name }}</td>
+                  <td>{{ req.email }}</td>
+                  <td>{{ req.company }}</td>
+                  <td>{{ req.cv_version }}</td>
+                  <td>{{ req.created_at | date:'short' }}</td>
+                  <td>
+                    <span [class]="req.subscribe_to_updates ? 'status-active' : 'status-inactive'">
+                      {{ (req.subscribe_to_updates ? 'ADMIN.YES' : 'ADMIN.NO') | translate }}
+                    </span>
+                  </td>
+                  <td>
+                    <div class="message-preview" [title]="req.position_description">
+                      {{ req.position_description || 'N/A' }}
                     </div>
-                    <div class="form-group text-primary">
-                        <label for="cv-upload-file">FILE (.pdf):</label>
-                        <input id="cv-upload-file" type="file" (change)="onFileSelected($event)" accept=".pdf" class="file-input" />
-                    </div>
-                    <div class="form-group text-primary">
-                        <label class="flex items-center gap-2">
-                            <input type="checkbox" formControlName="activate" />
-                            <span>MAKE_PUBLIC_DEFAULT (uncheck to upload a pipeline variant)</span>
-                        </label>
-                    </div>
-                    <button type="submit" [disabled]="uploadForm.invalid || uploading" class="btn-primary">
-                        {{ uploading ? 'UPLOADING...' : 'UPLOAD' }}
-                    </button>
-                </form>
-                <div *ngIf="successMessage" class="success-text">
-                    SUCCESS: {{ successMessage | translate }}
-                </div>
-                <div *ngIf="errorMessage" class="error-text">
-                    ERROR: {{ errorMessage }}
-                </div>
-            </div>
-
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th (click)="versionsTable.toggleSort('version')" class="sortable">Version {{
-                                versionsTable.isSorted('version') ? (versionsTable.getSortDirection('version') === 'asc'
-                                ? '▲' : '▼') : '' }}</th>
-                            <th (click)="versionsTable.toggleSort('filename')" class="sortable">Filename {{
-                                versionsTable.isSorted('filename') ? (versionsTable.getSortDirection('filename') ===
-                                'asc' ? '▲' : '▼') : '' }}</th>
-                            <th (click)="versionsTable.toggleSort('created_at')" class="sortable">Uploaded {{
-                                versionsTable.isSorted('created_at') ? (versionsTable.getSortDirection('created_at') ===
-                                'asc' ? '▲' : '▼') : '' }}</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr *ngFor="let ver of versionsTable.items">
-                            <td>{{ ver.version }}</td>
-                            <td>{{ ver.filename }}</td>
-                            <td>{{ ver.created_at | date:'short' }}</td>
-                            <td>
-                                <span [class]="ver.is_active ? 'status-active' : 'status-inactive'">
-                                    {{ ver.is_active ? 'ACTIVE' : 'INACTIVE' }}
-                                </span>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-
-                <!-- Pagination -->
-                <div class="pagination">
-                    <button [disabled]="versionsTable.currentPage === 1"
-                        (click)="versionsTable.setPage(versionsTable.currentPage - 1)" class="btn-page">&lt;
-                        PREV</button>
-                    <span class="page-info">Page {{ versionsTable.currentPage }} of {{ versionsTable.totalPages
-                        }}</span>
-                    <button [disabled]="versionsTable.currentPage === versionsTable.totalPages"
-                        (click)="versionsTable.setPage(versionsTable.currentPage + 1)" class="btn-page">NEXT
-                        &gt;</button>
-                </div>
-            </div>
+                  </td>
+                  <td class="status-cell">
+                    <span [class]="req.downloaded_at ? 'status-yes' : 'status-no'">
+                      {{ req.downloaded_at ? 'YES' : 'NO' }}
+                    </span>
+                    @if (req.download_count) {
+                      <span class="count-badge">Count: {{ req.download_count
+                      }}</span>
+                    }
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+          <!-- Pagination -->
+          <div class="pagination">
+            <button [disabled]="requestsTable.currentPage === 1"
+              (click)="requestsTable.setPage(requestsTable.currentPage - 1)" class="btn-page">&lt;
+            PREV</button>
+            <span class="page-info">Page {{ requestsTable.currentPage }} of {{ requestsTable.totalPages
+            }}</span>
+            <button [disabled]="requestsTable.currentPage === requestsTable.totalPages"
+              (click)="requestsTable.setPage(requestsTable.currentPage + 1)" class="btn-page">NEXT
+            &gt;</button>
+          </div>
         </div>
-    </div>
+      </div>
+    }
+
+    <!-- Versions Tab -->
+    @if (activeTab === 'versions') {
+      <div>
+        <div class="upload-section card">
+          <h3>&gt; UPLOAD_NEW_VERSION</h3>
+          <form [formGroup]="uploadForm" (ngSubmit)="onUpload()" class="upload-form">
+            <div class="form-group text-primary">
+              <label for="cv-upload-version">VERSION:</label>
+              <input id="cv-upload-version" type="text" formControlName="version" class="terminal-input" placeholder="e.g. v1.1.0" />
+            </div>
+            <div class="form-group text-primary">
+              <label for="cv-upload-file">FILE (.pdf):</label>
+              <input id="cv-upload-file" type="file" (change)="onFileSelected($event)" accept=".pdf" class="file-input" />
+            </div>
+            <div class="form-group text-primary">
+              <label class="flex items-center gap-2">
+                <input type="checkbox" formControlName="activate" />
+                <span>MAKE_PUBLIC_DEFAULT (uncheck to upload a pipeline variant)</span>
+              </label>
+            </div>
+            <button type="submit" [disabled]="uploadForm.invalid || uploading" class="btn-primary">
+              {{ uploading ? 'UPLOADING...' : 'UPLOAD' }}
+            </button>
+          </form>
+          @if (successMessage) {
+            <div class="success-text">
+              SUCCESS: {{ successMessage | translate }}
+            </div>
+          }
+          @if (errorMessage) {
+            <div class="error-text">
+              ERROR: {{ errorMessage }}
+            </div>
+          }
+        </div>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th (click)="versionsTable.toggleSort('version')" class="sortable">Version {{
+                  versionsTable.isSorted('version') ? (versionsTable.getSortDirection('version') === 'asc'
+                ? '▲' : '▼') : '' }}</th>
+                <th (click)="versionsTable.toggleSort('filename')" class="sortable">Filename {{
+                  versionsTable.isSorted('filename') ? (versionsTable.getSortDirection('filename') ===
+                'asc' ? '▲' : '▼') : '' }}</th>
+                <th (click)="versionsTable.toggleSort('created_at')" class="sortable">Uploaded {{
+                  versionsTable.isSorted('created_at') ? (versionsTable.getSortDirection('created_at') ===
+                'asc' ? '▲' : '▼') : '' }}</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (ver of versionsTable.items; track ver) {
+                <tr>
+                  <td>{{ ver.version }}</td>
+                  <td>{{ ver.filename }}</td>
+                  <td>{{ ver.created_at | date:'short' }}</td>
+                  <td>
+                    <span [class]="ver.is_active ? 'status-active' : 'status-inactive'">
+                      {{ ver.is_active ? 'ACTIVE' : 'INACTIVE' }}
+                    </span>
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+          <!-- Pagination -->
+          <div class="pagination">
+            <button [disabled]="versionsTable.currentPage === 1"
+              (click)="versionsTable.setPage(versionsTable.currentPage - 1)" class="btn-page">&lt;
+            PREV</button>
+            <span class="page-info">Page {{ versionsTable.currentPage }} of {{ versionsTable.totalPages
+            }}</span>
+            <button [disabled]="versionsTable.currentPage === versionsTable.totalPages"
+              (click)="versionsTable.setPage(versionsTable.currentPage + 1)" class="btn-page">NEXT
+            &gt;</button>
+          </div>
+        </div>
+      </div>
+    }
+  </div>
 </div>

@@ -1,4 +1,4 @@
-import { Injectable, Inject } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { SHARED_ENVIRONMENT, SharedEnvironment } from '../config/environment.token';
 import { AUTH_TOKEN_PROVIDER, AuthTokenProvider } from '../config/auth-token.token';
 
@@ -19,12 +19,13 @@ export interface AgentConfig {
     providedIn: 'root'
 })
 export class LlmService {
+    private authToken = inject<AuthTokenProvider>(AUTH_TOKEN_PROVIDER);
+
     private apiUrl: string;
 
-    constructor(
-        @Inject(SHARED_ENVIRONMENT) env: SharedEnvironment,
-        @Inject(AUTH_TOKEN_PROVIDER) private authToken: AuthTokenProvider,
-    ) {
+    constructor() {
+        const env = inject<SharedEnvironment>(SHARED_ENVIRONMENT);
+
         this.apiUrl = `${env.apiUrl}${env.apiPrefix}/ai`;
     }
 

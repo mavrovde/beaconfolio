@@ -4,28 +4,29 @@
       {{ 'SECTION.CONTACT' | translate }}
     </h2>
 
-    <div *ngIf="profile && profile.contact" class="space-y-4 text-lg">
-      <div class="flex flex-col md:flex-row gap-2">
-        <span class="text-secondary opacity-70">user@portfolio:~$</span>
-        <span class="text-primary">echo $EMAIL</span>
+    @if (profile && profile.contact) {
+      <div class="space-y-4 text-lg">
+        <div class="flex flex-col md:flex-row gap-2">
+          <span class="text-secondary opacity-70">user@portfolio:~$</span>
+          <span class="text-primary">echo $EMAIL</span>
+        </div>
+        <div class="pl-0 md:pl-8 mb-6">
+          <a [href]="'mailto:' + profile.contact.email" class="hover:bg-primary hover:text-black transition-colors px-1">
+            {{ profile.contact.email }}
+          </a>
+        </div>
+        <div class="flex flex-col md:flex-row gap-2">
+          <span class="text-secondary opacity-70">user@portfolio:~$</span>
+          <span class="text-primary">echo $LINKEDIN</span>
+        </div>
+        <div class="pl-0 md:pl-8">
+          <a [href]="profile.contact.linkedin" target="_blank"
+            class="hover:bg-primary hover:text-black transition-colors px-1">
+            {{ profile.contact.linkedin }}
+          </a>
+        </div>
       </div>
-      <div class="pl-0 md:pl-8 mb-6">
-        <a [href]="'mailto:' + profile.contact.email" class="hover:bg-primary hover:text-black transition-colors px-1">
-          {{ profile.contact.email }}
-        </a>
-      </div>
-
-      <div class="flex flex-col md:flex-row gap-2">
-        <span class="text-secondary opacity-70">user@portfolio:~$</span>
-        <span class="text-primary">echo $LINKEDIN</span>
-      </div>
-      <div class="pl-0 md:pl-8">
-        <a [href]="profile.contact.linkedin" target="_blank"
-          class="hover:bg-primary hover:text-black transition-colors px-1">
-          {{ profile.contact.linkedin }}
-        </a>
-      </div>
-    </div>
+    }
 
     <!-- Direct inquiry form (#69): lands in the owner's unified inbox. -->
     <app-contact-form />

@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
 import { catchError, map, shareReplay } from 'rxjs/operators';
@@ -64,10 +64,12 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
     providedIn: 'root'
 })
 export class SiteConfigService {
+    private http = inject(HttpClient);
+
     /** One fetch per app lifecycle; late subscribers replay the value. */
     public readonly config$: Observable<SiteConfig>;
 
-    constructor(private http: HttpClient) {
+    constructor() {
         const url = `${environment.apiUrl}${environment.apiPrefix}/config/site`;
         this.config$ = this.http.get<SiteConfigDto>(url).pipe(
             map((dto) => ({

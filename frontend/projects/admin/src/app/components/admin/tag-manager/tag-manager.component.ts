@@ -1,5 +1,5 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, inject } from '@angular/core';
+
 import { FormsModule } from '@angular/forms';
 import { TagsService, TagStat } from '../../../services/tags.service';
 import { ServerTableHelper } from '../../../utils/table-helper-server';
@@ -8,11 +8,14 @@ import { Subscription } from 'rxjs';
 @Component({
   selector: 'app-tag-manager',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [FormsModule],
   templateUrl: './tag-manager.component.html',
   styleUrls: ['./tag-manager.component.css']
 })
 export class TagManagerComponent implements OnInit, OnDestroy {
+  private tagsService = inject(TagsService);
+  private cdr = inject(ChangeDetectorRef);
+
   table = new ServerTableHelper<TagStat>('count', 'desc', 10);
   loading = false;
   error: string | null = null;
@@ -21,11 +24,6 @@ export class TagManagerComponent implements OnInit, OnDestroy {
   newTagName = '';
 
   private subscription?: Subscription;
-
-  constructor(
-    private tagsService: TagsService,
-    private cdr: ChangeDetectorRef
-  ) { }
 
   ngOnInit() {
     this.subscription = this.table.params$.subscribe(() => {

@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet } from '@angular/router';
 import { GoogleAnalyticsService } from './services/google-analytics.service';
@@ -16,21 +16,21 @@ import { ViewportScroller } from '@angular/common';
   standalone: true,
   imports: [CommonModule, RouterOutlet, CookieConsentComponent, SystemStatsComponent],
   template: `
-    <div *ngIf="jsonLd$ | async as jsonLd" [innerHTML]="jsonLd"></div>
+    @if (jsonLd$ | async; as jsonLd) {
+      <div [innerHTML]="jsonLd"></div>
+    }
     <router-outlet></router-outlet>
     <app-cookie-consent></app-cookie-consent>
     <app-system-stats></app-system-stats>
-  `,
+    `,
 })
 export class AppComponent implements OnInit {
-  jsonLd$?: Observable<SafeHtml | null>;
+  private googleAnalyticsService = inject(GoogleAnalyticsService);
+  private viewportScroller = inject(ViewportScroller);
+  private seoService = inject(SeoService);
+  private sanitizer = inject(DomSanitizer);
 
-  constructor(
-    private googleAnalyticsService: GoogleAnalyticsService,
-    private viewportScroller: ViewportScroller,
-    private seoService: SeoService,
-    private sanitizer: DomSanitizer
-  ) { }
+  jsonLd$?: Observable<SafeHtml | null>;
 
   ngOnInit() {
     this.googleAnalyticsService.initialize();

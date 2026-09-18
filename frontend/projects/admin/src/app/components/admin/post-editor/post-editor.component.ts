@@ -1,5 +1,5 @@
-import { Component, OnInit, ChangeDetectorRef } from '@angular/core';
-import { CommonModule } from '@angular/common';
+import { Component, OnInit, ChangeDetectorRef, inject } from '@angular/core';
+
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
 import { BlogService } from '@beaconfolio/shared';
@@ -18,11 +18,16 @@ interface PostData {
 @Component({
   selector: 'app-post-editor',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [FormsModule],
   templateUrl: './post-editor.component.html',
   styleUrls: ['./post-editor.component.css'],
 })
 export class PostEditorComponent implements OnInit {
+  private blogService = inject(BlogService);
+  private router = inject(Router);
+  private route = inject(ActivatedRoute);
+  private cdr = inject(ChangeDetectorRef);
+
   post: PostData = {
     title: '',
     slug: '',
@@ -48,13 +53,6 @@ export class PostEditorComponent implements OnInit {
   suggestingSlug = false;
   suggestingSummary = false;
   suggestingAll = false;
-
-  constructor(
-    private blogService: BlogService,
-    private router: Router,
-    private route: ActivatedRoute,
-    private cdr: ChangeDetectorRef,
-  ) { }
 
   ngOnInit(): void {
     const idParam = this.route.snapshot.paramMap.get('id');

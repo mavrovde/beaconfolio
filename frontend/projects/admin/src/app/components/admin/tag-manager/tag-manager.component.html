@@ -1,63 +1,73 @@
 <div class="tag-manager">
-    <div class="header">
-        <h1 class="page-title">&gt; TAG_MANAGER</h1>
+  <div class="header">
+    <h1 class="page-title">&gt; TAG_MANAGER</h1>
+  </div>
+
+  <div class="controls-bar">
+    <div class="search-box">
+      <span class="prompt">> SEARCH:</span>
+      <input type="text" [(ngModel)]="table.searchText" (keyup.enter)="table.setSearch(table.searchText)"
+        placeholder="Enter tag name..." class="terminal-input" />
     </div>
+  </div>
 
-    <div class="controls-bar">
-        <div class="search-box">
-            <span class="prompt">> SEARCH:</span>
-            <input type="text" [(ngModel)]="table.searchText" (keyup.enter)="table.setSearch(table.searchText)"
-                placeholder="Enter tag name..." class="terminal-input" />
-        </div>
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th (click)="table.toggleSort('name')" class="sortable">Tag Name {{
+          table.isSorted('name') ? (table.getSortDirection('name') === 'asc' ? '▲' : '▼') : '' }}</th>
+          <th (click)="table.toggleSort('count')" class="sortable">Usage Count {{
+          table.isSorted('count') ? (table.getSortDirection('count') === 'asc' ? '▲' : '▼') : '' }}</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (tag of table.items; track tag) {
+          <tr>
+            <td>
+              @if (editingTag === tag.name) {
+                <div class="edit-mode">
+                  <input type="text" [(ngModel)]="newTagName" (keyup.enter)="saveRename(tag.name)"
+                    (keyup.escape)="cancelEdit()" class="terminal-input small" autoFocus />
+                  <button (click)="saveRename(tag.name)" class="btn-icon">✓</button>
+                  <button (click)="cancelEdit()" class="btn-icon">✗</button>
+                </div>
+              }
+              @if (editingTag !== tag.name) {
+                <span (dblclick)="startEdit(tag.name)" class="tag-name">
+                  {{ tag.name }}
+                </span>
+              }
+            </td>
+            <td>{{ tag.count }}</td>
+            <td class="actions-cell">
+              <button (click)="startEdit(tag.name)" class="btn-action" title="Rename">RENAME</button>
+              <button (click)="deleteTag(tag.name)" class="btn-action delete" title="Delete">DELETE</button>
+            </td>
+          </tr>
+        }
+        @if (table.items.length === 0 && !loading) {
+          <tr>
+            <td colspan="4" class="no-data">No tags found.</td>
+          </tr>
+        }
+      </tbody>
+    </table>
+
+    @if (loading) {
+      <div class="loading-overlay">
+        &gt; LOADING_DATA...
+      </div>
+    }
+
+    <!-- Pagination -->
+    <div class="pagination">
+      <button [disabled]="table.currentPage === 1" (click)="table.setPage(table.currentPage - 1)"
+      class="btn-page">&lt; PREV</button>
+      <span class="page-info">Page {{ table.currentPage }} of {{ table.totalPages || 1 }}</span>
+      <button [disabled]="table.currentPage === table.totalPages" (click)="table.setPage(table.currentPage + 1)"
+      class="btn-page">NEXT &gt;</button>
     </div>
-
-    <div class="table-container">
-        <table>
-            <thead>
-                <tr>
-                    <th (click)="table.toggleSort('name')" class="sortable">Tag Name {{
-                        table.isSorted('name') ? (table.getSortDirection('name') === 'asc' ? '▲' : '▼') : '' }}</th>
-                    <th (click)="table.toggleSort('count')" class="sortable">Usage Count {{
-                        table.isSorted('count') ? (table.getSortDirection('count') === 'asc' ? '▲' : '▼') : '' }}</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr *ngFor="let tag of table.items">
-                    <td>
-                        <div *ngIf="editingTag === tag.name" class="edit-mode">
-                            <input type="text" [(ngModel)]="newTagName" (keyup.enter)="saveRename(tag.name)"
-                                (keyup.escape)="cancelEdit()" class="terminal-input small" autoFocus />
-                            <button (click)="saveRename(tag.name)" class="btn-icon">✓</button>
-                            <button (click)="cancelEdit()" class="btn-icon">✗</button>
-                        </div>
-                        <span *ngIf="editingTag !== tag.name" (dblclick)="startEdit(tag.name)" class="tag-name">
-                            {{ tag.name }}
-                        </span>
-                    </td>
-                    <td>{{ tag.count }}</td>
-                    <td class="actions-cell">
-                        <button (click)="startEdit(tag.name)" class="btn-action" title="Rename">RENAME</button>
-                        <button (click)="deleteTag(tag.name)" class="btn-action delete" title="Delete">DELETE</button>
-                    </td>
-                </tr>
-                <tr *ngIf="table.items.length === 0 && !loading">
-                    <td colspan="4" class="no-data">No tags found.</td>
-                </tr>
-            </tbody>
-        </table>
-
-        <div *ngIf="loading" class="loading-overlay">
-            &gt; LOADING_DATA...
-        </div>
-
-        <!-- Pagination -->
-        <div class="pagination">
-            <button [disabled]="table.currentPage === 1" (click)="table.setPage(table.currentPage - 1)"
-                class="btn-page">&lt; PREV</button>
-            <span class="page-info">Page {{ table.currentPage }} of {{ table.totalPages || 1 }}</span>
-            <button [disabled]="table.currentPage === table.totalPages" (click)="table.setPage(table.currentPage + 1)"
-                class="btn-page">NEXT &gt;</button>
-        </div>
-    </div>
+  </div>
 </div>

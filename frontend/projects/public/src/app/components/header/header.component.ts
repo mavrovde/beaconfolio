@@ -1,5 +1,5 @@
-import { ChangeDetectorRef, Component, Inject, PLATFORM_ID } from '@angular/core';
-import { CommonModule, isPlatformBrowser } from '@angular/common';
+import { ChangeDetectorRef, Component, PLATFORM_ID, inject } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { Language, LanguageService } from '@beaconfolio/shared';
 import { YearsService } from '../../services/years.service';
@@ -8,11 +8,17 @@ import { TranslatePipe } from '@beaconfolio/shared';
 @Component({
   selector: 'app-header',
   standalone: true,
-  imports: [CommonModule, TranslatePipe, RouterLink, RouterLinkActive],
+  imports: [TranslatePipe, RouterLink, RouterLinkActive],
   templateUrl: './header.component.html',
   styleUrls: ['./header.component.css'],
 })
 export class HeaderComponent {
+  private languageService = inject(LanguageService);
+  private yearsService = inject(YearsService);
+  private router = inject(Router);
+  private platformId = inject(PLATFORM_ID);
+  private cdr = inject(ChangeDetectorRef);
+
   currentLang: Language = 'en';
   years: number[] = [];
   selectedYearIndex: number = 0;
@@ -28,13 +34,7 @@ export class HeaderComponent {
     { labelKey: 'NAV.LLM', href: '/llm' },
   ];
 
-  constructor(
-    private languageService: LanguageService,
-    private yearsService: YearsService,
-    private router: Router,
-    @Inject(PLATFORM_ID) private platformId: object,
-    private cdr: ChangeDetectorRef
-  ) {
+  constructor() {
     this.languageService.currentLang$.subscribe((lang) => {
       this.currentLang = lang;
       // Zoneless: a post-load language switch is an async emission that mutates a

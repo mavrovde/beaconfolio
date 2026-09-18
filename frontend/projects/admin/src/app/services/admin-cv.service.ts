@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -38,9 +38,9 @@ export interface PaginatedResponse<T> {
     providedIn: 'root'
 })
 export class AdminCvService {
-    private apiUrl = `${environment.apiUrl}${environment.apiPrefix}/admin/cv`;
+    private http = inject(HttpClient);
 
-    constructor(private http: HttpClient) { }
+    private apiUrl = `${environment.apiUrl}${environment.apiPrefix}/admin/cv`;
 
     /** `activate=false` uploads a VARIANT (#247 criterion 4): the public
      *  download keeps serving the current default. Default true = the

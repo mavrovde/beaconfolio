@@ -1,4 +1,4 @@
-import { Injectable, Inject } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { SHARED_ENVIRONMENT, SharedEnvironment } from '../config/environment.token';
@@ -31,12 +31,13 @@ export interface SystemStats {
   providedIn: 'root',
 })
 export class StatsService {
+  private http = inject(HttpClient);
+
   private apiUrl: string;
 
-  constructor(
-    private http: HttpClient,
-    @Inject(SHARED_ENVIRONMENT) env: SharedEnvironment,
-  ) {
+  constructor() {
+    const env = inject<SharedEnvironment>(SHARED_ENVIRONMENT);
+
     this.apiUrl = `${env.apiUrl}${env.apiPrefix}/stats`;
   }
 

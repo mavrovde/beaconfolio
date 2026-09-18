@@ -88,13 +88,12 @@ export default tseslint.config(
           caughtErrorsIgnorePattern: "^_",
         },
       ],
-      // BASELINED at adoption (#234): 127 pre-existing constructor-injection
-      // sites. The fix is the official codemod (`ng generate
-      // @angular/core:inject`) — a mechanical, whole-workspace migration that
-      // belongs in its own PR (dependency-policy reasoning: big mechanical
-      // rewrites ride alone), tracked as issue #425. New code should
-      // use inject(); flip this to "error" when the codemod lands.
-      "@angular-eslint/prefer-inject": "off",
+      // ENFORCED since #425. The 127 constructor-injection sites baselined at
+      // adoption (#234) were migrated by the official codemod
+      // (`ng generate @angular/core:inject`); the count is 0, so the rule is an
+      // error and a reintroduced constructor injection fails the lint rather
+      // than growing a baseline back.
+      "@angular-eslint/prefer-inject": "error",
     },
   },
   {
@@ -126,12 +125,12 @@ export default tseslint.config(
       ...angular.configs.templateAccessibility,
     ],
     rules: {
-      // BASELINED at adoption (#234): 217 pre-existing *ngIf/*ngFor sites.
-      // The fix is the official codemod (`ng generate
-      // @angular/core:control-flow`) — same reasoning as prefer-inject
-      // above: mechanical whole-workspace rewrite, own PR, tracked as
-      // issue #425. Flip to "error" when the codemod lands.
-      "@angular-eslint/template/prefer-control-flow": "off",
+      // ENFORCED since #425. The 217 `*ngIf`/`*ngFor` sites baselined at
+      // adoption (#234) were migrated by the official codemod
+      // (`ng generate @angular/core:control-flow`); the count is 0, so the rule
+      // is an error and a reintroduced structural directive fails the lint
+      // rather than growing a baseline back.
+      "@angular-eslint/template/prefer-control-flow": "error",
     },
   },
 );

@@ -1,5 +1,5 @@
-import { Component, ElementRef, ViewChild, AfterViewChecked, OnInit, ChangeDetectorRef, Inject, PLATFORM_ID, Input, HostListener } from '@angular/core';
-import { CommonModule, isPlatformBrowser } from '@angular/common';
+import { Component, ElementRef, ViewChild, AfterViewChecked, OnInit, ChangeDetectorRef, PLATFORM_ID, Input, HostListener, inject } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { LlmService, ChatMessage } from '@beaconfolio/shared';
@@ -28,11 +28,17 @@ interface LlmState {
 @Component({
   selector: 'app-llm',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterModule, HeaderComponent],
+  imports: [FormsModule, RouterModule, HeaderComponent],
   templateUrl: './llm.component.html',
   styleUrls: ['./llm.component.css']
 })
 export class LlmComponent implements OnInit, AfterViewChecked {
+  private llmService = inject(LlmService);
+  private cdr = inject(ChangeDetectorRef);
+  private router = inject(Router);
+  private seoService = inject(SeoService);
+  private platformId = inject(PLATFORM_ID);
+
   @Input() standalone = true;
   @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
 
@@ -66,14 +72,6 @@ export class LlmComponent implements OnInit, AfterViewChecked {
   public currentAgentMessage: { agent: number, content: string } | null = null;
   public appVersion = VERSION;
   private abortController: AbortController | null = null;
-
-  constructor(
-    private llmService: LlmService,
-    private cdr: ChangeDetectorRef,
-    private router: Router,
-    private seoService: SeoService,
-    @Inject(PLATFORM_ID) private platformId: object
-  ) { }
 
   ngOnInit() {
     this.isMultiAgentMode = false; // Force default

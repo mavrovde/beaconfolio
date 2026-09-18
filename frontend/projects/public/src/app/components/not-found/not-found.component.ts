@@ -1,4 +1,4 @@
-import { Component, Inject, OnInit, PLATFORM_ID, RESPONSE_INIT } from '@angular/core';
+import { Component, OnInit, PLATFORM_ID, RESPONSE_INIT, inject } from '@angular/core';
 import { CommonModule, isPlatformServer } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { Observable } from 'rxjs';
@@ -80,15 +80,16 @@ import { SeoService } from '../../services/seo.service';
   `,
 })
 export class NotFoundComponent implements OnInit {
+    private seoService = inject(SeoService);
+    private platformId = inject(PLATFORM_ID);
+    private responseInit = inject<ResponseInit | null>(RESPONSE_INIT);
+
     /** The path that matched nothing, echoed back in the terminal line. */
     readonly path$: Observable<string>;
 
-    constructor(
-        route: ActivatedRoute,
-        private seoService: SeoService,
-        @Inject(PLATFORM_ID) private platformId: object,
-        @Inject(RESPONSE_INIT) private responseInit: ResponseInit | null,
-    ) {
+    constructor() {
+        const route = inject(ActivatedRoute);
+
         this.path$ = route.url.pipe(
             map((segments) => `/${segments.map((segment) => segment.path).join('/')}`),
         );

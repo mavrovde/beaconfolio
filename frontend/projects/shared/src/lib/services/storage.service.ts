@@ -1,4 +1,4 @@
-import { Injectable, Inject, PLATFORM_ID } from '@angular/core';
+import { Injectable, PLATFORM_ID, inject } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { BehaviorSubject, Observable } from 'rxjs';
 
@@ -6,12 +6,14 @@ import { BehaviorSubject, Observable } from 'rxjs';
     providedIn: 'root',
 })
 export class StorageService {
+    private platformId = inject(PLATFORM_ID);
+
     private readonly CONSENT_KEY = 'cookie_consent';
     private consentSubject: BehaviorSubject<boolean>;
     consent$: Observable<boolean>;
     private isBrowser: boolean;
 
-    constructor(@Inject(PLATFORM_ID) private platformId: object) {
+    constructor() {
         this.isBrowser = isPlatformBrowser(this.platformId);
         this.consentSubject = new BehaviorSubject<boolean>(this.hasConsented());
         this.consent$ = this.consentSubject.asObservable();

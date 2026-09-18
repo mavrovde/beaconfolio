@@ -1,4 +1,4 @@
-import { Component, OnInit, Inject, PLATFORM_ID } from '@angular/core';
+import { Component, OnInit, PLATFORM_ID, inject } from '@angular/core';
 import { CommonModule, ViewportScroller, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
 import { Observable } from 'rxjs';
@@ -37,35 +37,34 @@ import { buildPersonSchema } from '../../seo/person-schema';
   template: `
     <div
       class="bg-black min-h-screen text-primary selection:bg-primary selection:text-black font-mono"
-    >
+      >
       <app-header></app-header>
-
-      <main *ngIf="profile$ | async as profile" class="pb-16">
-        <app-hero [profile]="profile"></app-hero>
-        <app-blog [standalone]="false"></app-blog>
-
-        <!-- Other sections below -->
-        <app-about [profile]="profile"></app-about>
-        <app-experience [profile]="profile"></app-experience>
-        <app-skills [profile]="profile"></app-skills>
-        <app-education [profile]="profile"></app-education>
-        <!-- <app-recommendations [profile]="profile"></app-recommendations> -->
-        <app-contact [profile]="profile"></app-contact>
-      </main>
+    
+      @if (profile$ | async; as profile) {
+        <main class="pb-16">
+          <app-hero [profile]="profile"></app-hero>
+          <app-blog [standalone]="false"></app-blog>
+          <!-- Other sections below -->
+          <app-about [profile]="profile"></app-about>
+          <app-experience [profile]="profile"></app-experience>
+          <app-skills [profile]="profile"></app-skills>
+          <app-education [profile]="profile"></app-education>
+          <!-- <app-recommendations [profile]="profile"></app-recommendations> -->
+          <app-contact [profile]="profile"></app-contact>
+        </main>
+      }
     </div>
-  `,
+    `,
 })
 export class HomeComponent implements OnInit {
-  profile$: Observable<Profile> | null = null;
+  private profileService = inject(ProfileService);
+  private route = inject(ActivatedRoute);
+  private viewportScroller = inject(ViewportScroller);
+  private seoService = inject(SeoService);
+  private siteConfig = inject(SiteConfigService);
+  private platformId = inject(PLATFORM_ID);
 
-  constructor(
-    private profileService: ProfileService,
-    private route: ActivatedRoute,
-    private viewportScroller: ViewportScroller,
-    private seoService: SeoService,
-    private siteConfig: SiteConfigService,
-    @Inject(PLATFORM_ID) private platformId: object
-  ) { }
+  profile$: Observable<Profile> | null = null;
 
   ngOnInit() {
     this.profile$ = this.profileService.getProfile();

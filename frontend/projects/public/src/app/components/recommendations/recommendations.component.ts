@@ -1,12 +1,12 @@
 import { Component, Input } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { TranslatePipe } from '@beaconfolio/shared';
 import { Profile } from '../../services/profile.service';
 
 @Component({
   selector: 'app-recommendations',
   standalone: true,
-  imports: [CommonModule, TranslatePipe],
+  imports: [TranslatePipe],
   templateUrl: './recommendations.component.html',
   styleUrls: ['./recommendations.component.css'],
 })

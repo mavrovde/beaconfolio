@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { catchError, shareReplay, switchMap } from 'rxjs/operators';
@@ -70,12 +70,10 @@ export interface Recommendation {
   providedIn: 'root',
 })
 export class ProfileService {
-  private dataUrlBase = 'assets/profile_data';
+  private http = inject(HttpClient);
+  private languageService = inject(LanguageService);
 
-  constructor(
-    private http: HttpClient,
-    private languageService: LanguageService,
-  ) {}
+  private dataUrlBase = 'assets/profile_data';
 
   /**
    * Load the active profile for the current language from the backend

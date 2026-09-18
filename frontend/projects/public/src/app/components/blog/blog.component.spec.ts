@@ -1,10 +1,12 @@
+import { ChangeDetectorRef, PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { BlogComponent } from './blog.component';
 import { BlogService } from '@beaconfolio/shared';
 import { LanguageService } from '@beaconfolio/shared';
 import { of, throwError } from 'rxjs';
-import { MockTranslatePipe } from '@beaconfolio/shared/testing';
+import { createInInjectionContext, MockTranslatePipe } from '@beaconfolio/shared/testing';
+import { SeoService } from '../../services/seo.service';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 describe('BlogComponent', () => {
@@ -35,6 +37,17 @@ describe('BlogComponent', () => {
       relevance: 0.95,
     },
   ];
+
+  /** The SSR/non-browser cases: same stubs the fixture uses, but on the 'server' platform.
+   *  Built through the injection context because the component takes no constructor args (#425). */
+  const makeServerComponent = () =>
+    createInInjectionContext(BlogComponent, [
+      { provide: BlogService, useValue: blogServiceSpy },
+      { provide: SeoService, useValue: {} },
+      { provide: Router, useValue: {} },
+      { provide: ChangeDetectorRef, useValue: { markForCheck: vi.fn() } },
+      { provide: PLATFORM_ID, useValue: 'server' },
+    ]);
 
   // Helper to flush all microtasks (Promises)
   const flushPromises = () => new Promise(resolve => setTimeout(resolve, 0));
@@ -281,13 +294,13 @@ describe('BlogComponent', () => {
 
   it('should use blogService.getPosts in non-browser SSR environments', async () => {
     // Re-create the component with 'server' instead of an object to trigger SSR logic path
-    const serverComponent = new BlogComponent(blogServiceSpy, {} as any, {} as any, { markForCheck: vi.fn() } as any, 'server');
+    const serverComponent = makeServerComponent();
     serverComponent.loadPosts();
     expect(blogServiceSpy.getPosts).toHaveBeenCalledWith(true, null, null, 1, 10);
   });
 
   it('should fall back to using static posts when SSR blogService.getPosts fails', async () => {
-    const serverComponent = new BlogComponent(blogServiceSpy, {} as any, {} as any, { markForCheck: vi.fn() } as any, 'server');
+    const serverComponent = makeServerComponent();
     blogServiceSpy.getPosts.mockReturnValueOnce(throwError(() => new Error('SSR load error')));
     serverComponent.loadPosts();
     expect(blogServiceSpy.getStaticPosts).toHaveBeenCalledWith(1, 10);

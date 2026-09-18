@@ -1,4 +1,4 @@
-import { Injectable, Inject, PLATFORM_ID } from '@angular/core';
+import { Injectable, PLATFORM_ID, inject } from '@angular/core';
 import { HttpClient, HttpParams, HttpHeaders } from '@angular/common/http';
 import { isPlatformBrowser } from '@angular/common';
 import { BehaviorSubject, Observable, tap, switchMap } from 'rxjs';
@@ -24,6 +24,9 @@ export interface User {
   providedIn: 'root',
 })
 export class AuthService {
+  private http = inject(HttpClient);
+  private platformId = inject(PLATFORM_ID);
+
   private readonly TOKEN_KEY = 'auth_token';
   private readonly apiUrl = environment.apiUrl;
 
@@ -35,10 +38,7 @@ export class AuthService {
 
   private isBrowser: boolean;
 
-  constructor(
-    private http: HttpClient,
-    @Inject(PLATFORM_ID) private platformId: object
-  ) {
+  constructor() {
     this.isBrowser = isPlatformBrowser(this.platformId);
     // Load user on service initialization if token exists
     if (this.isBrowser && this.getToken()) {

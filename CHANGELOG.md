@@ -36,6 +36,25 @@ All notable changes to this project will be documented in this file.
 - **The `Verdict Audit` workflow runs DAILY** (was Mondays only). A weekly alarm has up to seven
   days of detection latency, and v1.14.2 opened and closed all six of its violations inside a
   single cron interval — eight hours after the week's only run.
+- **The two `angular-eslint` baselines #234 left `"off"` are paid down and both rules now ENFORCE
+  (#425).** The official Angular codemods did the mechanical half — `ng generate
+  @angular/core:inject` over all three projects (127 constructor-injection sites) and
+  `ng generate @angular/core:control-flow` (217 `*ngIf`/`*ngFor` sites, every external template in
+  `public` and `admin`; `shared` had none) — and `@angular-eslint/prefer-inject` and
+  `@angular-eslint/template/prefer-control-flow` are set to `"error"` in `frontend/eslint.config.mjs`
+  in place of the `BASELINED at adoption` blocks. Written as an explicit `"error"` rather than
+  deleted, so enforcement does not depend on what the inherited `extends` happens to turn on, and
+  **pinned by mutation**: one reintroduced constructor injection plus one reintroduced `*ngIf` take
+  `npx eslint .` to exit 1 with exactly those two rule ids, and reverting both returns it to exit 0.
+  Three things the codemods do not get right on their own, each fixed by hand: `BlogComponent`'s
+  `siteConfig` was an OPTIONAL constructor parameter and a plain `inject()` THROWS where the old code
+  saw `undefined` (restored as `inject(SiteConfigService, { optional: true })`); eleven public-app
+  specs reached the SSR/non-browser branches by hand-constructing a component with positional DI
+  arguments, which after the migration wire nothing (they now go through a new
+  `createInInjectionContext()` helper on the `@beaconfolio/shared/testing` entry point); and two
+  `eslint-disable-next-line` comments were left attached to the new `@if`/`@for` line instead of the
+  element they exempt, which silently re-armed two a11y rules. The `trackBy` ceremony `@for` replaces
+  is gone with it (`track post.id`).
 - **`bump_version.sh` refuses to cut a release while its `release:vX.Y.Z` queue holds open
   issues.** v1.15.0 was assembled from `[Unreleased]` content and the label queue was never
   queried; the owner, not any gate, found #70/#265/#386 still labelled `release:v1.15.0` and open.

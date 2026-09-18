@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ChangeDetectorRef, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import {
   FormBuilder,
@@ -29,6 +29,10 @@ import { ServerTableHelper } from '../../../utils/table-helper-server';
   styleUrls: ['./profile-data.component.css'],
 })
 export class ProfileDataComponent implements OnInit, OnDestroy {
+  private profileService = inject(AdminProfileService);
+  private fb = inject(FormBuilder);
+  private cdr = inject(ChangeDetectorRef);
+
   versionsTable = new ServerTableHelper<ProfileSnapshot>('created_at', 'desc', 10);
 
   uploadForm: FormGroup;
@@ -43,11 +47,7 @@ export class ProfileDataComponent implements OnInit, OnDestroy {
 
   private versionsSub?: Subscription;
 
-  constructor(
-    private profileService: AdminProfileService,
-    private fb: FormBuilder,
-    private cdr: ChangeDetectorRef,
-  ) {
+  constructor() {
     this.uploadForm = this.fb.group({
       version: ['', Validators.required],
     });

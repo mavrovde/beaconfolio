@@ -1,5 +1,5 @@
 
-import { Component, ElementRef, ViewChild, AfterViewChecked, ChangeDetectorRef, OnInit } from '@angular/core';
+import { Component, ElementRef, ViewChild, AfterViewChecked, ChangeDetectorRef, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { LlmService, ChatMessage } from '@beaconfolio/shared';
@@ -16,6 +16,9 @@ import { LlmService, ChatMessage } from '@beaconfolio/shared';
   `]
 })
 export class AdminChatComponent implements AfterViewChecked, OnInit {
+    private llmService = inject(LlmService);
+    private cdr = inject(ChangeDetectorRef);
+
     @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
 
     messages: ChatMessage[] = [];
@@ -23,8 +26,6 @@ export class AdminChatComponent implements AfterViewChecked, OnInit {
     isLoading: boolean = false;
     private readonly STORAGE_KEY = 'gemini_chat_history_v1';
     private readonly RETENTION_DAYS = 7;
-
-    constructor(private llmService: LlmService, private cdr: ChangeDetectorRef) { }
 
     ngOnInit() {
         this.loadFromLocalStorage();

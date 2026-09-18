@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { environment } from '../../environments/environment';
@@ -71,9 +71,9 @@ export const OPPORTUNITY_SOURCES = [
     providedIn: 'root'
 })
 export class OpportunitiesService {
-    private apiUrl = `${environment.apiUrl}${environment.apiPrefix}/admin/opportunities`;
+    private http = inject(HttpClient);
 
-    constructor(private http: HttpClient) { }
+    private apiUrl = `${environment.apiUrl}${environment.apiPrefix}/admin/opportunities`;
 
     list(options: { stage?: string; page?: number; pageSize?: number } = {}): Observable<OpportunityPage> {
         let params = new HttpParams()

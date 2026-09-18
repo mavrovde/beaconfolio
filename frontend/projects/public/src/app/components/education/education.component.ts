@@ -1,12 +1,12 @@
 import { Component, Input } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { TranslatePipe } from '@beaconfolio/shared';
 import { Profile } from '../../services/profile.service';
 
 @Component({
   selector: 'app-education',
   standalone: true,
-  imports: [CommonModule, TranslatePipe],
+  imports: [TranslatePipe],
   templateUrl: './education.component.html',
   styleUrls: ['./education.component.css'],
 })

@@ -1,4 +1,4 @@
-import { Injectable, Inject } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { switchMap, map } from 'rxjs/operators';
@@ -61,13 +61,14 @@ export interface PaginatedResponse<T> {
   providedIn: 'root',
 })
 export class BlogService {
+  private http = inject(HttpClient);
+  private languageService = inject(LanguageService);
+
   private apiUrl: string;
 
-  constructor(
-    private http: HttpClient,
-    private languageService: LanguageService,
-    @Inject(SHARED_ENVIRONMENT) env: SharedEnvironment,
-  ) {
+  constructor() {
+    const env = inject<SharedEnvironment>(SHARED_ENVIRONMENT);
+
     this.apiUrl = `${env.apiUrl}${env.apiPrefix}/posts`;
   }
 

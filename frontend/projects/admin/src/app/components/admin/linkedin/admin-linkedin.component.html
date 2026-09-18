@@ -1,117 +1,125 @@
 <div class="dashboard linkedin-sync">
-    <div class="header">
-        <h1 class="page-title">&gt; LinkedIn Sync</h1>
+  <div class="header">
+    <h1 class="page-title">&gt; LinkedIn Sync</h1>
 
-        <div class="tabs">
-            <button class="btn-tab" [class.active]="activeTab === 'posts'" (click)="setTab('posts')">Posts</button>
-            <button class="btn-tab" [class.active]="activeTab === 'profile'"
-                (click)="setTab('profile')">Profile</button>
-        </div>
+    <div class="tabs">
+      <button class="btn-tab" [class.active]="activeTab === 'posts'" (click)="setTab('posts')">Posts</button>
+      <button class="btn-tab" [class.active]="activeTab === 'profile'"
+      (click)="setTab('profile')">Profile</button>
+    </div>
+  </div>
+
+  <div class="auth-section">
+    <div class="auth-status">
+      Connection Status:
+      <span [class.success]="isLoggedIn" [class.error]="!isLoggedIn">
+        {{ isLoggedIn ? '🟢 Connected (Session Active)' : '🔴 Not Connected' }}
+      </span>
     </div>
 
-    <div class="auth-section">
-        <div class="auth-status">
-            Connection Status: 
-            <span [class.success]="isLoggedIn" [class.error]="!isLoggedIn">
-                {{ isLoggedIn ? '🟢 Connected (Session Active)' : '🔴 Not Connected' }}
-            </span>
-        </div>
+    @if (!isLoggedIn) {
+      <div class="auth-form">
+        <input type="email" placeholder="LinkedIn Email" [(ngModel)]="linkedinUsername" [disabled]="isLoggingIn" class="input-field">
+        <input type="password" placeholder="LinkedIn Password" [(ngModel)]="linkedinPassword" [disabled]="isLoggingIn" class="input-field">
+        <button class="btn-primary" (click)="login()" [disabled]="isLoggingIn || !linkedinUsername || !linkedinPassword">
+          {{ isLoggingIn ? 'Connecting...' : 'Login & Save Session' }}
+        </button>
+      </div>
+    }
+    @if (!isLoggedIn) {
+      <div class="auth-helper">
+        Provide credentials to establish a native session. The cookies will be stored securely in the local volume and automatically used for subsequent requests.
+      </div>
+    }
+  </div>
 
-        <div class="auth-form" *ngIf="!isLoggedIn">
-            <input type="email" placeholder="LinkedIn Email" [(ngModel)]="linkedinUsername" [disabled]="isLoggingIn" class="input-field">
-            <input type="password" placeholder="LinkedIn Password" [(ngModel)]="linkedinPassword" [disabled]="isLoggingIn" class="input-field">
-            <button class="btn-primary" (click)="login()" [disabled]="isLoggingIn || !linkedinUsername || !linkedinPassword">
-                {{ isLoggingIn ? 'Connecting...' : 'Login & Save Session' }}
-            </button>
-        </div>
-        <div class="auth-helper" *ngIf="!isLoggedIn">
-            Provide credentials to establish a native session. The cookies will be stored securely in the local volume and automatically used for subsequent requests.
-        </div>
+  @if (statusMessage) {
+    <div class="status-bar">
+      &gt; System: {{ statusMessage }}
     </div>
+  }
 
-    <div *ngIf="statusMessage" class="status-bar">
-        &gt; System: {{ statusMessage }}
+  <!-- Post Transfer Tab -->
+  @if (activeTab === 'posts') {
+    <div class="tab-content">
+      <div class="controls-bar">
+        <button (click)="fetchPosts()" [disabled]="isFetchingPosts" class="btn-primary">
+          <span class="icon">⬇️</span>
+          {{ isFetchingPosts ? 'Fetching...' : 'Fetch Recent Posts' }}
+        </button>
+        <div class="helper-text">This will scrape your recent activity to find latest posts natively from LinkedIn
+        (~30s).</div>
+      </div>
+      <div class="controls-bar">
+        <input type="file" accept=".json,application/json" (change)="onPostsFileSelected($event)" />
+        <button (click)="uploadPostsJson()" [disabled]="isUploadingPostsJson || !selectedPostsFile"
+          class="btn-primary">
+          <span class="icon">📤</span>
+          {{ isUploadingPostsJson ? 'Uploading...' : 'Upload posts_data.json' }}
+        </button>
+        <div class="helper-text">Bulk-import a scraper <code>posts_data.json</code>; posts are upserted by URN as
+      drafts.</div>
     </div>
-
-    <!-- Post Transfer Tab -->
-    <div class="tab-content" *ngIf="activeTab === 'posts'">
-        <div class="controls-bar">
-            <button (click)="fetchPosts()" [disabled]="isFetchingPosts" class="btn-primary">
-                <span class="icon">⬇️</span>
-                {{ isFetchingPosts ? 'Fetching...' : 'Fetch Recent Posts' }}
-            </button>
-            <div class="helper-text">This will scrape your recent activity to find latest posts natively from LinkedIn
-                (~30s).</div>
-        </div>
-
-        <div class="controls-bar">
-            <input type="file" accept=".json,application/json" (change)="onPostsFileSelected($event)" />
-            <button (click)="uploadPostsJson()" [disabled]="isUploadingPostsJson || !selectedPostsFile"
-                class="btn-primary">
-                <span class="icon">📤</span>
-                {{ isUploadingPostsJson ? 'Uploading...' : 'Upload posts_data.json' }}
-            </button>
-            <div class="helper-text">Bulk-import a scraper <code>posts_data.json</code>; posts are upserted by URN as
-                drafts.</div>
-        </div>
-
-        @if (isFetchingPosts) {
-        <div class="loading">Loading posts...</div>
-        } @else if (posts.length === 0) {
-        <div class="empty-state">
-            <p>&gt; No posts fetched yet. Click "Fetch Recent Posts" to start.</p>
-        </div>
-        } @else {
-        <div class="posts-grid">
-            @for (post of posts; track post.id) {
-            <div class="post-card">
-                <div class="post-header">
-                    <span class="post-time">{{ post.time }}</span>
-                    <span class="post-id">ID: {{ post.id }}</span>
-                </div>
-
-                <div *ngIf="post.imageUrl" class="post-image">
-                    <img [src]="post.imageUrl" alt="Post Image">
-                </div>
-
-                <div class="post-body">
-                    <p>{{ truncateText(post.content) }}</p>
-                    <a *ngIf="post.url" [href]="post.url" target="_blank" class="post-link">View on LinkedIn ↗</a>
-                </div>
-
-                <div class="post-actions">
-                    <button class="btn-action" (click)="transferPost(post)" [disabled]="transferringPostId === post.id">
-                        <span class="icon">📦</span>
-                        {{ transferringPostId === post.id ? 'Transferring...' : 'Transfer to DB' }}
-                    </button>
-                </div>
+    @if (isFetchingPosts) {
+      <div class="loading">Loading posts...</div>
+    } @else if (posts.length === 0) {
+      <div class="empty-state">
+        <p>&gt; No posts fetched yet. Click "Fetch Recent Posts" to start.</p>
+      </div>
+    } @else {
+      <div class="posts-grid">
+        @for (post of posts; track post.id) {
+          <div class="post-card">
+            <div class="post-header">
+              <span class="post-time">{{ post.time }}</span>
+              <span class="post-id">ID: {{ post.id }}</span>
             </div>
+            @if (post.imageUrl) {
+              <div class="post-image">
+                <img [src]="post.imageUrl" alt="Post Image">
+              </div>
             }
-        </div>
+            <div class="post-body">
+              <p>{{ truncateText(post.content) }}</p>
+              @if (post.url) {
+                <a [href]="post.url" target="_blank" class="post-link">View on LinkedIn ↗</a>
+              }
+            </div>
+            <div class="post-actions">
+              <button class="btn-action" (click)="transferPost(post)" [disabled]="transferringPostId === post.id">
+                <span class="icon">📦</span>
+                {{ transferringPostId === post.id ? 'Transferring...' : 'Transfer to DB' }}
+              </button>
+            </div>
+          </div>
         }
-    </div>
+      </div>
+    }
+  </div>
+}
 
-    <!-- Profile Sync Tab -->
-    <div class="tab-content" *ngIf="activeTab === 'profile'">
-        <div class="controls-bar">
-            <button (click)="syncProfile()" [disabled]="isSyncingProfile" class="btn-primary">
-                <span class="icon">🔄</span>
-                {{ isSyncingProfile ? 'Scanning...' : 'Scan Profile' }}
-            </button>
-            <div class="helper-text">Scrape the entire LinkedIn profile data and display it here (~20s).</div>
-        </div>
-
-        @if (isSyncingProfile) {
-        <div class="loading">Scanning profile...</div>
-        } @else if (profileData) {
-        <div class="data-view">
-            <div class="data-header">&gt; Extract Complete JSON</div>
-            <pre class="json-content">{{ profileData | json }}</pre>
-        </div>
-        } @else {
-        <div class="empty-state">
-            <p>&gt; No profile data scanned yet. Click "Scan Profile" to start.</p>
-        </div>
-        }
+<!-- Profile Sync Tab -->
+@if (activeTab === 'profile') {
+  <div class="tab-content">
+    <div class="controls-bar">
+      <button (click)="syncProfile()" [disabled]="isSyncingProfile" class="btn-primary">
+        <span class="icon">🔄</span>
+        {{ isSyncingProfile ? 'Scanning...' : 'Scan Profile' }}
+      </button>
+      <div class="helper-text">Scrape the entire LinkedIn profile data and display it here (~20s).</div>
     </div>
+    @if (isSyncingProfile) {
+      <div class="loading">Scanning profile...</div>
+    } @else if (profileData) {
+      <div class="data-view">
+        <div class="data-header">&gt; Extract Complete JSON</div>
+        <pre class="json-content">{{ profileData | json }}</pre>
+      </div>
+    } @else {
+      <div class="empty-state">
+        <p>&gt; No profile data scanned yet. Click "Scan Profile" to start.</p>
+      </div>
+    }
+  </div>
+}
 </div>

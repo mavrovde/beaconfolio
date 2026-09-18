@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
 import { map, shareReplay, catchError } from 'rxjs/operators';
@@ -12,10 +12,10 @@ export interface YearsResponse {
     providedIn: 'root',
 })
 export class YearsService {
+    private http = inject(HttpClient);
+
     private apiUrl = `${environment.apiUrl}${environment.apiPrefix}/cv/years`;
     private years$: Observable<number[]> | null = null;
-
-    constructor(private http: HttpClient) { }
 
     getYears(): Observable<number[]> {
         if (!this.years$) {
