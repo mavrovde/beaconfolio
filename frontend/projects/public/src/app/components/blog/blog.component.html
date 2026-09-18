@@ -2,7 +2,7 @@
   @if (standalone) {
     <app-header></app-header>
   }
-  <section id="blog" class="py-20 px-6 max-w-4xl mx-auto font-mono text-sm md:text-base">
+  <section id="blog" class="py-20 px-6 max-w-4xl mx-auto font-sans text-sm md:text-base">
     @if (standalone) {
       <h1 class="text-xl md:text-2xl font-bold mb-8 text-primary pb-2">
         {{ 'SECTION.BLOG' | translate }}
@@ -17,9 +17,12 @@
     <!-- Terminal Search Bar -->
     <div
       class="mb-12 p-4 border border-terminal-dim bg-black/50 rounded flex flex-col md:flex-row items-start md:items-center gap-2 group focus-within:border-primary transition-colors">
-      <div class="text-secondary shrink-0 whitespace-nowrap">
-        <span class="text-terminal-highlight">user@portfolio</span>:<span class="text-primary">~/blog</span>$ grep -i
-      </div>
+      @if (chrome$ | async) {
+        <div class="text-secondary shrink-0 whitespace-nowrap">
+          <span class="text-terminal-highlight">{{ account$ | async }}</span>:<span
+            class="text-primary">~/blog</span>$ grep -i
+        </div>
+      }
       <input #searchInput (keyup.enter)="onSearch($event)" type="text" placeholder="search semantically..."
         class="bg-transparent border-none outline-none text-primary w-full caret-primary placeholder:text-terminal-dim placeholder:opacity-50"
         (blur)="onSearch($event)" />

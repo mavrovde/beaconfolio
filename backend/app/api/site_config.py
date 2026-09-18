@@ -51,6 +51,19 @@ class SiteConfig(BaseModel):
     # one. Absent on an older backend; the client normalizes that to the
     # default the same way it does `gtm_container_id`.
     theme: str
+    # Brand assets (#67). Each is EMPTY by default and empty means "the bundled
+    # asset" — the shipped favicon, the shipped social card, a wordmark derived
+    # from ``owner_name``, and the stylesheet `index.html` already links. They
+    # are served here rather than baked into the image because the frontend is
+    # a PREBUILT artifact: a forker who had to edit `index.html` to change a
+    # favicon would have to rebuild, which is the thing #65 removed for the
+    # rest of identity. Absent on an older backend; the client normalizes each
+    # to "" exactly as it does `gtm_container_id`.
+    brand_favicon_url: str
+    brand_logo_url: str
+    brand_og_image_url: str
+    brand_font_css_url: str
+    brand_font_family: str
 
 
 @router.get("/site", response_model=SiteConfig)
@@ -75,4 +88,14 @@ async def get_site_config(db: AsyncSession = Depends(get_db)) -> SiteConfig:
         # Second DB read, same degrade-never-break contract as availability
         # above: a DB outage must cost the site its THEME, not its bootstrap.
         theme=await read_theme_or_default(db),
+        # Env-driven, not DB-backed, and deliberately so: the THEME is a choice
+        # the owner flips from the admin panel between sessions, while the
+        # brand assets are a deployment fact set once beside SITE_URL and the
+        # rest of #65's identity. Making them DB rows would add an admin screen
+        # and a migration for values that change when the deployment does.
+        brand_favicon_url=settings.brand_favicon_url,
+        brand_logo_url=settings.brand_logo_url,
+        brand_og_image_url=settings.brand_og_image_url,
+        brand_font_css_url=settings.brand_font_css_url,
+        brand_font_family=settings.brand_font_family,
     )

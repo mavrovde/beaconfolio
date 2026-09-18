@@ -13,6 +13,7 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { ProfileComponent } from './profile';
 import { AuthService } from '../../../services/auth.service';
 import { TranslatePipe } from '@beaconfolio/shared';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 describe('ProfileComponent (zoneless repaint)', () => {
   let fixture: ComponentFixture<ProfileComponent>;
@@ -36,6 +37,7 @@ describe('ProfileComponent (zoneless repaint)', () => {
     await TestBed.configureTestingModule({
       imports: [ProfileComponent, FormsModule, TranslatePipe],
       providers: [
+        ...provideTestBrand(),
         provideZonelessChangeDetection(),
         { provide: AuthService, useValue: authServiceSpy },
       ],

@@ -5,6 +5,7 @@ import { HeaderComponent } from './header.component';
 import { Router, provideRouter } from '@angular/router';
 import { LanguageService } from '@beaconfolio/shared';
 import { MockLanguageService } from '@beaconfolio/shared/testing';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 describe('HeaderComponent (server platform)', () => {
   let component: HeaderComponent;
@@ -15,6 +16,7 @@ describe('HeaderComponent (server platform)', () => {
     await TestBed.configureTestingModule({
       imports: [HeaderComponent],
       providers: [
+        ...provideTestBrand(),
         provideRouter([]),
         { provide: LanguageService, useClass: MockLanguageService },
         { provide: PLATFORM_ID, useValue: 'server' },

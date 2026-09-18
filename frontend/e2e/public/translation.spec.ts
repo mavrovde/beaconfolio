@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { expectDerivedFromConfig, fetchBrand, wordmark } from '../helpers';
 
 test.describe('Translation Integrity', () => {
     test.beforeEach(async ({ page }) => {
@@ -41,7 +42,7 @@ test.describe('Translation Integrity', () => {
         await expect(page.locator('nav').getByText('About')).toBeVisible();
     });
 
-    test('should maintain translation when navigating to sub-routes', async ({ page }) => {
+    test('should maintain translation when navigating to sub-routes', async ({ page, request }) => {
         // Go to LLM page
         await page.getByRole('link', { name: 'LLM' }).click();
         await expect(page).toHaveURL(/\/llm/);
@@ -49,12 +50,18 @@ test.describe('Translation Integrity', () => {
         // Wait for it to load
         await page.waitForTimeout(1000);
 
-        // Header is not in LLM page, but if it were, we would check here.
-        // Let's verify that the back link has the correct logo text as fallback or translation
-        await expect(page.locator('header a', { hasText: '>_ SM' })).toBeVisible();
+        // The header wordmark is DERIVED from the configured owner name since
+        // #67 — it used to be the literal `>_ SM`, which is initials this
+        // project no longer ships and a forker could not change without
+        // editing the template. Deriving the expectation is what makes this a
+        // pin on the behaviour rather than on the hardcoding.
+        const brand = await fetchBrand(request);
+        const mark = wordmark(brand);
+        expectDerivedFromConfig(mark, '>_ SM');
+        await expect(page.locator('header a', { hasText: mark })).toBeVisible();
 
         // Navigate back to home via logo
-        await page.locator('header a', { hasText: '>_ SM' }).click();
+        await page.locator('header a', { hasText: mark }).click();
         await expect(page).toHaveURL(/\/$/);
 
         // Menu should still be correctly translated

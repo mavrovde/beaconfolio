@@ -249,6 +249,46 @@ class Settings(BaseSettings):
     gtm_container_id: str = Field(
         default="", validation_alias="BEACONFOLIO_GTM_CONTAINER_ID"
     )
+    # Brand assets (#67) — the favicon, the header logo, the social-share card
+    # and the webfont, so a forker rebrands a PREBUILT image without editing
+    # `index.html`, `seo.service.ts` or a component template. Served on
+    # GET {api_prefix}/config/site beside the rest of the identity (#65).
+    #
+    # EVERY one of them defaults to "" and empty means "use the BUNDLED
+    # asset" — the shipped `assets/favicon.png`, the shipped
+    # `assets/og-image.png`, the text wordmark derived from ``owner_name``,
+    # and the VT323 stylesheet the terminal preset needs. So an owner who sets
+    # nothing gets exactly today's site; these are overrides, not requirements.
+    # (That is why the empty-means-default validator below does NOT list them:
+    # for these fields "" already IS the default, like ``analytics_id``.)
+    #
+    # Namespaced (#141): `FAVICON_URL` / `LOGO_URL` / `FONT_FAMILY` are exactly
+    # the kind of generic names another process on a shared host may already
+    # export, and silently inheriting someone else's brand is worse than none.
+    brand_favicon_url: str = Field(
+        default="", validation_alias="BEACONFOLIO_BRAND_FAVICON_URL"
+    )
+    brand_logo_url: str = Field(
+        default="", validation_alias="BEACONFOLIO_BRAND_LOGO_URL"
+    )
+    brand_og_image_url: str = Field(
+        default="", validation_alias="BEACONFOLIO_BRAND_OG_IMAGE_URL"
+    )
+    # A stylesheet URL for a webfont (a Google Fonts `css2?family=…` link, or a
+    # self-hosted `@font-face` sheet). It only LOADS the face; the family that
+    # actually paints is chosen by the theme preset — so overriding the face
+    # without ``brand_font_family`` changes nothing visible, which is why the
+    # two knobs are documented together and tested together.
+    brand_font_css_url: str = Field(
+        default="", validation_alias="BEACONFOLIO_BRAND_FONT_CSS_URL"
+    )
+    # A CSS font-family LIST (e.g. `'Inter', ui-sans-serif, sans-serif`). When
+    # set it overrides the active preset's `--font-sans`/`--font-mono` on the
+    # root element — the one place a value can beat a `[data-theme]` block
+    # without editing the shared stylesheet.
+    brand_font_family: str = Field(
+        default="", validation_alias="BEACONFOLIO_BRAND_FONT_FAMILY"
+    )
     # AI-crawler policy (#252) — "allow" (default) or "deny", served on
     # GET {api_prefix}/config/site and rendered into the SSR robots.txt.
     # Allow-by-default is the product thesis: recruiter research runs through AI

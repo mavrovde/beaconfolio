@@ -23,6 +23,10 @@ export type JsonLd = Record<string, unknown>;
  * `projects/public/src/assets/og-image.png` — before #71 this default pointed
  * at a file that was never in the repo, so every share advertised a 404.
  * Final branded artwork is owned by #311; this is the neutral fallback.
+ *
+ * Since #67 it is the LAST resort, not the only option: a deployment that sets
+ * `BEACONFOLIO_BRAND_OG_IMAGE_URL` has its own card served from the site config
+ * — see `resolveCard` below for the three-step precedence.
  */
 export const OG_IMAGE_PATH = '/assets/og-image.png';
 
@@ -113,7 +117,7 @@ export class SeoService {
         // invalid for every crawler, and a wrong canonical is worse than a
         // missing one. The config subscription re-applies this data the moment
         // the real siteUrl lands, so the SSR head still carries them (#71).
-        const image = this.baseUrl ? `${this.baseUrl}${data.image || OG_IMAGE_PATH}` : '';
+        const image = this.resolveCard(data.image);
         // `data.url || '/'`: the home page's canonical must be `https://site/`,
         // byte-identical to its `<loc>` in the generated sitemap — a canonical
         // and a sitemap entry that differ by a trailing slash are two URL
@@ -148,6 +152,35 @@ export class SeoService {
             this.updateCanonicalUrl(url);
             this.updateAgentLinks();
         }
+    }
+
+    /**
+     * The absolute `og:image` / `twitter:image` URL, or `''` for none (#67).
+     *
+     * Three sources, most specific first: what the PAGE asked for, then the
+     * deployment's configured card, then the bundled one. The forker's knob
+     * therefore rebrands every share preview at once without reaching any page
+     * that legitimately ships its own artwork.
+     *
+     * A configured value may be an absolute URL on a CDN, in which case it is
+     * emitted as-is and does not need `siteUrl` at all. A relative one still
+     * does: a relative `og:image` is invalid for every crawler, so while the
+     * runtime config is in flight (or the backend is unreachable and the
+     * neutral default's empty `siteUrl` applies) we emit NO card rather than a
+     * broken one — the config subscription re-applies this data the moment the
+     * real `siteUrl` lands, so the SSR head still carries it (#71).
+     */
+    private resolveCard(pageImage: string | undefined): string {
+        const card = pageImage || this.site.ogImageUrl || OG_IMAGE_PATH;
+        if (/^https?:\/\//i.test(card)) {
+            return card;
+        }
+        if (!this.baseUrl) {
+            return '';
+        }
+        // A hand-written config value may well omit the leading slash; joining
+        // it raw would produce `https://exampleassets/card.png`.
+        return `${this.baseUrl}${card.startsWith('/') ? '' : '/'}${card}`;
     }
 
     /**

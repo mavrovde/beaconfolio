@@ -32,9 +32,13 @@
       <div
         class="mb-4 text-secondary border-b border-dashed border-terminal-dim pb-2 flex justify-between items-center">
         <div>
-          <a routerLink="/" class="text-primary hover:text-white transition-colors mr-2">&gt;_ SM</a>
-          <h1 class="text-terminal-highlight inline-block text-sm md:text-base font-normal">user@portfolio</h1>
-          :~/llm$ ./chat
+          <a routerLink="/" class="text-primary hover:text-white transition-colors mr-2">{{ wordmark$ | async }}</a>
+          @if (chrome$ | async) {
+            <h1 class="text-terminal-highlight inline-block text-sm md:text-base font-normal">{{ account$ | async }}</h1>
+            :~/llm$ ./chat
+          } @else {
+            <h1 class="text-terminal-highlight inline-block text-sm md:text-base font-normal">{{ siteName$ | async }}</h1>
+          }
         </div>
       </div>
       <!-- History and Unified Input -->
@@ -43,7 +47,10 @@
           <div class="message mb-4">
             @if (msg.role === 'user') {
               <div class="text-primary">
-                <span class="text-terminal-highlight">user@portfolio:~/llm$</span> {{ msg.content }}
+                @if (prompt$ | async; as prompt) {
+                  <span class="text-terminal-highlight">{{ prompt }}</span>
+                }
+                {{ msg.content }}
               </div>
             }
             @if (msg.role === 'assistant') {
@@ -71,7 +78,9 @@
       <!-- Inline Input Area -->
       @if (!isThinking) {
         <div class="flex items-center gap-2">
-          <span class="text-terminal-highlight whitespace-nowrap">user@portfolio:~/llm$</span>
+          @if (prompt$ | async; as prompt) {
+            <span class="text-terminal-highlight whitespace-nowrap">{{ prompt }}</span>
+          }
           <input type="text" [(ngModel)]="userInput" (keydown.enter)="sendMessage()"
             class="flex-grow bg-transparent border-none outline-none text-primary placeholder-transparent focus:ring-0 p-0 m-0"
             #terminalInput>

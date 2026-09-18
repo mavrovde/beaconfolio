@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterOutlet } from '@angular/router';
 import { GoogleAnalyticsService } from './services/google-analytics.service';
 import { SeoService } from './services/seo.service';
-import { ThemeService } from './services/theme.service';
+import { BrandAssetsService, ThemeService } from '@beaconfolio/shared';
 import { CookieConsentComponent } from './components/cookie-consent/cookie-consent.component';
 import { SystemStatsComponent } from './components/stats/stats.component';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -36,6 +36,7 @@ export class AppComponent implements OnInit {
   private viewportScroller = inject(ViewportScroller);
   private seoService = inject(SeoService);
   private themeService = inject(ThemeService);
+  private brandAssets = inject(BrandAssetsService);
   private sanitizer = inject(DomSanitizer);
 
   jsonLd$?: Observable<SafeHtml | null>;
@@ -49,7 +50,17 @@ export class AppComponent implements OnInit {
     // than from an app initializer — see ThemeService for the build failure
     // that rules the initializer out. It sits beside the GA call because both
     // read the same `config$` at the same point in the render.
+    //
+    // The service is the SHARED one (#67). Neither call passes a stream:
+    // `app.config.ts` provides `SITE_BRAND_SOURCE`, so the shared library
+    // reads THIS app's existing `config$` and opens no request of its own —
+    // and a second request for a handful of fields would be a second thing
+    // that can hang the route-extraction build.
     this.themeService.initialize();
+    // The brand ASSETS (#67) — favicon, webfont, font family. Same call site
+    // and same reasoning as the theme: both mutate the document's head from
+    // the one config read, during the render rather than after it.
+    this.brandAssets.initialize();
     this.viewportScroller.setOffset([0, 80]);
 
     this.jsonLd$ = this.seoService.jsonLdSchema$.pipe(

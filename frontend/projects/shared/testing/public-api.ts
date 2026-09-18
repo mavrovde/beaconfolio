@@ -5,3 +5,4 @@
 export * from '../src/lib/testing/mock-language.service';
 export * from '../src/lib/testing/mock-translate.pipe';
 export * from '../src/lib/testing/create-in-injection-context';
+export * from '../src/lib/testing/provide-test-brand';

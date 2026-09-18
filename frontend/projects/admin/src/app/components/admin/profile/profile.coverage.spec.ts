@@ -6,6 +6,7 @@ import { AuthService } from '../../../services/auth.service';
 import { BehaviorSubject, of, throwError } from 'rxjs';
 import { MockTranslatePipe } from '@beaconfolio/shared/testing';
 import { TranslatePipe } from '@beaconfolio/shared';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 describe('ProfileComponent early-return branch', () => {
   let component: ProfileComponent;
@@ -19,7 +20,7 @@ describe('ProfileComponent early-return branch', () => {
     };
     await TestBed.configureTestingModule({
       imports: [ProfileComponent, MockTranslatePipe],
-      providers: [provideZonelessChangeDetection(), { provide: AuthService, useValue: authServiceMock }],
+      providers: [...provideTestBrand(), provideZonelessChangeDetection(), { provide: AuthService, useValue: authServiceMock }],
     })
       .overrideComponent(ProfileComponent, {
         remove: { imports: [TranslatePipe] },

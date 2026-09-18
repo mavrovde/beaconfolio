@@ -1,13 +1,17 @@
 <header class="block w-full z-50 bg-black sticky top-0">
   <div class="container mx-auto px-6 py-3 flex justify-between items-center">
     <div class="flex items-center gap-4 shrink-0">
-      <a href="#" class="text-xl font-bold text-primary hover:text-white transition-colors font-mono shrink-0">
-        >_ SM
+      <a href="#" class="text-xl font-bold text-primary hover:text-white transition-colors font-sans shrink-0">
+        @if (logoUrl$ | async; as logoUrl) {
+          <img [src]="logoUrl" [alt]="(wordmark$ | async) ?? ''" class="h-6 w-auto inline-block" />
+        } @else {
+          {{ wordmark$ | async }}
+        }
       </a>
 
       <!-- Terminal-Style Year Slider -->
       @if (years.length > 0) {
-        <div class="year-slider hidden md:flex items-center gap-0 font-mono shrink-0">
+        <div class="year-slider hidden md:flex items-center gap-0 font-sans shrink-0">
           <button
             class="slider-arrow text-primary hover:text-white transition-colors bg-transparent border-none cursor-pointer text-sm px-1"
             (click)="prevYear()" [class.opacity-30]="selectedYearIndex <= 0" [disabled]="selectedYearIndex <= 0"
@@ -15,7 +19,7 @@
           <div class="slider-track flex items-center">
             @for (year of years; track year; let i = $index) {
               <button
-                class="slider-year bg-transparent border-none cursor-pointer font-mono transition-all duration-200 px-1"
+                class="slider-year bg-transparent border-none cursor-pointer font-sans transition-all duration-200 px-1"
                 [class.selected]="i === selectedYearIndex" [class.text-primary]="i === selectedYearIndex"
                 [class.text-secondary]="i !== selectedYearIndex" [class.opacity-100]="i === selectedYearIndex"
                 [class.opacity-30]="i !== selectedYearIndex && absDiff(i, selectedYearIndex) > 3"
@@ -50,28 +54,28 @@
       @for (item of navItems; track item) {
         @if (item.href.startsWith('/')) {
           <a [routerLink]="item.href" routerLinkActive="text-white bg-primary/20"
-            class="text-sm font-bold text-secondary hover:text-white transition-colors font-mono px-3 py-1 rounded cursor-pointer">
+            class="text-sm font-bold text-secondary hover:text-white transition-colors font-sans px-3 py-1 rounded cursor-pointer">
             {{ item.labelKey | translate }}
           </a>
         }
         @if (!item.href.startsWith('/')) {
           <a [href]="item.href" (click)="scrollTo(item.href, $event)"
-            class="text-sm font-bold text-secondary hover:text-white transition-colors font-mono px-3 py-1 rounded cursor-pointer">
+            class="text-sm font-bold text-secondary hover:text-white transition-colors font-sans px-3 py-1 rounded cursor-pointer">
             {{ item.labelKey | translate }}
           </a>
         }
       }
 
       <!-- Language Switcher -->
-      <div class="text-sm font-mono text-secondary flex items-center border-none outline-none ring-0 p-0 m-0"
+      <div class="text-sm font-sans text-secondary flex items-center border-none outline-none ring-0 p-0 m-0"
         style="border: none !important; box-shadow: none !important; outline: none !important">
         <button (click)="switchLanguage('en')" [class.text-primary]="currentLang === 'en'"
-          class="bg-transparent border-none p-0 m-0 cursor-pointer hover:text-white transition-colors font-mono outline-none focus:outline-none ring-0 focus:ring-0">
+          class="bg-transparent border-none p-0 m-0 cursor-pointer hover:text-white transition-colors font-sans outline-none focus:outline-none ring-0 focus:ring-0">
           EN
         </button>
         <span class="text-secondary mx-2">|</span>
         <button (click)="switchLanguage('de')" [class.text-primary]="currentLang === 'de'"
-          class="bg-transparent border-none p-0 m-0 cursor-pointer hover:text-white transition-colors font-mono outline-none focus:outline-none ring-0 focus:ring-0">
+          class="bg-transparent border-none p-0 m-0 cursor-pointer hover:text-white transition-colors font-sans outline-none focus:outline-none ring-0 focus:ring-0">
           DE
         </button>
       </div>
@@ -79,7 +83,7 @@
 
     <!-- Mobile Menu Button -->
     <button class="md:hidden text-primary hover:text-white border border-primary px-2">
-      <span class="text-xl font-mono">MENU</span>
+      <span class="text-xl font-sans">MENU</span>
     </button>
   </div>
 </header>

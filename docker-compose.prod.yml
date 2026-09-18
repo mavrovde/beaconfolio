@@ -225,6 +225,14 @@ services:
       - SOCIAL_LINKS=${SOCIAL_LINKS:-}
       - BEACONFOLIO_ANALYTICS_ID=${BEACONFOLIO_ANALYTICS_ID:-}
       - BEACONFOLIO_GTM_CONTAINER_ID=${BEACONFOLIO_GTM_CONTAINER_ID:-}
+      # Brand assets (#67) — favicon, header logo, social card and webfont.
+      # All empty by default; empty means "use the bundled asset", so an unset
+      # host variable never blanks the branding.
+      - BEACONFOLIO_BRAND_FAVICON_URL=${BEACONFOLIO_BRAND_FAVICON_URL:-}
+      - BEACONFOLIO_BRAND_LOGO_URL=${BEACONFOLIO_BRAND_LOGO_URL:-}
+      - BEACONFOLIO_BRAND_OG_IMAGE_URL=${BEACONFOLIO_BRAND_OG_IMAGE_URL:-}
+      - BEACONFOLIO_BRAND_FONT_CSS_URL=${BEACONFOLIO_BRAND_FONT_CSS_URL:-}
+      - BEACONFOLIO_BRAND_FONT_FAMILY=${BEACONFOLIO_BRAND_FONT_FAMILY:-}
       # AI-crawler policy (#252): allow (default) | deny — rendered into the
       # SSR robots.txt via GET /config/site.
       - AI_CRAWLER_POLICY=${AI_CRAWLER_POLICY:-}

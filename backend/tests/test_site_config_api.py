@@ -22,6 +22,13 @@ async def test_site_config_returns_all_fields(client: AsyncClient):
         "analytics_id",
         "gtm_container_id",
         "theme",
+        # Brand assets (#67) — five overrides that let a forker rebrand a
+        # PREBUILT frontend image without editing `index.html` or a template.
+        "brand_favicon_url",
+        "brand_logo_url",
+        "brand_og_image_url",
+        "brand_font_css_url",
+        "brand_font_family",
     ):
         assert field in data, f"missing field: {field}"
 
@@ -207,3 +214,131 @@ def test_gtm_and_analytics_ids_are_independent_knobs():
     )
     assert s.analytics_id == "G-AAAAAAA"
     assert s.gtm_container_id == "GTM-BBBBBBB"
+
+
+# --- Brand assets (#67) ---
+
+BRAND_KNOBS = (
+    "brand_favicon_url",
+    "brand_logo_url",
+    "brand_og_image_url",
+    "brand_font_css_url",
+    "brand_font_family",
+)
+
+
+@pytest.mark.asyncio
+async def test_site_config_reflects_brand_settings(client: AsyncClient, monkeypatch):
+    """The five brand fields are derived from Settings, not hardcoded.
+
+    Each knob gets a DISTINCT value, so a payload that copied one field into
+    another — or that returned a constant — fails here. Asserting equality
+    against unmodified settings would pass against a hardcoded copy of the
+    defaults, which are all "" (the #255 review's mutation finding).
+    """
+    expected = {knob: f"https://cdn.example/{knob}" for knob in BRAND_KNOBS}
+    for knob, value in expected.items():
+        monkeypatch.setattr(settings, knob, value)
+
+    response = await client.get(f"{settings.api_prefix}/config/site")
+    data = response.json()
+    for knob, value in expected.items():
+        assert data[knob] == value, f"{knob} not served from Settings"
+
+
+@pytest.mark.asyncio
+async def test_site_config_brand_assets_default_to_empty(
+    client: AsyncClient, monkeypatch
+):
+    """Empty is not "unconfigured", it is the DOCUMENTED value that means
+    "use the bundled asset" — the shipped favicon, the shipped social card,
+    the wordmark derived from owner_name, the stylesheet index.html links.
+
+    So the endpoint must serve "" rather than omitting the key or substituting
+    a guess: the client distinguishes nothing else, and a server-side default
+    would take the override away from a forker who wants the bundled asset.
+    """
+    for knob in BRAND_KNOBS:
+        monkeypatch.setattr(settings, knob, "")
+
+    data = (await client.get(f"{settings.api_prefix}/config/site")).json()
+    for knob in BRAND_KNOBS:
+        assert data[knob] == "", f"{knob} should stay empty"
+
+
+def test_empty_brand_env_stays_empty():
+    """Compose forwards ``${BEACONFOLIO_BRAND_*:-}``, so an unset host var
+    arrives as an EMPTY STRING. These five are the ``analytics_id`` case, not
+    the ``site_name`` case: "" already IS the default, so they are deliberately
+    absent from the empty-means-default validator and must NOT be coerced.
+    """
+    from app.config import Settings
+
+    s = Settings(
+        BEACONFOLIO_BRAND_FAVICON_URL="",
+        BEACONFOLIO_BRAND_LOGO_URL="",
+        BEACONFOLIO_BRAND_OG_IMAGE_URL="",
+        BEACONFOLIO_BRAND_FONT_CSS_URL="",
+        BEACONFOLIO_BRAND_FONT_FAMILY="",
+        _env_file=None,
+    )
+    for knob in BRAND_KNOBS:
+        assert getattr(s, knob) == ""
+
+
+def test_brand_knobs_are_read_from_the_namespaced_aliases():
+    """Each knob binds to its BEACONFOLIO_-prefixed alias and to nothing else.
+
+    This is the #141 namespacing reason in its sharpest form: ``FAVICON_URL``,
+    ``LOGO_URL`` and ``FONT_FAMILY`` are exactly the generic names another
+    tenant on a shared host may already export, and inheriting a NEIGHBOUR's
+    brand is a visible mis-identification of the site — the same class as the
+    GTM container leak, pointed at identity instead of analytics.
+    """
+    from app.config import Settings
+
+    namespaced = Settings(
+        BEACONFOLIO_BRAND_FAVICON_URL="https://cdn.example/fav.svg",
+        BEACONFOLIO_BRAND_LOGO_URL="https://cdn.example/logo.svg",
+        BEACONFOLIO_BRAND_OG_IMAGE_URL="https://cdn.example/card.png",
+        BEACONFOLIO_BRAND_FONT_CSS_URL="https://fonts.example/inter.css",
+        BEACONFOLIO_BRAND_FONT_FAMILY="'Inter', sans-serif",
+        _env_file=None,
+    )
+    assert namespaced.brand_favicon_url == "https://cdn.example/fav.svg"
+    assert namespaced.brand_logo_url == "https://cdn.example/logo.svg"
+    assert namespaced.brand_og_image_url == "https://cdn.example/card.png"
+    assert namespaced.brand_font_css_url == "https://fonts.example/inter.css"
+    assert namespaced.brand_font_family == "'Inter', sans-serif"
+
+    ambient = Settings(
+        BRAND_FAVICON_URL="https://neighbour.example/fav.svg",
+        FAVICON_URL="https://neighbour.example/fav.svg",
+        LOGO_URL="https://neighbour.example/logo.svg",
+        OG_IMAGE_URL="https://neighbour.example/card.png",
+        FONT_CSS_URL="https://neighbour.example/font.css",
+        FONT_FAMILY="'Neighbour', sans-serif",
+        _env_file=None,
+    )
+    for knob in BRAND_KNOBS:
+        assert getattr(ambient, knob) == "", f"{knob} bound an un-namespaced name"
+
+
+def test_brand_knobs_do_not_disturb_the_rest_of_the_identity():
+    """Five new Settings fields must not perturb the #65 identity block — the
+    validator that turns an empty SITE_NAME back into its default runs over a
+    field list, and a field added to the wrong list would blank a name.
+    """
+    from app.config import Settings
+
+    defaults = Settings(_env_file=None)
+    s = Settings(
+        BEACONFOLIO_BRAND_FAVICON_URL="https://cdn.example/fav.svg",
+        BEACONFOLIO_BRAND_FONT_FAMILY="'Inter', sans-serif",
+        _env_file=None,
+    )
+    assert s.site_name == defaults.site_name
+    assert s.owner_name == defaults.owner_name
+    assert s.site_url == defaults.site_url
+    assert s.analytics_id == defaults.analytics_id
+    assert s.gtm_container_id == defaults.gtm_container_id

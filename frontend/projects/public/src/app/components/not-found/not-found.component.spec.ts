@@ -13,6 +13,7 @@ import { NotFoundComponent } from './not-found.component';
 import { SeoService } from '../../services/seo.service';
 import { SiteConfigService } from '../../services/site-config.service';
 import { YearsService } from '../../services/years.service';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 /**
  * #324 — the branded wildcard 404.
@@ -37,6 +38,7 @@ describe('NotFoundComponent (#324)', () => {
         TestBed.configureTestingModule({
             imports: [NotFoundComponent, MockTranslatePipe],
             providers: [
+              ...provideTestBrand(),
                 provideZonelessChangeDetection(),
                 provideRouter([]),
                 { provide: SeoService, useValue: seoServiceSpy },

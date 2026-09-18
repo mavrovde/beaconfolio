@@ -87,6 +87,67 @@ All notable changes to this project will be documented in this file.
   instead of itself: `opacity` on the bar also thinned its ground — supplied by the unlayered
   `.border-terminal`, not by `bg-black` — so the page ghosted through it on every non-terminal
   preset.
+- **Favicon, logo, social card and webfont are now configuration, so a prebuilt image rebrands on
+  restart.** #65 made the owner's *identity* a runtime value; everything visual stayed baked into
+  the bundle — the favicon and the font link in `index.html`, the share card in `SeoService`, the
+  `>_ SM` wordmark in a template, and a `user@portfolio:~$` prompt hardcoded across seven public
+  and admin templates. A forker could change none of it without editing source and rebuilding.
+  Five namespaced knobs — `BEACONFOLIO_BRAND_FAVICON_URL`, `_LOGO_URL`, `_OG_IMAGE_URL`,
+  `_FONT_CSS_URL`, `_FONT_FAMILY` — now ride the existing `/api/app/config/site` payload, and
+  **every one defaults to empty, where empty means "use the bundled asset"**: set none and the
+  site is byte-for-byte what it was. Absent (an older backend mid-deploy) and empty are
+  deliberately the same value, exactly as for `gtm_container_id`. They are env-driven rather than
+  DB-backed because the *theme* is a choice the owner flips between sessions while the brand
+  assets are a deployment fact set once beside `SITE_URL`; making them rows would have bought an
+  admin screen and a migration for values that change when the deployment does.
+  The font pair is two knobs on purpose: a stylesheet URL only *loads* a face, and the family that
+  paints is chosen by the preset — so the family override is written as an inline custom property
+  on the root element, which is the one place a config value beats a `[data-theme]` block without
+  editing the shared stylesheet, and it sets **both** `--font-sans` and `--font-mono` because
+  `classic` pairs a serif body with a monospace code face and overriding one would restyle half
+  the page. The social card resolves from three sources, most specific first — the page's own
+  artwork, the configured card, the bundled one — and an absolute URL is emitted verbatim while a
+  relative one is joined to `SITE_URL` (a relative `og:image` is invalid for every crawler), with
+  the separator inserted when a hand-written value omits it.
+  Two things found by measurement rather than assumed. The shipped `favicon.png` **is a JPEG**, so
+  the `type="image/png"` both apps declared was already wrong; the attribute is now removed rather
+  than guessed, since a configured icon can be any format. And the terminal prompt is no longer a
+  literal anywhere: `ShellChromeService` derives `user@<site-name>:~$`, the account half, a full
+  command line and the wordmark from the served identity, and returns **empty** under the four
+  document presets — a serif, document-like theme that still greets a visitor with `user@host:~$`
+  reads as a rendering bug. That removed the last `admin@beaconfolio.com` literal from the admin
+  console's own screens. The three shared consumers cost **one** HTTP request between them, not
+  three, via an optional `SITE_BRAND_SOURCE` token the public app fills with the config stream it
+  already has — measured against the real `appConfig.providers`, not a re-declared copy, because
+  every extra in-flight request is another thing `ng build`'s route extraction can hang on. The
+  three e2e assertions that pinned the old literals now derive their expectations from what the
+  API serves, and assert the derived value differs from the literal it replaced — a re-hardcoded
+  template fails there instead of passing.
+  **A preset now reaches the whole page, not just its body.** v1.15.x pointed `body` at each
+  preset’s `--font-sans`, and left **58 `font-mono` utilities across 17 public templates**
+  pinning their own elements to the code face — 54 in 13 external `.html` files and 4 page-root
+  wrappers written as inline `template:` strings. (That supersedes the "58 across 14" in the entry
+  above, which was 62 across 18: an `.html`-only grep cannot see an inline `template:`, and neither
+  could the first version of the guard below.) So `classic` served a serif body wrapped around
+  monospace headings, prose, buttons, nav and form fields, and the other three document presets
+  were mixed the same way. Those utilities never meant “this is code”; they meant “the site’s
+  face”, from when the site had exactly one. They now say `font-sans`, and the status bar's ticking
+  uptime and memory readouts gained `tabular-nums` so a proportional preset does not reflow them
+  once a second. The sweep is a **no-op on `terminal`**, whose two font tokens are the same VT323
+  stack — which is the entire safety argument for it, so the unit contract now pins that equality,
+  pins that `classic` really does declare a different body family from its code family (or the
+  sweep would have changed nothing anywhere), and fails if any public template regains `font-mono`
+  in **either** template form — external `.html` **or** an inline `template:` string, a scope the
+  contract pins explicitly because a guard that reads only one of them reports the sweep complete
+  while half the project is unswept. The `/llm` transcript is the one deliberate exception and
+  keeps the monospace face under every preset: an AI transcript *is* terminal output. The **admin
+  console is deliberately out of scope** — a second app, behind the operator allowlist, with no
+  template guard covering it — so six `font-mono` call sites remain there and a non-terminal preset
+  still renders mixed on those screens; only the SQL panel and the chat wrapper are arguably code.
+  The public app's initial-bundle **warning** budget moves 500 kB → **520 kB**: the brand plumbing
+  puts the initial total at **503.11 kB**, and a build that warns on every run is an alarm nobody
+  reads. 16.89 kB of headroom keeps it able to fire on the next real growth; the 1 MB error ceiling
+  is unchanged. Admin is unaffected at **438.96 kB**.
 
 ## [1.15.2] - 2026-09-18
 

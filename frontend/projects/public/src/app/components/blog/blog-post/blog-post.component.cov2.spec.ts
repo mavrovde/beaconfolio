@@ -8,6 +8,7 @@ import { of, throwError, BehaviorSubject, firstValueFrom } from 'rxjs';
 import { MockTranslatePipe } from '@beaconfolio/shared/testing';
 import { PLATFORM_ID, RESPONSE_INIT } from '@angular/core';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 /**
  * #109 — real HTTP 404 for an unknown blog slug on SSR, plus the shared not-found
@@ -26,6 +27,7 @@ describe('BlogPostComponent — not-found SEO + SSR 404 status (#109)', () => {
     TestBed.configureTestingModule({
       imports: [BlogPostComponent, MockTranslatePipe],
       providers: [
+        ...provideTestBrand(),
         provideRouter([]),
         {
             provide: SiteConfigService,
@@ -113,6 +115,7 @@ describe('BlogPostComponent — not-found SEO + SSR 404 status (#109)', () => {
     TestBed.configureTestingModule({
       imports: [BlogPostComponent, MockTranslatePipe],
       providers: [
+        ...provideTestBrand(),
         provideRouter([]),
         { provide: SeoService, useValue: { updateSeo: vi.fn(), setJsonLd: vi.fn(), setNotFound: vi.fn() } },
         { provide: BlogService, useValue: { getPost: vi.fn().mockReturnValue(of(null)) } },

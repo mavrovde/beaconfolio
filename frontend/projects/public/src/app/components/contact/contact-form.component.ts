@@ -1,4 +1,5 @@
 import { ChangeDetectorRef, Component, inject } from '@angular/core';
+import { AsyncPipe } from '@angular/common';
 
 import {
     AbstractControl,
@@ -8,7 +9,7 @@ import {
     ValidationErrors,
     Validators,
 } from '@angular/forms';
-import { TranslatePipe } from '@beaconfolio/shared';
+import { ShellChromeService, TranslatePipe } from '@beaconfolio/shared';
 import { InteractionService } from '../../services/interaction.service';
 
 /**
@@ -29,13 +30,20 @@ function trimmedMinLength(min: number) {
 @Component({
     selector: 'app-contact-form',
     standalone: true,
-    imports: [ReactiveFormsModule, TranslatePipe],
+    imports: [AsyncPipe, ReactiveFormsModule, TranslatePipe],
     templateUrl: './contact-form.component.html',
 })
 export class ContactFormComponent {
     private fb = inject(FormBuilder);
     private interactionService = inject(InteractionService);
     private cdr = inject(ChangeDetectorRef);
+
+    // Shell chrome, from config (#67). The literals these replace were
+    // `user@portfolio…` — a hostname no deployment but the original owned, in a
+    // template no forker should have to edit. FIELDS, not template calls: each
+    // accessor returns a fresh observable, so calling one from the template
+    // would re-subscribe on every change-detection pass.
+    readonly prompt$ = inject(ShellChromeService).prompt();
 
     contactForm: FormGroup;
     isLoading = false;

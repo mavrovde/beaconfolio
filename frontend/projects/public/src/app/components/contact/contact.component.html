@@ -1,15 +1,20 @@
 <section id="contact" class="py-20">
   <div class="container mx-auto px-6 max-w-4xl">
-    <h2 class="text-2xl font-bold mb-8 text-secondary font-mono">
+    <h2 class="text-2xl font-bold mb-8 text-secondary font-sans">
       {{ 'SECTION.CONTACT' | translate }}
     </h2>
 
     @if (profile && profile.contact) {
       <div class="space-y-4 text-lg">
-        <div class="flex flex-col md:flex-row gap-2">
-          <span class="text-secondary opacity-70">user@portfolio:~$</span>
-          <span class="text-primary">echo $EMAIL</span>
-        </div>
+        <!-- Decorative shell captions (#67): each labels a link that already
+             renders its own address, so a preset with no chrome drops the
+             whole line rather than leaving a bare `echo $EMAIL`. -->
+        @if (prompt$ | async; as prompt) {
+          <div class="flex flex-col md:flex-row gap-2">
+            <span class="text-secondary opacity-70">{{ prompt }}</span>
+            <span class="text-primary">echo $EMAIL</span>
+          </div>
+        }
         <div class="pl-0 md:pl-8 mb-6">
           <a [href]="'mailto:' + profile.contact.email" class="hover:bg-primary hover:text-black transition-colors px-1">
             {{ profile.contact.email }}
@@ -23,10 +28,12 @@
         @if (profileLinks$ | async; as links) {
           @if (links.length) {
             @for (link of links; track link.url) {
-              <div class="flex flex-col md:flex-row gap-2">
-                <span class="text-secondary opacity-70">user@portfolio:~$</span>
-                <span class="text-primary">echo ${{ link.platform }}</span>
-              </div>
+              @if (prompt$ | async; as prompt) {
+                <div class="flex flex-col md:flex-row gap-2">
+                  <span class="text-secondary opacity-70">{{ prompt }}</span>
+                  <span class="text-primary">echo ${{ link.platform }}</span>
+                </div>
+              }
               <div class="pl-0 md:pl-8 mb-6">
                 <span class="text-secondary opacity-70 mr-2" aria-hidden="true">{{ link.icon }}</span>
                 <a [href]="link.url" target="_blank" rel="noopener noreferrer"
@@ -36,10 +43,12 @@
               </div>
             }
           } @else {
-            <div class="flex flex-col md:flex-row gap-2">
-              <span class="text-secondary opacity-70">user@portfolio:~$</span>
-              <span class="text-primary">echo $LINKEDIN</span>
-            </div>
+            @if (prompt$ | async; as prompt) {
+              <div class="flex flex-col md:flex-row gap-2">
+                <span class="text-secondary opacity-70">{{ prompt }}</span>
+                <span class="text-primary">echo $LINKEDIN</span>
+              </div>
+            }
             <div class="pl-0 md:pl-8">
               <a [href]="profile.contact.linkedin" target="_blank" rel="noopener noreferrer"
                 class="hover:bg-primary hover:text-black transition-colors px-1">

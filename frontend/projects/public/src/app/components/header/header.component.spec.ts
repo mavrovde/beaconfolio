@@ -10,6 +10,7 @@ import { LanguageService } from '@beaconfolio/shared';
 import { createInInjectionContext, MockLanguageService } from '@beaconfolio/shared/testing';
 import { YearsService } from '../../services/years.service';
 import { of } from 'rxjs';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 class MockYearsService {
   getYears() {
@@ -26,6 +27,7 @@ describe('HeaderComponent', () => {
     await TestBed.configureTestingModule({
       imports: [HeaderComponent],
       providers: [
+        ...provideTestBrand(),
         provideRouter([]),
         { provide: LanguageService, useClass: MockLanguageService },
         { provide: YearsService, useClass: MockYearsService },
@@ -210,6 +212,7 @@ describe('HeaderComponent', () => {
     // The component takes no constructor arguments since #425 — the 'server' platform is
     // expressed as a provider on a throwaway injector instead of a positional argument.
     const serverComponent = createInInjectionContext(HeaderComponent, [
+      ...provideTestBrand(),
       { provide: LanguageService, useValue: langService },
       { provide: YearsService, useValue: yearsService },
       { provide: Router, useValue: router },
@@ -230,6 +233,7 @@ describe('HeaderComponent', () => {
     TestBed.configureTestingModule({
       imports: [HeaderComponent],
       providers: [
+        ...provideTestBrand(),
         provideRouter([]),
         { provide: LanguageService, useClass: MockLanguageService },
         { provide: YearsService, useValue: { getYears: () => of([]) } },

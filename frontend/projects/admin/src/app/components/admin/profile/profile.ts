@@ -3,7 +3,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AuthService } from '../../../services/auth.service';
-import { TranslatePipe } from '@beaconfolio/shared';
+import { ShellChromeService, TranslatePipe } from '@beaconfolio/shared';
 
 @Component({
   selector: 'app-profile',
@@ -16,6 +16,10 @@ export class ProfileComponent implements OnInit {
   private authService = inject(AuthService);
   private cdr = inject(ChangeDetectorRef);
   private destroyRef = inject(DestroyRef);
+
+  // Same as the login panel's title (#67): config-driven, and never a
+  // hostname inherited from the project this was forked from.
+  readonly title$ = inject(ShellChromeService).commandLine('./passwd', { user: 'admin' });
   oldPassword = '';
   newPassword = '';
   loading = false;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -23,8 +23,14 @@ import { join } from 'node:path';
  * red in the unit tier, on every push, without a stack.
  */
 
+/**
+ * The ONE stylesheet both apps import (#67). It used to live in this app's own
+ * `src/styles.css`; that file is now two `@import` lines, and the admin app
+ * imports the same shared file, so this contract covers BOTH apps rather than
+ * only the one whose directory it sits in.
+ */
 const STYLES = readFileSync(
-    join(__dirname, '..', 'styles.css'),
+    join(__dirname, '..', '..', '..', 'shared', 'src', 'styles', 'theme.css'),
     'utf-8',
 );
 
@@ -113,5 +119,98 @@ describe('theme token contract', () => {
             .filter((part) => /#[0-9a-f]{3,8}\b|\brgba?\(|:\s*(white|black)\b/i.test(part))
             .map((part) => part.replace(/\s+/g, ' '));
         expect(literals, `${relative} still carries colour literals`).toEqual([]);
+    });
+});
+
+/**
+ * Per-preset typography (#67 — the residual #339 deferred here).
+ *
+ * #339 pointed `body` at each preset's `--font-sans`, but 58 `font-mono`
+ * utilities across 17 public templates kept their own elements on the
+ * monospace face — 54 in 13 external `.html` files and 4 page-root wrappers
+ * written as inline `template:` strings — so `classic` rendered a serif body
+ * around monospace headings, prose, buttons and form fields. (`/llm`'s
+ * transcript holds 4 more and keeps them.) Those utilities never meant
+ * "this is code" — they meant "the site's face", back when the site had
+ * exactly one. They now say `font-sans`.
+ *
+ * The whole safety argument for that sweep is ONE property: under `terminal`
+ * the two families are the same stack, so the swap is a no-op on the default
+ * preset. If that ever stops being true, `terminal` silently changes
+ * appearance and this file is the only thing that would say so.
+ */
+describe('per-preset typography (#67)', () => {
+    const familiesOf = (block: string) => ({
+        sans: /--font-sans:\s*([^;]+);/.exec(block)?.[1]?.trim(),
+        mono: /--font-mono:\s*([^;]+);/.exec(block)?.[1]?.trim(),
+    });
+
+    const blockFor = (preset: string) => {
+        const match = new RegExp(`\\[data-theme='${preset}'\\]\\s*\\{([\\s\\S]*?)\\n\\}`).exec(
+            STYLES,
+        );
+        expect(match, `no [data-theme='${preset}'] block`).toBeTruthy();
+        return match![1];
+    };
+
+    it('terminal declares ONE family under both names, so the sweep is a no-op there', () => {
+        const { sans, mono } = familiesOf(blockFor('terminal'));
+
+        expect(sans).toBeTruthy();
+        expect(mono).toBeTruthy();
+        expect(sans).toBe(mono);
+    });
+
+    // The other half: if every preset paired the same two families, swapping
+    // the utilities would have changed nothing anywhere and this whole sweep
+    // would be decoration. `classic` is the sharpest case — a serif body.
+    it('classic declares a DIFFERENT body family from its code family', () => {
+        const { sans, mono } = familiesOf(blockFor('classic'));
+
+        expect(sans).toMatch(/serif/);
+        expect(sans).not.toBe(mono);
+    });
+
+    // The sweep itself, asserted where it can actually regress: a template
+    // that regains `font-mono` pins its own elements to the code face on every
+    // document preset again. `llm.component.html` is the deliberate exception
+    // — an AI transcript IS terminal output, and it keeps the monospace face
+    // under every preset.
+    //
+    // BOTH template forms are in scope, and that is the whole point. Round 1
+    // of this PR shipped this guard filtering `.endsWith('.html')` alone: it
+    // was green while four page-root wrappers — home, blog-post, not-found and
+    // tailored — still carried `font-mono` in an inline `template:`, so those
+    // four pages rendered a monospace wrapper around swept serif descendants
+    // under every document preset. A guard blind to half the project's
+    // templates is worse than no guard, because it reports the sweep complete.
+    it('no public template pins the code face except the LLM transcript', () => {
+        const root = join(__dirname, 'components');
+        const scanned = readdirSync(root, { recursive: true, encoding: 'utf-8' })
+            .filter((r) => r.endsWith('.html') || (r.endsWith('.ts') && !r.endsWith('.spec.ts')))
+            .filter((r) => !r.includes('llm'));
+
+        // Pin the SCOPE, not just the result: re-narrowing the filter back to
+        // `.html` would make the assertion below pass again for the wrong
+        // reason, which is exactly how the omission survived round 1.
+        expect(scanned, 'external templates are out of scope').toContain(
+            join('hero', 'hero.component.html'),
+        );
+        expect(scanned, 'inline templates are out of scope').toContain(
+            join('home', 'home.component.ts'),
+        );
+
+        const offenders = scanned
+            .filter((relative) => readFileSync(join(root, relative), 'utf-8').includes('font-mono'))
+            .sort();
+
+        expect(offenders, 'these templates pin monospace on every preset').toEqual([]);
+    });
+
+    it('and the LLM transcript still does', () => {
+        const llm = readFileSync(join(__dirname, 'components/llm/llm.component.html'), 'utf-8');
+
+        expect(llm).toContain('terminal-container font-mono');
+        expect(llm).toContain('multi-agent-container font-mono');
     });
 });

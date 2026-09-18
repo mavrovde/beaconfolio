@@ -9,6 +9,7 @@ import { vi } from 'vitest';
 
 import { TranslatePipe } from '@beaconfolio/shared';
 import { createInInjectionContext, MockTranslatePipe } from '@beaconfolio/shared/testing';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 describe('HeroComponent', () => {
   let component: HeroComponent;
@@ -31,6 +32,7 @@ describe('HeroComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [HeroComponent],
+      providers: [provideTestBrand()],
     })
       .overrideComponent(HeroComponent, {
         remove: { imports: [TranslatePipe] },
@@ -121,6 +123,7 @@ describe('HeroComponent', () => {
   it('scrollTo should return early if not in browser environment', () => {
     // No constructor arguments since #425 — both dependencies come from the injection context.
     const serverComponent = createInInjectionContext(HeroComponent, [
+      ...provideTestBrand(),
       // Any non-browser string works; Angular checks it strictly under the hood
       { provide: PLATFORM_ID, useValue: 'server' },
       { provide: SiteConfigService, useValue: { config$: of({ availability: 'listening' }) } },

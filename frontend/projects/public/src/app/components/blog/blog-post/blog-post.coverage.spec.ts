@@ -7,6 +7,7 @@ import { SeoService } from '../../../services/seo.service';
 import { SiteConfigService } from '../../../services/site-config.service';
 import { of, BehaviorSubject } from 'rxjs';
 import { MockTranslatePipe } from '@beaconfolio/shared/testing';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 describe('BlogPostComponent SEO branches', () => {
   let component: BlogPostComponent;
@@ -22,6 +23,7 @@ describe('BlogPostComponent SEO branches', () => {
     await TestBed.configureTestingModule({
       imports: [BlogPostComponent, MockTranslatePipe],
       providers: [
+        ...provideTestBrand(),
         provideRouter([]),
         { provide: BlogService, useValue: blogServiceSpy },
         { provide: ActivatedRoute, useValue: { paramMap: paramMapSubject.asObservable() } },

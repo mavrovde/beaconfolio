@@ -5,6 +5,7 @@ import { ContactFormComponent } from './contact-form.component';
 import { InteractionService } from '../../services/interaction.service';
 import { TranslatePipe } from '@beaconfolio/shared';
 import { MockTranslatePipe } from '@beaconfolio/shared/testing';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 describe('ContactFormComponent', () => {
     let fixture: ComponentFixture<ContactFormComponent>;
@@ -15,7 +16,7 @@ describe('ContactFormComponent', () => {
         serviceSpy = { submitContact: vi.fn() };
         await TestBed.configureTestingModule({
             imports: [ContactFormComponent],
-            providers: [{ provide: InteractionService, useValue: serviceSpy }],
+            providers: [...provideTestBrand(), { provide: InteractionService, useValue: serviceSpy }],
         })
             .overrideComponent(ContactFormComponent, {
                 remove: { imports: [TranslatePipe] },

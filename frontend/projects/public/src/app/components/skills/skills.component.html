@@ -1,6 +1,6 @@
 <section id="skills" class="py-20">
   <div class="container mx-auto px-6">
-    <h2 class="text-2xl font-bold mb-12 text-secondary font-mono">
+    <h2 class="text-2xl font-bold mb-12 text-secondary font-sans">
       {{ 'SECTION.SKILLS' | translate }}
     </h2>
 
@@ -10,7 +10,7 @@
           @for (skill of (profile.skills || []); track skill) {
             <div
               class="px-4 py-2 border border-terminal bg-black hover:bg-primary hover:text-black hover:border-primary transition-colors cursor-default">
-              <span class="font-mono text-secondary hover:text-black font-medium">{{ skill }}</span>
+              <span class="font-sans text-secondary hover:text-black font-medium">{{ skill }}</span>
             </div>
           }
         </div>

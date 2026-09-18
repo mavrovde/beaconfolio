@@ -8,11 +8,13 @@ import { ViewportScroller } from '@angular/common';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { Component } from '@angular/core';
 import { SeoService } from './services/seo.service';
-import { ThemeService } from './services/theme.service';
+import { DEFAULT_SITE_CONFIG, SiteConfigService } from './services/site-config.service';
+import { BrandAssetsService, ThemeService } from '@beaconfolio/shared';
 import { DomSanitizer } from '@angular/platform-browser';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 import { CookieConsentComponent } from './components/cookie-consent/cookie-consent.component';
 import { SystemStatsComponent } from './components/stats/stats.component';
+import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 @Component({
   selector: 'app-cookie-consent',
@@ -35,6 +37,7 @@ describe('AppComponent', () => {
   let mockSanitizer: any;
   let gaService: { initialize: any; gtmNoscriptUrl$: BehaviorSubject<any> };
   let themeService: { initialize: any; apply: any };
+  let brandAssets: { initialize: any; apply: any };
   let trustUrl: (url: string) => any;
 
   beforeEach(async () => {
@@ -45,6 +48,7 @@ describe('AppComponent', () => {
     gaService = mockGaService;
 
     themeService = { initialize: vi.fn(), apply: vi.fn() };
+    brandAssets = { initialize: vi.fn(), apply: vi.fn() };
 
     mockSeoService = {
       schemaSubject: new BehaviorSubject<any>(null),
@@ -70,11 +74,17 @@ describe('AppComponent', () => {
     await TestBed.configureTestingModule({
       imports: [AppComponent, RouterTestingModule],
       providers: [
+        ...provideTestBrand(),
         { provide: GoogleAnalyticsService, useValue: mockGaService },
         { provide: ViewportScroller, useValue: { setOffset: vi.fn() } },
         { provide: SeoService, useValue: mockSeoService },
         { provide: DomSanitizer, useValue: mockSanitizer },
-        { provide: ThemeService, useValue: themeService }
+        {
+          provide: SiteConfigService,
+          useValue: { config$: of({ ...DEFAULT_SITE_CONFIG, theme: 'classic' }) },
+        },
+        { provide: ThemeService, useValue: themeService },
+        { provide: BrandAssetsService, useValue: brandAssets }
       ]
     })
       .overrideComponent(AppComponent, {
@@ -148,6 +158,23 @@ describe('AppComponent', () => {
   // itself, because coverage alone would stay at 100% with the line deleted.
   it('stamps the configured theme on the root element from ngOnInit', () => {
     expect(themeService.initialize).toHaveBeenCalledTimes(1);
+  });
+
+  // …and it passes NO stream (#67). The shared library reads this app's
+  // existing `config$` through the `SITE_BRAND_SOURCE` provider in
+  // `app.config.ts` instead — see `app.config.spec.ts`, which proves that
+  // wiring costs exactly one HTTP request. An argument here would mean the
+  // theme rode on one stream while the brand assets rode on another.
+  it('passes the shared service no stream of its own', () => {
+    expect(themeService.initialize).toHaveBeenCalledWith();
+  });
+
+  // The brand ASSETS come from the same call site as the theme (#67): favicon
+  // and webfont are head mutations, and the head has to be right in the bytes
+  // the server sends, not one repaint later.
+  it('initializes the brand assets from ngOnInit too', () => {
+    expect(brandAssets.initialize).toHaveBeenCalledTimes(1);
+    expect(brandAssets.initialize).toHaveBeenCalledWith();
   });
 
 });

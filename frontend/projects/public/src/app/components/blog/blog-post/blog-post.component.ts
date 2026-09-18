@@ -24,7 +24,7 @@ export interface BlogPostVm {
   standalone: true,
   imports: [CommonModule, RouterModule, HeaderComponent],
   template: `
-    <div class="min-h-screen bg-black font-mono text-primary">
+    <div class="min-h-screen bg-black font-sans text-primary">
       <app-header></app-header>
       <div class="p-6 md:p-12">
         @if (vm$ | async; as vm) {

@@ -8,12 +8,19 @@
   <title>Portfolio</title>
   <base href="/" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="icon" type="image/png" href="assets/favicon.png" />
+  <!-- The BUNDLED defaults (#67). `BrandAssetsService` rewrites these two
+       hrefs when the site config names its own favicon or webfont; leaving
+       real links here is what keeps a cold load from painting a round-trip
+       of fallback type first. No `type` attribute: the shipped file is a
+       JPEG despite its .png name, and a configured URL can be any format —
+       an omitted type is honest, a declared one would be wrong. -->
+  <link rel="icon" href="assets/favicon.png" />
 
-  <!-- Google Fonts: Inter -->
+  <!-- Google Fonts: VT323, the `terminal` preset's face -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet" />
+  <link id="brand-font" href="https://fonts.googleapis.com/css2?family=VT323&display=swap"
+    rel="stylesheet" />
 
   <!-- Font Awesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />

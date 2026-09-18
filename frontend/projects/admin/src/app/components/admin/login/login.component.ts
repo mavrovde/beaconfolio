@@ -4,12 +4,14 @@ import { Component, ChangeDetectorRef, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router, ActivatedRoute } from '@angular/router';
 import { finalize } from 'rxjs/operators';
+import { AsyncPipe } from '@angular/common';
+import { ShellChromeService } from '@beaconfolio/shared';
 import { AuthService } from '../../../services/auth.service';
 
 @Component({
   selector: 'app-login',
   standalone: true,
-  imports: [FormsModule],
+  imports: [AsyncPipe, FormsModule],
   templateUrl: './login.component.html',
   styleUrls: ['./login.component.css'],
 })
@@ -18,6 +20,13 @@ export class LoginComponent {
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private cdr = inject(ChangeDetectorRef);
+
+  // The panel title (#67). It was `admin@beaconfolio.com:~$ ./login.sh` — a
+  // literal domain belonging to whoever the fork came from, on the FIRST
+  // screen a forker sees. Under a preset with no shell chrome it renders the
+  // configured site name instead, because an empty title bar above a login
+  // form reads as a broken page.
+  readonly title$ = inject(ShellChromeService).commandLine('./login.sh', { user: 'admin' });
 
   username = '';
   password = '';

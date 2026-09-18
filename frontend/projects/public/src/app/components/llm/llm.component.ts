@@ -1,8 +1,8 @@
 import { Component, ElementRef, ViewChild, AfterViewChecked, OnInit, ChangeDetectorRef, PLATFORM_ID, Input, HostListener, inject } from '@angular/core';
-import { isPlatformBrowser } from '@angular/common';
+import { AsyncPipe, isPlatformBrowser } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
-import { LlmService, ChatMessage } from '@beaconfolio/shared';
+import { LlmService, ChatMessage, ShellChromeService } from '@beaconfolio/shared';
 import { VERSION } from '../../version';
 
 import { HeaderComponent } from '../header/header.component';
@@ -28,7 +28,7 @@ interface LlmState {
 @Component({
   selector: 'app-llm',
   standalone: true,
-  imports: [FormsModule, RouterModule, HeaderComponent],
+  imports: [AsyncPipe, FormsModule, RouterModule, HeaderComponent],
   templateUrl: './llm.component.html',
   styleUrls: ['./llm.component.css']
 })
@@ -38,6 +38,18 @@ export class LlmComponent implements OnInit, AfterViewChecked {
   private router = inject(Router);
   private seoService = inject(SeoService);
   private platformId = inject(PLATFORM_ID);
+  private shell = inject(ShellChromeService);
+
+  // Shell chrome, from config (#67). The literals these replace were
+  // `user@portfolio…` — a hostname no deployment but the original owned, in a
+  // template no forker should have to edit. FIELDS, not template calls: each
+  // accessor returns a fresh observable, so calling one from the template
+  // would re-subscribe on every change-detection pass.
+  readonly chrome$ = this.shell.chrome$;
+  readonly account$ = this.shell.account();
+  readonly siteName$ = this.shell.siteName$;
+  readonly wordmark$ = this.shell.wordmark$;
+  readonly prompt$ = this.shell.prompt('~/llm');
 
   @Input() standalone = true;
   @ViewChild('scrollContainer') private scrollContainer!: ElementRef;
