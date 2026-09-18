@@ -1,5 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { AppComponent } from './app.component';
+import { AppComponent, jsonForScriptBlock } from './app.component';
 import { RouterTestingModule } from '@angular/router/testing';
 import { RouterOutlet } from '@angular/router';
 import { By } from '@angular/platform-browser';
@@ -151,6 +151,29 @@ describe('AppComponent', () => {
     });
   });
 
+  // The WIRING, not just the helper beside it: reverting `app.component.ts` to
+  // a bare `JSON.stringify` must turn this red, or `jsonForScriptBlock` is
+  // decoration that the component never calls. A post title is the realistic
+  // carrier — it reaches this schema through `blog-post.component`.
+  it('never emits a closing script tag from inside the schema', async () => {
+    const closer = '</scr' + 'ipt>';
+    mockSeoService.schemaSubject.next({
+      '@type': 'BlogPosting',
+      headline: `Post ${closer}<img src=x onerror=alert(1)>`,
+    });
+
+    return new Promise<void>((resolve) => {
+      component.jsonLd$?.subscribe(() => {
+        const [html] = (mockSanitizer.bypassSecurityTrustHtml as any).mock.calls.at(-1);
+
+        // Exactly one, and it is the one this code wrote: the last characters.
+        expect(html.split(closer).length - 1).toBe(1);
+        expect(html.endsWith(closer)).toBe(true);
+        resolve();
+      });
+    });
+  });
+
   // #339: the theme is stamped from HERE, not from an app initializer — an
   // initializer that touches `config$` aborts `ng build`'s route extraction
   // (there is no backend behind it and `config$` is a shareReplay, so the
@@ -175,6 +198,41 @@ describe('AppComponent', () => {
   it('initializes the brand assets from ngOnInit too', () => {
     expect(brandAssets.initialize).toHaveBeenCalledTimes(1);
     expect(brandAssets.initialize).toHaveBeenCalledWith();
+  });
+
+});
+
+/**
+ * JSON-LD is embedded in a `<script>` ELEMENT, so the HTML parser — not the
+ * JSON parser — decides where it ends. Flagged as `typescript:S6268` by the
+ * v1.16.0 release security triage, and confirmed by measurement before the
+ * fix: `JSON.stringify` leaves `<` alone, so a value containing `</script>`
+ * closed the block early and the rest was parsed as markup.
+ */
+describe('JSON-LD script-block serialization (release security triage)', () => {
+  const HOSTILE = { '@type': 'BlogPosting', headline: 'Post </scr' + 'ipt><img src=x onerror=alert(1)>' };
+
+  it('escapes `<` so a value cannot close the script element', () => {
+    const serialized = jsonForScriptBlock(HOSTILE);
+
+    // The literal the HTML parser looks for. Asserted as a split string so
+    // this file cannot close its own element either.
+    expect(serialized).not.toContain('</scr' + 'ipt>');
+    expect(serialized).toContain('\\u003c');
+  });
+
+  // The escape is free ONLY if it is lossless — `\u003c` is a valid
+  // JSON escape for `<`, so the consumer sees exactly what it saw before. Without
+  // this, "escape it" could silently corrupt the structured data Google reads.
+  it('round-trips to a byte-identical object', () => {
+    expect(JSON.parse(jsonForScriptBlock(HOSTILE))).toEqual(HOSTILE);
+    expect(JSON.parse(jsonForScriptBlock(HOSTILE)).headline).toBe(HOSTILE.headline);
+  });
+
+  it('leaves a schema with no `<` untouched apart from formatting', () => {
+    const plain = { '@context': 'https://schema.org' };
+
+    expect(jsonForScriptBlock(plain)).toBe(JSON.stringify(plain, null, 2));
   });
 
 });

@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- **JSON-LD can no longer break out of its own `<script>` element.** The structured-data block is
+  built by string concatenation and handed to `bypassSecurityTrustHtml`, and `JSON.stringify` does
+  not escape `<` — it has no reason to, since `<` is an ordinary character in a JSON string. Inside
+  a `<script>` element it is not ordinary: the HTML parser ends the element at the first
+  `</script>` it sees, quoted string included. Measured on the real serializer before the fix, a
+  post headline reading `</script><img src=x onerror=…>` closed the JSON-LD block early and the
+  remainder was parsed as markup. Serialization now routes through an exported
+  `jsonForScriptBlock()` that escapes `<` as `\u003c` — a valid JSON escape, so `JSON.parse`
+  returns a byte-identical object and the structured data Google reads is unchanged; a spec pins
+  that round trip, because an escape that corrupts the payload would trade one defect for another.
+  **Nothing here was exploitable by an untrusted party**: every writer on this path is
+  authenticated (the admin console, or the token-gated LinkedIn importer), which is exactly why it
+  was worth fixing while it was still one line rather than after some future unauthenticated text
+  reaches post content. The guard is pinned at the WIRING as well as at the helper — reverting the
+  component to a bare `JSON.stringify` turns a spec red — since a helper the component never calls
+  is decoration. Flagged as `typescript:S6268` by the v1.16.0 release security triage; the rule
+  fires on every `bypassSecurityTrust*` call and here it was right.
+
 ### Added
 - **A projects showcase, driven entirely by the profile JSON.** The template rendered experience,
   skills, education and a blog but had no way to present *work* — the single most recruiter-facing
