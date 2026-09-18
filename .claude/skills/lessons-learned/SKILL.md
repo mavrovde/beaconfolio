@@ -904,6 +904,18 @@ steps ahead of it, because "before the push" in your plan is "never" in a denied
 blocked by dirt in the MAIN checkout. Before pushing from a worktree, the main checkout must be
 lint-clean too (or the in-progress work there stashed).
 
+**Input corollary — the deny also destroys the gated command's INPUT, and that misdirects the
+retry (v1.15.0, PR #437).** The chain was
+`cat > "$TMPDIR/v437.md" <<'EOF' … EOF && gh pr comment 437 --body-file "$TMPDIR/v437.md" && gh pr merge 437 …`.
+`pre-merge-gate.sh` denied it (no verdict was posted yet — correctly, that was the point of the
+chain), so per the rule above **nothing ran**: the verdict was never posted *and the heredoc that
+created the file never executed*. The retry then failed with `no such file or directory`, which
+reads like a filesystem problem and sends you looking in the wrong place — the actual cause was
+three commands earlier. So: **the artefact a gated command consumes must already exist before you
+compose the gated command.** Write the file in its own call, confirm it (`wc -l`), then run the
+gated command alone. Same shape as §26's "re-verify state after a deny" — the state to re-verify
+includes the files the chain was supposed to produce, not just git's.
+
 ## 40. A knob the docs PROMISE is not a knob the container RECEIVES (v1.13.0)
 
 Neither compose file uses `env_file:`; each service carries an explicit `environment:` **allowlist**.

@@ -24,6 +24,21 @@ Keep only PRs merged inside the window. Note which issues they closed.
 
 ## 2. Gather the evidence (do NOT skip to conclusions)
 
+**First, the numbers — run the instrument, don't hand-count:**
+
+```bash
+scripts/retro_metrics.sh <prev-tag> <release-PR-number>   # e.g. v1.14.3 436
+```
+
+It prints the corpus, median files/PR, canonical verdicts (heading-anchored AND replayed at
+`mergedAt`), mean rounds, round-1 approvals and rework share, with the bounding rules from
+`docs/retrospectives/README.md` encoded rather than re-remembered. Eyeball the corpus it prints
+against `git log --oneline <prev-tag>..HEAD` before using a single figure — the two known
+asymmetries (a PR whose merge commit IS the previous tag; a PR merged between the tagged commit
+and the tag's creation) are the only things it cannot decide for you. Everything it prints is
+quotable in the record; anything it does not print — class counts, severities, AC analysis — is
+still read by hand from the threads.
+
 For every PR in the window:
 
 ```bash
@@ -32,8 +47,12 @@ gh pr view <n> --repo mavrovde/beaconfolio --json title,body,reviews,labels \
 ```
 
 For every closed issue: its body (acceptance criteria) and its close-the-loop comment.
-From **GitHub Project 3**: `Tokens (k)`, `Time of processing (min)`, `Review rounds`, `Agent`,
-`Model` per item.
+From **GitHub Project 3**: `Review rounds`, `Agent`, `Model` per item — and say plainly how many
+items carry each. **`Tokens (k)` and `Time of processing (min)` were RETIRED from the trend table
+at v1.15.0** after four consecutive releases in which they were unrecorded, partial, or estimated;
+do not reinstate a column by summing a gap (see `docs/retrospectives/README.md` note 21). If a
+cycle DOES capture per-run effort end-to-end, publish it as that release's own appendix — the way
+v1.14.1 did — not as a series column.
 
 The review bodies are the richest signal in the repository. Read them, not their summaries.
 

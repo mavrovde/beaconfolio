@@ -97,7 +97,7 @@ out=$(run_check "$D"); rc=$?
 
 # ...and the WRITE side must leave the nested literal alone.
 D=$(mktemp -d); make_fixture "$D" 1.9.0
-(cd "$D" && ./bump_version.sh --patch > /dev/null 2>&1)
+(cd "$D" && RELEASE_QUEUE_GATE=0 ./bump_version.sh --patch > /dev/null 2>&1)
 if grep -q 'version="0.0.9"' "$D/backend/app/main.py" \
    && grep -q '^    version="1.9.1"' "$D/backend/app/main.py"; then
     ok "bump rewrites the app version and leaves the nested literal intact"
@@ -157,7 +157,7 @@ cat > "$D/CHANGELOG.md" <<'MD'
 
 ## [0.0.1] - 2020-01-01
 MD
-(cd "$D" && ./bump_version.sh --minor > /dev/null 2>&1)
+(cd "$D" && RELEASE_QUEUE_GATE=0 ./bump_version.sh --minor > /dev/null 2>&1)
 body=$(cd "$D" && sed -n '/^## \[1.10.0\]/,/^## \[0.0.1\]/p' CHANGELOG.md)
 unrel=$(cd "$D" && sed -n '/^## \[Unreleased\]/,/^## \[1.10.0\]/p' CHANGELOG.md)
 if printf '%s' "$body" | grep -q 'A real feature' \
@@ -200,7 +200,7 @@ cat > "$D/CHANGELOG.md" <<'MD'
 ## [0.0.1] - 2020-01-01
 MD
 printf '1.9.0\n' > "$D/VERSION"
-(cd "$D" && ./bump_version.sh --patch > /dev/null 2>&1)   # target 1.9.1 — already present
+(cd "$D" && RELEASE_QUEUE_GATE=0 ./bump_version.sh --patch > /dev/null 2>&1)   # target 1.9.1 — already present
 unrel=$(cd "$D" && sed -n '/^## \[Unreleased\]/,/^## \[1.9.1\]/p' CHANGELOG.md)
 if printf '%s' "$unrel" | grep -q 'A real unreleased feature' \
    && [ "$(cd "$D" && grep -c '^## \[1.9.1\]' CHANGELOG.md)" = "1" ]; then
@@ -212,10 +212,72 @@ fi
 # === 6. --dry-run must not modify anything ====================================
 D=$(mktemp -d); make_fixture "$D" 1.9.0
 before=$(cd "$D" && cat VERSION CHANGELOG.md)
-(cd "$D" && ./bump_version.sh --patch --dry-run > /dev/null 2>&1)
+(cd "$D" && RELEASE_QUEUE_GATE=0 ./bump_version.sh --patch --dry-run > /dev/null 2>&1)
 after=$(cd "$D" && cat VERSION CHANGELOG.md)
 [ "$before" = "$after" ] && ok "--dry-run leaves every carrier untouched" \
                          || bad "--dry-run leaves every carrier untouched"
+
+# === 7. the release-queue gate (v1.15.0 retro) ================================
+# A STUB `gh` on PATH, never the network: these cases must be hermetic, and a
+# test that silently depends on a live GitHub query is the fake-green class this
+# repo keeps paying for. The stub is what `gh issue list --jq` really returns:
+# one line per open issue, EMPTY (not "[]") when the queue is clear.
+stub_gh() {                      # $1 = fixture dir, $2 = stdout, $3 = exit code
+    mkdir -p "$1/stubbin"
+    cat > "$1/stubbin/gh" <<STUB
+#!/bin/bash
+printf '%s' "\$(cat <<'PAYLOAD'
+$2
+PAYLOAD
+)"
+exit $3
+STUB
+    chmod +x "$1/stubbin/gh"
+}
+
+# 7a. FAILING-FIRST: an open issue under release:vX.Y.Z must BLOCK the cut.
+D=$(mktemp -d); make_fixture "$D" 1.9.0
+stub_gh "$D" '  #70  Interview scheduling & calendar integration' 0
+out=$(cd "$D" && PATH="$D/stubbin:$PATH" ./bump_version.sh --patch 2>&1); rc=$?
+if [ $rc -ne 0 ] && printf '%s' "$out" | grep -q 'REFUSING to cut 1.9.1' \
+   && printf '%s' "$out" | grep -q '#70' \
+   && [ "$(tr -d '[:space:]' < "$D/VERSION")" = "1.9.0" ]; then
+    ok "release-queue gate blocks a cut with an open release:vX.Y.Z issue (and writes nothing)"
+else
+    bad "release-queue gate blocks a cut with an open release:vX.Y.Z issue" "rc=$rc out=$out"
+fi
+
+# 7b. an EMPTY queue must let the cut through, and say it checked.
+D=$(mktemp -d); make_fixture "$D" 1.9.0
+stub_gh "$D" '' 0
+out=$(cd "$D" && PATH="$D/stubbin:$PATH" ./bump_version.sh --patch 2>&1); rc=$?
+if [ $rc -eq 0 ] && printf '%s' "$out" | grep -q "empty (checked)" \
+   && [ "$(tr -d '[:space:]' < "$D/VERSION")" = "1.9.1" ]; then
+    ok "release-queue gate passes on an empty queue and reports that it checked"
+else
+    bad "release-queue gate passes on an empty queue" "rc=$rc out=$out"
+fi
+
+# 7c. a FAILING query fails OPEN — but must never read as "the queue is empty".
+D=$(mktemp -d); make_fixture "$D" 1.9.0
+stub_gh "$D" '' 1                       # gh present, query fails (offline / unauthenticated)
+out=$(cd "$D" && PATH="$D/stubbin:$PATH" ./bump_version.sh --patch 2>&1); rc=$?
+if [ $rc -eq 0 ] && printf '%s' "$out" | grep -q 'UNVERIFIED' \
+   && ! printf '%s' "$out" | grep -q 'empty (checked)'; then
+    ok "release-queue gate fails OPEN on a failed query, and says UNVERIFIED not empty"
+else
+    bad "release-queue gate fails OPEN on a failed query" "rc=$rc out=$out"
+fi
+
+# 7d. the documented bypass really bypasses (it is the owner's de-scope path).
+D=$(mktemp -d); make_fixture "$D" 1.9.0
+stub_gh "$D" '  #70  Interview scheduling & calendar integration' 0
+out=$(cd "$D" && PATH="$D/stubbin:$PATH" RELEASE_QUEUE_GATE=0 ./bump_version.sh --patch 2>&1); rc=$?
+if [ $rc -eq 0 ] && [ "$(tr -d '[:space:]' < "$D/VERSION")" = "1.9.1" ]; then
+    ok "RELEASE_QUEUE_GATE=0 cuts past a non-empty queue"
+else
+    bad "RELEASE_QUEUE_GATE=0 cuts past a non-empty queue" "rc=$rc out=$out"
+fi
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

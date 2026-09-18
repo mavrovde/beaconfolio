@@ -22,7 +22,23 @@ optional extra. `release-manager` does not report a release complete without it.
 
 ## Inputs — gather before analysing
 
-Everything here is evidence, not opinion. Collect it first, then reason.
+**Run `scripts/retro_metrics.sh <prev-tag> <release-PR>` FIRST.** It is the instrument for every
+headline figure this document asks for — corpus, median files/PR, canonical verdicts, mean rounds,
+round-1 approvals, rework share — with the three bounding rules that have each cost a release
+already baked in (bound on the release PR's `mergedAt`; normalise to UTC; replay every verdict at
+`mergedAt`). Paste its output into the working notes and quote it; **do not re-derive the jq by
+hand.** Five consecutive retrospectives have found "a claim asserted rather than measured" as the
+top or joint-top defect class, and the instances are overwhelmingly hand-counted figures **in these
+very documents** — #430's blocker was a published "series' best rounds figure" that was false,
+#429's two majors were a wall-clock that did not reproduce and a headline verdict count produced by
+an undocumented filter. A figure an executable produces can be re-derived by the next reader; one
+you typed cannot.
+
+The script deliberately decides nothing and cannot see everything — the class counts, the AC
+analysis and the severity populations are still read by hand from the threads below, and it cannot
+distinguish an independent verdict from a self-review (same GitHub identity; see rule 13's
+disclosure requirement). Everything else here is evidence, not opinion. Collect it first, then
+reason.
 
 ```bash
 # The release's issues and PRs
