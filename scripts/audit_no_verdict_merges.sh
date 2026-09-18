@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# audit_no_verdict_merges.sh — find merged PRs that carry NO canonical review
-# verdict (#392, v1.14.1 retrospective change B).
+# audit_no_verdict_merges.sh — find merged PRs whose rule-13 gate did not
+# actually gate (#392, v1.14.1 retrospective change B; ORDERING added by #409).
 #
 #   bash scripts/audit_no_verdict_merges.sh [--since ISO8601] [--limit N]
 #   bash scripts/audit_no_verdict_merges.sh --fixture DIR        # test seam
@@ -13,8 +13,32 @@
 # here (owner and agents share one identity), so the web-UI path cannot be
 # hooked; it can only be DETECTED afterwards. This script is the detector, run
 # red-when-dirty by .github/workflows/verdict-audit.yml — the same alarm shape
-# as Live Freshness (a scheduled workflow that goes red whenever the invariant
-# is broken), because a red workflow gets looked at and a log line does not.
+# as Live Freshness (a scheduled workflow that is red whenever the invariant is
+# broken), because a red workflow gets looked at and a log line does not.
+#
+# ORDERING IS THE POINT, and for three releases it was missing (#409). The
+# first version asked only whether a merged PR CARRIES a verdict. A verdict
+# back-filled after the merge satisfied that exactly as well as a review that
+# gated it — so the v1.14.2 window, containing five zero-verdict merges and one
+# merge against a standing REQUEST CHANGES, was reported CLEAN. Measured: #394,
+# #395, #396, #397 and #403 merged 14:23:19-14:41:56Z with nothing posted
+# before `mergedAt`, and #402 merged 14:36:08Z over a `## ⛔ REQUEST CHANGES —
+# round 1` from 13:34:49Z; all six then received `APPROVE — retrospective
+# review (round 1)` between 15:45:11Z and 15:45:30Z. A retrospective verdict is
+# an honest fix-forward record and it is NOT a gate; a detector that cannot
+# tell the two apart reports a release as reviewed when it was not.
+#
+# So a PR is judged on the NEWEST verdict posted at or before `mergedAt`, and
+# the two failure shapes are reported DISTINCTLY, because they call for
+# different actions:
+#   NO-VERDICT  — nothing gated the merge at all (post a retrospective review).
+#   UNAPPROVED  — the newest pre-merge verdict was REQUEST CHANGES: the gate
+#                 ran, said no, and the merge happened anyway. No prior release
+#                 had this shape and nothing detected it before #409.
+# Verdicts posted AFTER the merge are surfaced as an informational `back-filled`
+# note. Never as a pass — that is the bug this replaces — and never as a
+# violation of its own: back-filling is the right thing to do once the merge has
+# already happened.
 #
 # THE VERDICT DEFINITION MIRRORS pre-merge-gate.sh EXACTLY (#399 review,
 # major 5 — the first draft claimed to inherit it and silently dropped two
@@ -25,18 +49,30 @@
 # Reviews AND issue comments count (same-identity repos post comment
 # verdicts). Known hole, footnoted in docs/retrospectives/README.md: position
 # is not authorship. One jq expression; change it beside the gate's or not at
-# all. One deliberate omission from the gate's expression: `.at != null` — the
-# gate orders candidates by time to find the NEWEST verdict; this detector
-# asks only whether ANY verdict exists, so recency plays no part.
+# all. Since #409 the gate's `.at != null` clause is inherited too — this
+# detector now orders by time, so an undated body cannot be placed relative to
+# the merge and must not be counted.
 #
-# Exit: 0 = every merged PR in the window carries a verdict; 1 = at least one
-# does not (each is printed); 2 = cannot measure (API/jq failure) — fail LOUD,
-# never silently green (the #398 lesson: a check that skips is a fake green).
+# APPROVE-vs-REQUEST-CHANGES is decided by the FIRST marker in the heading, not
+# by "does the heading contain REQUEST CHANGES" — mirroring the gate's
+# `grep -oiE 'REQUEST CHANGES|APPROVED?' | head -1`. Review threads routinely
+# approve while naming the round they supersede ("the REQUEST CHANGES findings
+# are fixed"), and a contains-test would score that heading UNAPPROVED.
+#
+# Timestamps are compared as ISO-8601 strings, which is only valid because the
+# GitHub API returns them Z-normalised and fixed-width. Feed this local-offset
+# times and the comparison is nonsense — normalise first (scripts/retro_metrics.sh
+# does the same and says so).
+#
+# Exit: 0 = every merged PR in the window was gated; 1 = at least one was not
+# (each is printed); 2 = cannot measure (API/jq failure) — fail LOUD, never
+# silently green (the #398 lesson: a check that skips is a fake green).
 set -u
 
 SINCE=""
 LIMIT=40
 FIXTURE=""
+ACK_FILE="$(cd "$(dirname "$0")" && pwd)/verdict-audit-acknowledged.txt"
 while [ $# -gt 0 ]; do
   case "$1" in
     --since)   [ $# -ge 2 ] || { echo "audit: --since needs a value — cannot measure" >&2; exit 2; }
@@ -51,41 +87,135 @@ while [ $# -gt 0 ]; do
     --limit)   [ $# -ge 2 ] || { echo "audit: --limit needs a value — cannot measure" >&2; exit 2; }
                LIMIT="$2"; shift 2 ;;
     --fixture) FIXTURE="$2"; shift 2 ;;
+    --ack)     [ $# -ge 2 ] || { echo "audit: --ack needs a value — cannot measure" >&2; exit 2; }
+               ACK_FILE="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 
 REPO="mavrovde/beaconfolio"
 
-# has_verdict <json-file> — the canonical first-non-empty-line filter over the
-# union of review bodies and comment bodies. jq does the line work so the
-# definition lives in ONE expression.
-has_verdict() {
-  jq -e '
-    ([(.reviews // [])[]  | {body: (.body // ""), assoc: (.authorAssociation // "NONE")}]
-     + [(.comments // [])[] | {body: (.body // ""), assoc: (.authorAssociation // "NONE")}])
-    | map(select(.assoc == "OWNER" or .assoc == "MEMBER" or .assoc == "COLLABORATOR"))
-    | map(
-        .body | split("\n")
-        | map(select((. | gsub("^\\s+|\\s+$";"")) != ""))
-        | first // ""
-      )
-    | any(test("APPROVE|APPROVED|REQUEST CHANGES"; "i"))
-  ' "$1" >/dev/null 2>&1
+# --- acknowledged violations (#409) -----------------------------------------
+# Merges already on the record, named ONE BY ONE in scripts/verdict-audit-acknowledged.txt.
+# Making the audit order-aware turned the cutover window from "clean" into seven
+# real violations that cannot be repaired — back-filling is explicitly not a
+# gate. Without a ledger the workflow would be red forever, and a permanently
+# red alarm is a disabled alarm: the exact failure this control exists to avoid.
+#
+# NOT a date amnesty. Moving --since forward would hide every violation in the
+# range, including ones nobody has read; this hides exactly the PRs listed, so a
+# NEW violation in the SAME window still goes red.
+#
+# A missing/unreadable file yields an EMPTY ledger — the audit can only get
+# redder, never greener, if it disappears. That polarity is deliberate.
+ACK=""
+if [ -r "$ACK_FILE" ]; then
+  ACK=" $(sed -e 's/#.*$//' "$ACK_FILE" | awk '{print $1}' | grep -E '^[0-9]+$' | tr '\n' ' ')"
+fi
+is_acknowledged() { case "$ACK" in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
+ACKED=0   # counted so the summary line cannot claim every PR was gated
+
+# summarise <where> <checked-or-empty> — the all-clear line. It must NOT say
+# "all … were gated" when some were merely acknowledged: an acknowledged PR was
+# NOT gated, and a summary that blurs the two is the "claim asserted rather than
+# measured" defect this repository keeps paying for. Green here means "nothing
+# NEW is wrong", which is a different sentence and has to read like one.
+summarise() {
+  local where="$1" checked="$2" n
+  if [ "$ACKED" -gt 0 ]; then
+    if [ -n "$checked" ]; then
+      n=$((checked - ACKED))
+      echo "audit: $checked merged PR(s) in the $where — $n gated by a pre-merge verdict, $ACKED acknowledged (already on the record, NOT gated)"
+    else
+      echo "audit: no NEW violations in the $where — $ACKED acknowledged (already on the record, NOT gated)"
+    fi
+  elif [ -n "$checked" ]; then
+    echo "audit: all $checked merged PR(s) in the $where were gated by a pre-merge verdict"
+  else
+    echo "audit: every merged PR in the $where was gated by a pre-merge verdict"
+  fi
 }
 
-# --- test seam: a fixture dir of <n>.json files, each {number,title,reviews,comments}
+# classify <json-file> — prints "<STATUS>\t<back-filled count>" where STATUS is
+# APPROVED | UNAPPROVED | NONE, judged on the newest verdict at or before
+# .mergedAt. The line work lives in ONE jq expression so the definition cannot
+# drift between the two call sites (fixture and live).
+#
+# `.at <= $m` is deliberately inclusive: a verdict posted in the same second as
+# the merge counts as having gated it. The generous reading is the right one —
+# #315 (v1.14.0) merged two seconds BEFORE its delta-confirm was posted, and
+# second-level granularity cannot distinguish "posted as the merge landed" from
+# "posted just after". An inclusive bound is honest about that limit; it does
+# not admit the 15-45-minutes-later back-fills this script exists to catch.
+classify() {
+  jq -er '
+    def heading: (.body // "") | split("\n") | map(select(test("\\S"))) | (.[0] // "");
+    . as $pr
+    | ($pr.mergedAt) as $m
+    | [ (($pr.reviews  // [])[] | {at: .submittedAt, body: (.body // ""), assoc: (.authorAssociation // "NONE")}),
+        (($pr.comments // [])[] | {at: .createdAt,   body: (.body // ""), assoc: (.authorAssociation // "NONE")}) ]
+    | map(select(.at != null
+        and (.assoc == "OWNER" or .assoc == "MEMBER" or .assoc == "COLLABORATOR")
+        and (heading | test("APPROVE|APPROVED|REQUEST CHANGES"; "i"))))
+    | { pre: map(select(.at <= $m)), post: map(select(.at > $m)) }
+    | ((.pre | sort_by(.at) | last) // null) as $newest
+    | (if $newest == null then "NONE"
+       else ($newest | heading | [match("REQUEST CHANGES|APPROVED?"; "gi")] | (.[0].string // ""))
+            | (if test("APPROVE"; "i") then "APPROVED" else "UNAPPROVED" end)
+       end) as $status
+    | "\($status)\t\(.post | length)\t\($newest.at // "")"
+  ' "$1" 2>/dev/null
+}
+
+# report <json-file> <number> <title> <mergedAt> — prints any violation and any
+# informational note; returns 1 when the PR is a violation, 0 when it is clean.
+report() {
+  local f="$1" n="$2" title="$3" merged="$4" line status backfilled at rc=0
+  line="$(classify "$f")" || { echo "audit: could not classify PR #$n — cannot measure" >&2; exit 2; }
+  # Tab-separated, read explicitly: an invisible separator spelled out in a
+  # ${var%%...} pattern is unreadable and silently wrong if it ever becomes a space.
+  IFS=$'\t' read -r status backfilled at <<< "$line"
+  case "$status" in
+    NONE)
+      echo "NO-VERDICT merged PR #$n: $title (merged $merged)"; rc=1 ;;
+    UNAPPROVED)
+      echo "UNAPPROVED merged PR #$n: $title (merged $merged; newest pre-merge verdict is REQUEST CHANGES, posted $at)"; rc=1 ;;
+    APPROVED) ;;
+    *) echo "audit: PR #$n classified as '$status' — cannot measure" >&2; exit 2 ;;
+  esac
+  # An acknowledged violation is still PRINTED — it never disappears from the
+  # report — it just does not turn the run red. The line above is what a reader
+  # sees; this one says why the exit code does not reflect it.
+  if [ "$rc" = 1 ] && is_acknowledged "$n"; then
+    echo "  ^ acknowledged in $(basename "$ACK_FILE") — on the record, not re-alarming"
+    ACKED=$((ACKED+1))
+    rc=0
+  elif [ "$rc" = 0 ] && is_acknowledged "$n"; then
+    echo "  note: PR #$n is acknowledged but is no longer a violation — remove the stale entry"
+  fi
+  # Informational, on a clean PR as well as a dirty one: a back-fill is the
+  # right response to an ungated merge, and seeing it beside the violation is
+  # what tells a reader the record was repaired rather than ignored.
+  [ "${backfilled:-0}" != 0 ] \
+    && echo "  note: PR #$n carries $backfilled verdict(s) posted AFTER the merge (back-filled — a record, not a gate)"
+  return "$rc"
+}
+
+# --- test seam: a fixture dir of <n>.json files, each
+#     {number,title,mergedAt,reviews,comments}. mergedAt is REQUIRED: without it
+#     nothing can be ordered, and a fixture that silently skipped the ordering
+#     check would be the exact hole #409 closes.
 if [ -n "$FIXTURE" ]; then
   DIRTY=0
   for f in "$FIXTURE"/*.json; do
     [ -e "$f" ] || { echo "audit: fixture dir empty — cannot measure" >&2; exit 2; }
     n="$(jq -r '.number' "$f")" || { echo "audit: bad fixture $f" >&2; exit 2; }
-    if ! has_verdict "$f"; then
-      echo "NO-VERDICT merged PR #$n: $(jq -r '.title // ""' "$f")"
-      DIRTY=1
-    fi
+    jq -e '(.mergedAt // null) | type == "string"' "$f" >/dev/null 2>&1 \
+      || { echo "audit: fixture $f has no mergedAt — cannot measure" >&2; exit 2; }
+    m="$(jq -r '.mergedAt' "$f")"
+    report "$f" "$n" "$(jq -r '.title // ""' "$f")" "$m" || DIRTY=1
   done
-  [ "$DIRTY" = 0 ] && echo "audit: every merged PR in the fixture carries a canonical verdict"
+  [ "$DIRTY" = 0 ] && summarise "fixture" ""
   exit "$DIRTY"
 fi
 
@@ -122,15 +252,14 @@ DIRTY=0
 CHECKED=0
 for n in $(printf '%s' "$LIST" | jq -r --arg since "$SINCE" \
              '.[] | select($since == "" or .mergedAt >= $since) | .number'); do
-  if ! gh pr view "$n" --repo "$REPO" --json number,title,reviews,comments > "$TMP/$n.json" 2>/dev/null \
-     || ! jq -e 'has("reviews") and has("comments")' "$TMP/$n.json" >/dev/null 2>&1; then
+  # mergedAt is fetched WITH the bodies rather than carried over from the list,
+  # so the timestamp and the things it orders come from one response.
+  if ! gh pr view "$n" --repo "$REPO" --json number,title,mergedAt,reviews,comments > "$TMP/$n.json" 2>/dev/null \
+     || ! jq -e 'has("reviews") and has("comments") and ((.mergedAt // null) | type == "string")' "$TMP/$n.json" >/dev/null 2>&1; then
     echo "audit: could not fetch PR #$n — cannot measure" >&2; exit 2
   fi
   CHECKED=$((CHECKED+1))
-  if ! has_verdict "$TMP/$n.json"; then
-    echo "NO-VERDICT merged PR #$n: $(jq -r '.title // ""' "$TMP/$n.json") (merged $(printf '%s' "$LIST" | jq -r --argjson n "$n" '.[] | select(.number == $n) | .mergedAt'))"
-    DIRTY=1
-  fi
+  report "$TMP/$n.json" "$n" "$(jq -r '.title // ""' "$TMP/$n.json")" "$(jq -r '.mergedAt' "$TMP/$n.json")" || DIRTY=1
 done
 
 if [ "$CHECKED" = 0 ]; then
@@ -138,6 +267,6 @@ if [ "$CHECKED" = 0 ]; then
   exit 0
 fi
 if [ "$DIRTY" = 0 ]; then
-  echo "audit: all $CHECKED merged PR(s) in the window carry a canonical verdict"
+  summarise "window" "$CHECKED"
 fi
 exit "$DIRTY"

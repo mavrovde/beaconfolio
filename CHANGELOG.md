@@ -14,8 +14,28 @@ All notable changes to this project will be documented in this file.
   than measured" has been the top or joint-top defect class in **five consecutive** retrospectives,
   and **5 of v1.15.0's 7 instances are hand-counted figures in the retro/wiki documents
   themselves**. Wired into `/retro` step 2 and the `release-retro` skill.
+- **`scripts/verdict-audit-acknowledged.txt` — a named ledger of rule-13 violations that already
+  happened.** Making the audit order-aware turned the cutover window from "clean" into seven real
+  violations that cannot be repaired, and a permanently red alarm is a disabled alarm. Each PR is
+  named individually with its shape and its retrospective write-up, rather than amnestied by moving
+  `--since` forward: a NEW violation in the SAME window still goes red, a missing ledger
+  acknowledges nothing, and acknowledged PRs are still printed in the report.
 
 ### Changed
+- **`scripts/audit_no_verdict_merges.sh` is ORDER-AWARE — a back-filled verdict no longer counts as
+  a gate (#409).** It asked only whether a merged PR *carries* a canonical verdict, so a review
+  posted after the merge satisfied it exactly as well as one that gated the merge: the v1.14.2
+  window, containing five zero-verdict merges and one merge against a standing REQUEST CHANGES,
+  was reported **clean**. A PR is now judged on the newest verdict posted at or before `mergedAt`,
+  and the two shapes are reported distinctly — `NO-VERDICT` (nothing gated it) and **`UNAPPROVED`**
+  (the gate ran, said no, and the merge happened anyway; nothing detected this shape before).
+  Post-merge verdicts are surfaced as an informational `back-filled` note, never as a pass. The
+  all-clear line now reads "N gated, M acknowledged" instead of claiming every PR was gated.
+  Self-test **35 passed**, mutation contract **18 killed / 0 survived / 0 invalid**; the eight new
+  cases were confirmed to fail against the pre-#409 script.
+- **The `Verdict Audit` workflow runs DAILY** (was Mondays only). A weekly alarm has up to seven
+  days of detection latency, and v1.14.2 opened and closed all six of its violations inside a
+  single cron interval — eight hours after the week's only run.
 - **`bump_version.sh` refuses to cut a release while its `release:vX.Y.Z` queue holds open
   issues.** v1.15.0 was assembled from `[Unreleased]` content and the label queue was never
   queried; the owner, not any gate, found #70/#265/#386 still labelled `release:v1.15.0` and open.
