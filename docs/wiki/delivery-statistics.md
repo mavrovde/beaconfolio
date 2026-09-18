@@ -1,60 +1,42 @@
-# Delivery statistics — three releases measured
+# Delivery statistics — reading one three-release window
 
-> **Status (2026-09-15): this page is a dated snapshot and is kept as one.** Its
-> window ends at v1.14.1; **v1.14.2 and v1.14.3 have shipped since**, and the series —
-> including how the plan in the second half of this page actually scored — continues
-> ONLY in the canonical sites: the trend table in
+> **The numbers are not here.** They are in
+> [the trend table](../retrospectives/README.md#the-trend-table), which is the one place
+> a release figure is written. This page is the *analysis* of the v1.13.0 → v1.14.1
+> window: what moved, why, and what was changed in response.
+
+> **Status (updated 2026-09-18): this page is the ANALYSIS of one window; the figures
+> live elsewhere.** Its window is v1.13.0 → v1.14.1. **Six releases have shipped since**
+> (v1.14.2, v1.14.3, v1.15.0, v1.15.1, v1.15.2 and counting), and the series — including
+> how the plan in the second half of this page actually scored — lives ONLY in the
+> canonical sites: the trend table in
 > [`docs/retrospectives/README.md`](../retrospectives/README.md) and the per-release
-> records ([v1.14.2](../retrospectives/v1.14.2.md), [v1.14.3](../retrospectives/v1.14.3.md)).
-> Figures are deliberately not refreshed here: restating series numbers outside the
-> canonical site is a counted defect class in this repository (the v1.14.1 retro PR
-> was blocked on 13 findings of exactly that shape —
-> [v1.14.2 §3](../retrospectives/v1.14.2.md)). See the outcome note at the end.
+> records in [`docs/retrospectives/`](../retrospectives/).
+>
+> **The metrics table that used to open this page has been DELETED, not refreshed.** It
+> restated ten rows the trend table already carries, and refreshing a restated figure
+> re-creates the copy the rule exists to remove. Restating series numbers outside the
+> canonical site is a counted defect class here: the v1.14.1 retro PR was blocked on 13
+> findings of exactly that shape ([v1.14.2 §3](../retrospectives/v1.14.2.md)), and the
+> v1.15.0 record found this page still carrying every one of them while a CHANGELOG entry
+> claimed otherwise ([v1.15.0 §3](../retrospectives/v1.15.0.md), finding 5). What stays
+> here is what exists nowhere else — the *reading* of that window: which PRs dominated the
+> cost, what the rounds figure was actually made of, and what was changed in response.
 
-What the last three releases actually cost, what moved, and why. Then the plan for
-the targets set on the next one.
+What one three-release window actually cost, what moved, and why. Then the plan for the
+targets set on the next one, and how it scored.
 
-Window: **v1.13.0 → v1.14.0 → v1.14.1**, measured 2026-09-14. Every figure here was
-produced by running the counting commands in
-[`docs/retrospectives/README.md`](../retrospectives/README.md) — not by reading an
-earlier summary. Where a number in an older document disagrees, this page says so and
-explains which is right.
+Window: **v1.13.0 → v1.14.0 → v1.14.1**, measured 2026-09-14.
+**→ The numbers for this window, and every window since, are in
+[the trend table](../retrospectives/README.md#the-trend-table).** Read them there; the
+counting conventions that produce them are in the same file, and since v1.15.0 they are
+executable (`scripts/retro_metrics.sh`).
 
-> **Why this page exists.** A single release's numbers mean almost nothing: mean
-> review rounds can halve because the team improved or because the work got easier,
-> and one data point cannot tell you which. Only a series separates the two, and only
-> if every release is counted the same way.
-
----
-
-## The table
-
-| Metric | v1.13.0 | v1.14.0 | v1.14.1 | Direction |
-|---|---|---|---|---|
-| PRs merged | 16 | 11 | **17** | — |
-| Canonical verdicts | 50 | 20 | **41** | — |
-| **Mean review rounds / PR** | 3.13 | 1.82 | **2.41** | ↗ worse than v1.14.0 |
-| **Round-1 approvals** | 0% (0/16) | 27% (3/11) | **29% (5/17)** | ↗ best in series |
-| Rework share of verdicts | 68% | 45% | **59%** | ↗ worse |
-| Median files / PR | 14 | 20 | **8** | ↘ smaller PRs |
-| **Merges on a stale approval** | not measured | **4 of 10** | **0 of 16**³ | ↘ **much better** |
-| PRs merged with no verdict at all | 0 | 1 (#321) | **1 (#355)** | flat |
-| Subagent tokens | not recorded | 8.38M¹ | **2.60M**² | — |
-| Agent-time | 23.5h tag→tag | 35.5h¹ | **6.0h**² | — |
-
-¹ Project 3 recorded fields, including one still-`In Progress` item whose host work has
-not shipped — the figure is not purely v1.14.0's delivered scope.
-² **Subagent runs only.** Main-loop tokens are not included, so the true cycle cost is
-higher. Not comparable with v1.14.0's number, which was collected differently. See
-[§ The cost columns are not yet a series](#the-cost-columns-are-not-yet-a-series).
-³ Measured over the 16 PRs that carried a verdict. Merge provenance is **not
-establishable** in this repository — every merge reports the same identity — so read
-this as "no merge that reached the gate carried an uncovered commit", not as proof that
-every merge reached it. #355 is direct evidence at least one did not.
-
-**Round-1 approvals rose in every release of the series — 0% → 27% → 29%**, while
-median PR size went **14 → 20 → 8** — a rise, then a fall to half where it started. That is the headline, and the next section is about
-why the other columns went the wrong way at the same time.
+> **Why the series exists.** A single release's numbers mean almost nothing: mean review
+> rounds can halve because the team improved or because the work got easier, and one data
+> point cannot tell you which. Only a series separates the two, and only if every release
+> is counted the same way. That is the trend table's job. This page's job is the second
+> half — *why* a column moved, which a table cannot say.
 
 ---
 
@@ -94,8 +76,9 @@ rule existed before; the hook is what made it true.
 
 ### What got worse, and the honest reason
 
-Mean rounds rose 1.82 → 2.41 and rework share 45% → 59%. Two contributions, and they
-are not equally flattering.
+Mean rounds and rework share both moved the wrong way from v1.14.0 to v1.14.1 (the two
+cells are in [the trend table](../retrospectives/README.md#the-trend-table)). Two
+contributions, and they are not equally flattering.
 
 **1. The material was harder — genuinely.** v1.14.1 was a security-and-hardening
 release. Its reviews caught a **live open redirect that survived three separate fixes
@@ -152,83 +135,68 @@ This is the one clause of v1.14.0's standing prediction that v1.14.1 does **not*
 satisfy. It is reported here rather than omitted, because a statistics page that only
 shows the columns that improved is advertising.
 
-### The cost columns are not yet a series
+### The cost columns were never a series — and were RETIRED at v1.15.0
 
-v1.13.0 recorded no tokens at all. v1.14.0's 8.38M comes from Project 3 fields and
-includes an item still in progress. v1.14.1's 2,600,168 was captured live from agent
-completion reports and covers **subagents only**; the per-run table is committed as an
-appendix to `docs/retrospectives/v1.14.1.md`, so it is the first cost figure in this
-series a reader can re-derive.
+Each release measured a different population: no capture at all, Project 3 fields
+including an unshipped item, a live subagent-only capture, partial coverage. Six
+releases, six meanings, which is not a series — so `Tokens`, `Tokens / merged PR` and
+`Agent-time` were **formally retired** as trend columns after a fourth consecutive
+failure of the clause that demanded they be filled. Historical cells stay as the record;
+new rows read `retired`. The reasoning, and what replaced them (PR count, verdict count,
+rounds, median files/PR, open→merge wall clock — all printed by
+`scripts/retro_metrics.sh`), is in
+[`docs/retrospectives/README.md` note 21](../retrospectives/README.md#the-trend-table).
+The one release with an end-to-end capture published it as its own appendix, which is now
+the sanctioned form: [v1.14.1's per-run table](../retrospectives/v1.14.1.md#appendix--per-run-effort-telemetry).
 
-**Do not read 8.38M → 2.60M as a 69% cost reduction.** They measure different
-populations. The columns stay because a series has to start somewhere, but the first
-release where two adjacent numbers are comparable is the next one — and that is itself
-a target below.
-
-One measurement rule was learned the hard way: **effort telemetry is not recoverable
-after the fact.** When a release manager was asked to reconstruct it, it correctly
-refused. It is captured during the cycle or it does not exist.
+One measurement rule was learned the hard way and outlived the columns: **effort
+telemetry is not recoverable after the fact.** When a release manager was asked to
+reconstruct it, it correctly refused. It is captured during the cycle or it does not
+exist.
 
 ---
 
 ## How these numbers are counted
 
-Briefly, because the conventions changed the headline more than once.
+**This page no longer restates the counting conventions.** They are the specification and
+they have exactly one home:
+[`docs/retrospectives/README.md` § How to count consistently](../retrospectives/README.md#how-to-count-consistently)
+— the corpus bound, the heading-anchored filter, the replay at `mergedAt`, the widened
+sweep, and the incident behind each. Since v1.15.0 they are also **executable**
+(`scripts/retro_metrics.sh <prev-release-PR> <release-PR>`), which is the point: a figure
+an executable produces can be re-derived by the next reader; one typed into a second
+document cannot. A copy of the conventions here would be one more thing to keep in sync,
+and this page is the evidence that it would not stay in sync.
 
-**A verdict is a posted body whose first non-empty line carries `APPROVE` or
-`REQUEST CHANGES`.** Position, not authorship — every agent here posts under the
-owner's identity, so an author's fix report and a reviewer's verdict cannot be told
-apart any other way. A loose full-body match returns **44** for this window against the
-canonical **41**. The three extras are *not* all author fix reports, which is worth
-stating precisely: one is (#371's `## All four blockers fixed, plus the majors`), one is a
-release-manager's review *request* (#385), and one is a close-the-loop comment (#355).
-
-**And the canonical filter has the same hole one level in.** Because it keys on position,
-it admits #373's author comment `## Round-2 APPROVE noted — and the head moved, so this
-needs a round 3` — a note that an approval no longer covered the head, counted as a
-verdict. Under the convention's own wording ("posted **review** bodies") the window is
-**40 / 2.35 / 58%**. The published figures keep 41 because that is what the documented
-filter returns as run; the discrepancy is recorded in `docs/retrospectives/README.md` so
-the next cycle fixes the filter instead of rediscovering it.
-
-**Run the widened sweep even when you expect nothing.** Every first line the matcher
-*rejected* was read for this window. It found **no missed verdict** — the rejects are
-author fix reports, Bandit/CodeQL bot messages, and a handful of **zero-length comment
-bodies** on #371 and #373, which appear as a blank first line and are not verdicts.
-That sweep is not optional theatre: at v1.13.0 it found two `## ⛔ REJECTED` verdicts in
-a since-retired heading format, which had hidden two real rounds and made that release
-look like it had one round-1 approval when the true figure was **0 of 16**.
-
-**Get the corpus right before blaming the matcher.** The corpus is every PR *merged
-between the tags*, not `git log <prev>..<tag>` — which cites issue numbers as well as
-PRs and sweeps in PRs merged before the previous tag. Both wrong published counts for
-v1.12.0 came from the corpus, not the regex. Four hand counts of that window (30, 32,
-34, 29) were reported and **none reproduced**; count by script.
-
-**A correction this page makes.** Issue #386 set the v1.14.2 KPI baseline at "2 of 13
-round-1 approvals (15%)" and "33 rounds / 13 PRs". Those were counted mid-cycle over a
-partial corpus. The canonical window figures are **5 of 17 (29%)** and **41 verdicts /
-17 PRs = 2.41**. The baseline in #386 has been corrected, because a target measured
-against the wrong baseline is worse than no target.
+**One correction this page originated, kept because it is about an issue rather than a
+cell.** Issue #386 set the v1.14.2 KPI baseline from a mid-cycle count over a partial
+corpus. The canonical window figures (in the trend table) are different, the baseline in
+#386 was corrected against them, and a target measured against the wrong baseline is
+worse than no target. #386 itself closed at v1.15.1 — resolved by the telemetry
+retirement above rather than by a fifth attempt
+([v1.15.0 §5](../retrospectives/v1.15.0.md), [v1.15.1 §1](../retrospectives/v1.15.1.md)).
 
 ---
 
 ## The plan for the KPIs
 
-Targets for v1.14.2 (issue **#386**), restated against the corrected baseline.
+The targets set for v1.14.2 on issue **#386**. The baseline column they were measured
+against is **not restated here** — read it in
+[the trend table](../retrospectives/README.md#the-trend-table)'s v1.14.1 row, which is
+where it is maintained.
 
-| Dimension | v1.14.1 (corrected) | v1.14.2 target |
-|---|---|---|
-| Mean review rounds / PR | **2.41** | ≤ 1.6 |
-| Round-1 approvals | **29%** | ≥ 50% |
-| PRs merged with no verdict | **1** | **0** |
-| Merges on a stale approval | **0** | **0** (hold) |
-| PRs consuming ≥4 verdicts | **2** | ≤ 1 |
-| Subagent tokens / merged PR | **~153k** (2.60M ÷ 17) | ≤ 120k |
-| Review share of agent spend | **81%** | ≤ 65% |
-| Docs-only push wall-clock | full gate, ~15 min | ≤ 2 min |
-| PR opened → first verdict | often hours | ≤ 30 min |
-| Fake-greens reaching review | **5** | 0 |
+| Dimension | v1.14.2 target |
+|---|---|
+| Mean review rounds / PR | ≤ 1.6 |
+| Round-1 approvals | ≥ 50% |
+| PRs merged with no verdict | **0** |
+| Merges on a stale approval | **0** (hold) |
+| PRs consuming ≥4 verdicts | ≤ 1 |
+| Subagent tokens / merged PR | ≤ 120k *(dimension retired at v1.15.0)* |
+| Review share of agent spend | ≤ 65% *(dimension retired at v1.15.0)* |
+| Docs-only push wall-clock | ≤ 2 min |
+| PR opened → first verdict | ≤ 30 min |
+| Fake-greens reaching review | 0 |
 
 ### What is actually being changed to hit them
 
@@ -290,17 +258,22 @@ Stated in advance so it cannot be rationalized afterwards.
     also stale merges. So round-1 approvals are read **beside the stale-approval
     count**, never alone.
   - Mean rounds can fall because PRs got trivially small. Median files/PR is published
-    beside it as the control; it already fell 20 → 8 this window.
+    beside it as the control, and it fell sharply in this window.
   - A no-verdict or stale-approval count can hit zero because merges stopped passing
     through the gate. Provenance is measured first; unmeasured merges are reported as
     unmeasured.
+  - *(A third falsifier was added at v1.15.1, by evidence this plan did not anticipate:
+    **mean rounds can fall because the reviewer is the author.** A finding an author
+    makes while re-reading their own diff becomes another commit before the verdict is
+    posted, so it costs no round at all. Read every rate beside the
+    `Non-independent verdicts` column — [v1.15.1 §4](../retrospectives/v1.15.1.md).)*
 
 ---
 
-## Outcome (added 2026-09-15 — links, not restated figures)
+## Outcome (updated 2026-09-18 — links, not restated figures)
 
-The plan above met two more releases. The short version, each claim sourced where the
-numbers live:
+The plan above has now met five more releases. The short version, each claim sourced
+where the numbers live:
 
 - **The mechanisms shipped.** #377's scoped pre-push gate landed at v1.14.2 (a
   docs-only push measured in seconds — timings in the
@@ -313,17 +286,28 @@ numbers live:
   verdicts landing pre-merge — though one PR (#412) merged with none at all
   — scored clause by clause in [v1.14.2 §6/§8](../retrospectives/v1.14.2.md) and
   [v1.14.3 §7/§8](../retrospectives/v1.14.3.md).
-- **The telemetry meta-target ("zero runs with unrecorded cost") failed both times**,
-  so "the first honestly comparable token figure" this page promised for v1.14.2 does
-  not exist; #386 stays open on that criterion alone, and the v1.14.3 prediction makes
-  the clause binary.
-- **The falsifiers earned their keep**: the "merges stopped passing through the gate"
-  clause is exactly what fired at v1.14.2 (six merges) and again, once, at v1.14.3
-  (#412).
+- **The telemetry meta-target ("zero runs with unrecorded cost") failed four times
+  running** — so "the first honestly comparable token figure" this page promised for
+  v1.14.2 does not exist and never will. The v1.14.3 prediction made the clause binary,
+  it failed a fourth time at v1.15.0, and the clause resolved as written: **the columns
+  were retired and #386 closed on that resolution**, at v1.15.1
+  ([v1.15.0 §5/§7](../retrospectives/v1.15.0.md),
+  [README note 21](../retrospectives/README.md#the-trend-table)).
+- **The falsifiers earned their keep, and kept earning it**: the "merges stopped passing
+  through the gate" clause fired at v1.14.2 and again, once, at v1.14.3 (#412); at
+  v1.15.0 the "reviewer is the author" confound appeared and is now a trend-table column
+  rather than a footnote.
+- **What the last three releases changed about the instrument, not the numbers**: the
+  retro's figures became executable (`scripts/retro_metrics.sh`, v1.15.0); the release cut
+  gained a queue gate and a previous-retrospective report (`bump_version.sh`, v1.15.0 and
+  v1.15.1); the rule-13 verdict audit became order-aware with a named acknowledgement
+  ledger (v1.15.1, #409); and a non-independent verdict must now disclose itself
+  (CLAUDE.md rule 13, v1.15.0 — measured at 9 of 9 across v1.15.1 and v1.15.2).
 
 ## Links
 
 [Team and process](team-and-process.md) · [`docs/retrospectives/`](../retrospectives/)
-(per-release records and counting conventions) · `CLAUDE.md` (the operative rules) ·
-Issues #386 (KPIs), #377 (scoped pre-push gate, shipped), #393 (mutation contracts,
-shipped), #409 (verdict-audit ordering/cadence, open).
+(per-release records, the trend table, and the counting conventions) · `CLAUDE.md` (the
+operative rules) · Issues #386 (KPIs, closed at v1.15.1 by the telemetry retirement),
+#377 (scoped pre-push gate, shipped), #393 (mutation contracts, shipped), #409
+(verdict-audit ordering/cadence, shipped at v1.15.1).

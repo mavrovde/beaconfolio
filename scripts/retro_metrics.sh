@@ -10,8 +10,19 @@
 # A number produced by an executable can be re-derived by anyone; a number typed by
 # hand cannot, and five releases of charter prose have not stopped the recurrence.
 #
-# Usage:  scripts/retro_metrics.sh <prev-tag> <release-pr-number>
-#   e.g.  scripts/retro_metrics.sh v1.14.3 436
+# Usage:  scripts/retro_metrics.sh <prev-tag | prev-release-PR> <release-pr-number>
+#   e.g.  scripts/retro_metrics.sh v1.14.3 436     (lower bound = the tag's commit date)
+#   e.g.  scripts/retro_metrics.sh 436 441         (lower bound = THAT PR's mergedAt)
+#
+# PREFER THE SECOND FORM. The tag form bounds the window on the previous tag's
+# COMMIT date, which is not the same instant as the previous release PR's merge: at
+# v1.15.1 the tag commit read 11:09:19Z and its own release PR #436 merged at
+# 11:09:20Z, so #436 — already counted by the v1.15.0 retro — appeared in v1.15.1's
+# corpus as a seventh PR. The header used to name that asymmetry and tell the reader
+# to eyeball it, which is precisely where a hand-correction re-enters a document
+# whose whole purpose is to remove hand-counted figures (class F). Passing the
+# previous release PR makes both edges the same kind of instant, measured the same
+# way, and the lower edge EXCLUSIVE.
 #
 # Bounding rules are encoded here rather than re-remembered each release
 # (docs/retrospectives/README.md notes 11-13): the corpus is bounded on the RELEASE
@@ -37,7 +48,7 @@ fi
 PREV="${1:-}"
 RELPR="${2:-}"
 if [ -z "$PREV" ] || [ -z "$RELPR" ]; then
-    echo "usage: $0 <prev-tag> <release-pr-number>" >&2
+    echo "usage: $0 <prev-tag | prev-release-PR> <release-pr-number>" >&2
     exit 1
 fi
 
@@ -50,16 +61,34 @@ if [ -z "$UPPER" ] || [ "$UPPER" = "null" ]; then
     exit 1
 fi
 
-# Lower bound: the previous tag's commit date, normalised to UTC. Note 11: a local
-# +02:00 stamp string-compared against a Z value silently mis-selects the corpus.
-LOWER="$(git log -1 --format=%cI "$PREV" | python3 -c 'import sys, datetime; print(datetime.datetime.fromisoformat(sys.stdin.read().strip()).astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))')"
+# Lower bound. Two forms, and they are NOT equivalent — see the header.
+#
+#   numeric $PREV -> the previous RELEASE PR's mergedAt, the same instant kind as
+#                    UPPER, and the bound is exclusive on both reads. Preferred.
+#   otherwise     -> the previous tag's commit date, normalised to UTC. Note 11: a
+#                    local +02:00 stamp string-compared against a Z value silently
+#                    mis-selects the corpus.
+case "$PREV" in
+    '' | *[!0-9]*)
+        LOWER="$(git log -1 --format=%cI "$PREV" | python3 -c 'import sys, datetime; print(datetime.datetime.fromisoformat(sys.stdin.read().strip()).astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))')"
+        BOUND_KIND="tag commit date"
+        ;;
+    *)
+        LOWER="$(gh pr view "$PREV" --repo "$REPO" --json mergedAt -q '.mergedAt')"
+        if [ -z "$LOWER" ] || [ "$LOWER" = "null" ]; then
+            echo "FATAL: PR #$PREV is not merged — no lower bound" >&2
+            exit 1
+        fi
+        BOUND_KIND="previous release PR mergedAt"
+        ;;
+esac
 
-echo "window: $PREV ($LOWER)  ->  PR #$RELPR ($UPPER)"
+echo "window: $PREV ($LOWER, $BOUND_KIND)  ->  PR #$RELPR ($UPPER)"
 echo
 
-# ALWAYS eyeball the corpus against `git log <prev>..<tag>`. Two known asymmetries:
-# a PR whose merge commit IS the previous tag belongs to the PREVIOUS release, and a
-# PR merged between the tagged commit and the tag's creation is dropped by LOWER.
+# ALWAYS eyeball the corpus against `git log <prev>..<tag>`. One asymmetry remains
+# in the TAG form and is the reason to prefer the PR form: a PR merged between the
+# tagged commit and the tag's creation is dropped by LOWER.
 echo "=== corpus (eyeball against: git log --oneline $PREV..HEAD) ==="
 CORPUS="$(gh pr list --repo "$REPO" --state merged --limit 100 \
     --json number,mergedAt,changedFiles,additions,deletions,createdAt \

@@ -184,6 +184,33 @@ All notable changes to this project will be documented in this file.
   reads. 16.89 kB of headroom keeps it able to fire on the next real growth; the 1 MB error ceiling
   is unchanged. Admin is unaffected at **438.96 kB**.
 
+### Changed
+- **The two missing release retrospectives (v1.15.1, v1.15.2) are written, and the instrument that
+  produces their figures was fixed first.** Rule 8 makes a retrospective a release step; both
+  releases shipped without one, and the v1.15.2 review thread had already named the gap. Writing
+  them exposed a defect in `scripts/retro_metrics.sh`: the window's lower bound was the previous
+  TAG's commit date, which lands one second *before* the previous release PR's merge, so that PR —
+  already counted by its own release — reappeared in the next release's corpus. The bound is now
+  the previous release PR's `mergedAt` when a PR number is given (a tag or ref still works, and
+  still bounds on the commit date, so every earlier invocation reproduces); the printed window
+  states which of the two it used. Re-measured, v1.15.0's published row reproduces exactly.
+- **Release figures are no longer restated in the wiki articles.** `docs/wiki/delivery-statistics.md`
+  carried a ten-row copy of the trend table and `docs/wiki/team-and-process.md` carried two prose
+  figures; all three were stale, and one — "mean rounds have stayed above 1.8 in every release
+  measured" — was falsified by this PR's own measurement of **1.00** in both new windows. They are
+  **deleted and linked**, not refreshed: refreshing a copy recreates the same defect on a
+  one-release fuse. The articles keep the analysis and lose the numbers.
+- **`bump_version.sh` reports whether the previous release's retrospective exists**, and the line
+  lands in the release PR body where the merge reviewer reads it. It reports and never refuses — a
+  missing retrospective must not block a hotfix — and `RELEASE_RETRO_GATE=0` silences it for a cut
+  that is deliberately ahead of the write-up. Four cases in `test-bump-version.sh` pin it,
+  including that it keys on the *previous* version rather than the new one.
+- **`lessons-learned` §79 — apply your PR's own argument to your PR's own file.** Two of this
+  window's defects were the PR's thesis not applied to the second instance in the same file: #439
+  argued that a permanently red alarm is a disabled alarm while adding a `--limit 100` truncation
+  that the measured 39-PR-per-fortnight rate would have tripped within one, and #425's correction
+  landed on one of two surfaces. The entry gives the three greps that find the second instance.
+
 ## [1.15.2] - 2026-09-18
 
 ### Changed

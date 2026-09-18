@@ -279,6 +279,63 @@ else
     bad "RELEASE_QUEUE_GATE=0 cuts past a non-empty queue" "rc=$rc out=$out"
 fi
 
+# === 8. the previous-release retrospective report (v1.15.1 retro) =============
+# It REPORTS, it never refuses — a missing retrospective must not block a hotfix,
+# and the retro for release N is legitimately written after N is cut. So every
+# case here asserts the cut still SUCCEEDS; what is under test is whether the
+# line the release PR body quotes can be told apart from a passing check.
+# The fixture has no docs/ tree, so "missing" is the default state and "present"
+# is created explicitly — failing-first without a mutation.
+
+# 8a. FAILING-FIRST: no retrospective for the CURRENT version -> say MISSING,
+#     and still cut (the report must not become a second refusal).
+D=$(mktemp -d); make_fixture "$D" 1.9.0
+stub_gh "$D" '' 0
+out=$(cd "$D" && PATH="$D/stubbin:$PATH" ./bump_version.sh --patch 2>&1); rc=$?
+if [ $rc -eq 0 ] && printf '%s' "$out" | grep -q 'retrospective MISSING (docs/retrospectives/v1.9.0.md)' \
+   && [ "$(tr -d '[:space:]' < "$D/VERSION")" = "1.9.1" ]; then
+    ok "retro report names the PREVIOUS version's missing record, and does not block the cut"
+else
+    bad "retro report names the missing record without blocking" "rc=$rc out=$out"
+fi
+
+# 8b. the record exists -> "present", and the MISSING wording must NOT appear.
+#     Asserting both halves matters: a report that says "present" unconditionally
+#     passes 8b and is exactly the check-that-cannot-fail this repo counts.
+D=$(mktemp -d); make_fixture "$D" 1.9.0
+stub_gh "$D" '' 0
+mkdir -p "$D/docs/retrospectives"; printf '# Retrospective — v1.9.0\n' > "$D/docs/retrospectives/v1.9.0.md"
+out=$(cd "$D" && PATH="$D/stubbin:$PATH" ./bump_version.sh --patch 2>&1); rc=$?
+if [ $rc -eq 0 ] && printf '%s' "$out" | grep -q 'retrospective (docs/retrospectives/v1.9.0.md): present' \
+   && ! printf '%s' "$out" | grep -q 'MISSING'; then
+    ok "retro report reads 'present' only when the record actually exists"
+else
+    bad "retro report reads 'present' only when the record exists" "rc=$rc out=$out"
+fi
+
+# 8c. it reports on the PREVIOUS version, never the one being cut. A report keyed
+#     on $new_version would be MISSING forever and become noise nobody reads.
+D=$(mktemp -d); make_fixture "$D" 1.9.0
+stub_gh "$D" '' 0
+mkdir -p "$D/docs/retrospectives"; printf '# v1.9.1\n' > "$D/docs/retrospectives/v1.9.1.md"
+out=$(cd "$D" && PATH="$D/stubbin:$PATH" ./bump_version.sh --patch 2>&1); rc=$?
+if [ $rc -eq 0 ] && printf '%s' "$out" | grep -q 'v1.9.0.md' \
+   && ! printf '%s' "$out" | grep -q 'present'; then
+    ok "retro report keys on the PREVIOUS version, not the one being cut"
+else
+    bad "retro report keys on the previous version" "rc=$rc out=$out"
+fi
+
+# 8d. the documented silencer really silences (visible in history, like the other two).
+D=$(mktemp -d); make_fixture "$D" 1.9.0
+stub_gh "$D" '' 0
+out=$(cd "$D" && PATH="$D/stubbin:$PATH" RELEASE_RETRO_GATE=0 ./bump_version.sh --patch 2>&1); rc=$?
+if [ $rc -eq 0 ] && ! printf '%s' "$out" | grep -q 'retrospective'; then
+    ok "RELEASE_RETRO_GATE=0 silences the retro report entirely"
+else
+    bad "RELEASE_RETRO_GATE=0 silences the retro report" "rc=$rc out=$out"
+fi
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
 echo "All bump_version cases passed."

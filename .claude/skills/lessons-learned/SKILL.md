@@ -18,7 +18,10 @@ description: >-
   jsdom-never-applies-the-component-stylesheet trap, the conditional-`test.skip`-is-a-fake-green
   rule, the an-approval-covers-a-HEAD / a-branch-green-alone-can-break-on-the-MERGE rule (Alembic
   head forks), the one-machine-one-Docker-stack / concurrent-agents-need-their-own-worktree
-  constraint, and the an-`ENV=value`-prefix-is-command-text rule for every hook documenting a bypass.
+  constraint, the an-`ENV=value`-prefix-is-command-text rule for every hook documenting a bypass,
+  and the apply-your-own-PR's-argument-to-your-own-PR's-file rule (grep for the SECOND instance —
+  of the failure mode you are fixing, of an accidentally-right sort/regex, and of a claim you just
+  corrected on one surface of two).
   Grep it or load it when a task matches — it exists so
   fresh contexts and teammates don't re-research answers we already have.
 ---
@@ -2206,3 +2209,67 @@ SSR guarantee without handing route extraction a task it cannot finish.
 **Diagnosing the next one.** The abort names no file, so it reads like a toolchain fault. Follow
 lesson 13: build a clean `main` worktree first. That is what turned "the Angular builder is
 broken" into "our initializer is" in one step, after three fixes aimed at the wrong layer.
+
+---
+
+## 79. Your PR's own argument applies to your PR's own file — grep for the SECOND instance (#409/#439)
+
+**The incident.** #439 made `audit_no_verdict_merges.sh` order-aware and shipped the acknowledged-
+violations ledger. Its whole thesis, argued at length and correctly, is that **a permanently red
+alarm is a disabled alarm** — which is why the seven unrepairable historical violations are named
+one by one instead of amnestied by moving `--since`. In the same file it left `--limit 100` beside
+a `--since` pinned at the cutover and, by the workflow header's own rule, never moved forward. The
+audited window therefore only grows, and `--limit` is a truncation guard: the script exits 2
+("cannot measure") the moment the window fills it. Measured in review, not reasoned about:
+
+```
+$ gh pr list --state merged --limit 200 --search "merged:>=2026-09-14" --json mergedAt \
+    --jq '.[].mergedAt[0:10]' | sort | uniq -c
+  23 2026-09-14
+  10 2026-09-15
+   6 2026-09-18
+```
+
+**39 PRs already in a never-advancing window, against a limit of 100, at roughly 4/day** — and the
+cadence had just gone weekly → daily, multiplying how often a reader meets the resulting red. The
+alarm this PR made trustworthy would have become permanently red inside a fortnight. **The argument
+was right. It simply was not applied to the second instance in the same file.**
+
+**Why it survives review.** The argument and the oversight are in the same diff, so a reader who
+accepts the argument has already spent their scepticism. It is also structurally invisible to
+tests: nothing fails today, and the failing date is weeks out. And the author is the worst-placed
+person to notice, because they are re-reading the sentence they wrote rather than the code beside
+it. This is the class the v1.15.1 retrospective named **class T**.
+
+**The same window produced two neighbours worth recognising as the same family:**
+
+- **A control that is only ACCIDENTALLY right.** `retro_metrics.sh` printed its corpus with
+  `sort -n -k1.3`, which reads as "sort by the issue number" and is not — `-k1.3` keys on field 1
+  from *character 3*, so `#429` sorts on `29`. It ordered that window correctly only because
+  #429–#436 share their first two characters:
+  `printf '  #99\tx\n  #433\tx\n  #100\tx\n' | sort -n -k1.3` puts `#99` **last**. The case that
+  distinguishes right from wrong did not occur in the window it was developed against.
+- **A correction applied to ONE surface of two.** #425's AC6 cited a `tsc` command that dies on
+  `TS5051` before type-checking anything; the criterion was amended in place with the real
+  invocation — and the *same issue's* "How to verify" step 5 kept the broken one. (Repeat offender:
+  v1.15.0 recorded this shape three times in one window.)
+
+**How to apply — three greps, before you request review.**
+
+1. **The thesis grep.** Write your PR's argument as one sentence ("X is a failure mode"). Then grep
+   the files you touched for the *other* instances of X. Not the codebase — the files in your own
+   diff are where the cost of missing one is highest and the excuse is thinnest.
+2. **The accident grep.** For any sort, slice, regex or index you introduce, construct an input
+   your window does not contain (a two-digit number beside a three-digit one; a nested `});`; an
+   empty list) and run it. A control that is right for the wrong reason is a control that will be
+   wrong later, silently.
+3. **The second-surface grep.** When you correct a claim, grep the *string you corrected* across the
+   repo and the linked issue before you call it fixed. A fact lives on more surfaces than you
+   remember writing it on — the PR body, the CHANGELOG, a docstring, an acceptance criterion, a
+   "how to verify" block.
+
+**And the limit that belongs beside the fix.** #439's `--limit` was raised to 400, but the durable
+half is that the *real* ceiling was written where the next reader meets it: the loop spends one
+`gh pr view` per in-window PR against roughly 1000 GraphQL calls/hour, so past ~900 the answer is a
+**bounded window**, not a bigger number. A magic number with its ceiling documented is a decision;
+one without is the next instance of this lesson.
