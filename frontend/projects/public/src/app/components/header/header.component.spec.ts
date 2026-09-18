@@ -50,13 +50,17 @@ describe('HeaderComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('should have 8 nav items', () => {
-    expect(component.navItems.length).toBe(8);
+  it('should have 9 nav items', () => {
+    expect(component.navItems.length).toBe(9);
   });
 
   it('should render navigation links', () => {
     const navLinks = fixture.debugElement.queryAll(By.css('nav a'));
-    expect(navLinks.length).toBe(8);
+    // Tied to `navItems` rather than to a repeated literal: the literal was
+    // stated twice and #92's insertion moved only one of them, so the suite
+    // reported a count mismatch in the RENDER while the model's own count test
+    // had already been updated.
+    expect(navLinks.length).toBe(component.navItems.length);
   });
 
   it('should NOT have border-terminal on the header', () => {
@@ -100,8 +104,14 @@ describe('HeaderComponent', () => {
   });
 
   it('should have correct properties in navItems', () => {
-    expect(component.navItems[0]).toEqual({ labelKey: 'NAV.BLOG', href: '#blog' });
-    expect(component.navItems[5]).toEqual({ labelKey: 'NAV.CV', href: '/cv' });
+    // Asserted BY CONTENT, not by index. These were `navItems[0]` / `navItems[5]`
+    // until #92 inserted Projects at position 1 and shifted every entry after it,
+    // which failed three assertions that had no opinion about Projects at all.
+    // The positions are not the contract; the presence and the hrefs are.
+    expect(component.navItems).toContainEqual({ labelKey: 'NAV.BLOG', href: '#blog' });
+    expect(component.navItems).toContainEqual({ labelKey: 'NAV.PROJECTS', href: '/projects' });
+    expect(component.navItems).toContainEqual({ labelKey: 'NAV.CV', href: '/cv' });
+    // The LLM entry stays last deliberately, so this one really is positional.
     expect(component.navItems[component.navItems.length - 1]).toEqual({ labelKey: 'NAV.LLM', href: '/llm' });
   });
 

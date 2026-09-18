@@ -1,0 +1,121 @@
+@if (standalone) {
+  <app-header></app-header>
+}
+
+<!--
+  One card list, two entry points. The standalone route resolves its own
+  observable; embedded on home the list comes from the profile the page already
+  holds. `@empty` is the "projects omitted or empty" criterion: the demo ships an
+  empty array today, so this is the DEFAULT path, not an edge case.
+-->
+@if (standalone) {
+  <section id="projects" class="py-20 bg-black min-h-screen" data-testid="projects-page">
+    <div class="container mx-auto px-6">
+      <h2 class="text-2xl font-bold mb-16 text-secondary font-mono">
+        {{ 'SECTION.PROJECTS' | translate }}
+      </h2>
+      @if (projects$ | async; as projects) {
+        <div class="grid md:grid-cols-2 gap-8 max-w-6xl mx-auto">
+          @for (project of projects; track project.slug) {
+            <ng-container *ngTemplateOutlet="card; context: { $implicit: project }"></ng-container>
+          } @empty {
+            <p class="text-muted font-mono" data-testid="projects-empty">
+              {{ 'PROJECTS.EMPTY' | translate }}
+            </p>
+          }
+        </div>
+      }
+    </div>
+  </section>
+} @else if (embeddedProjects.length) {
+  <!--
+    Embedded: render NOTHING when there are no projects — not an empty-state
+    message. A "no projects yet" band on a stranger's portfolio home page is
+    worse than the section simply not existing, and the criterion asks for the
+    section to be hidden.
+  -->
+  <section id="projects" class="py-20 bg-black" data-testid="projects-section">
+    <div class="container mx-auto px-6">
+      <h2 class="text-2xl font-bold mb-16 text-secondary font-mono">
+        {{ 'SECTION.PROJECTS' | translate }}
+      </h2>
+      <div class="grid md:grid-cols-2 gap-8 max-w-6xl mx-auto">
+        @for (project of embeddedProjects; track project.slug) {
+          <ng-container *ngTemplateOutlet="card; context: { $implicit: project }"></ng-container>
+        }
+      </div>
+      <div class="mt-12 text-center">
+        <a
+          routerLink="/projects"
+          class="text-primary hover:underline font-mono"
+          data-testid="projects-all-link">
+          {{ 'PROJECTS.VIEW_ALL' | translate }} &gt;
+        </a>
+      </div>
+    </div>
+  </section>
+}
+
+<ng-template #card let-project>
+  <article
+    class="p-6 border border-terminal bg-black hover:border-primary transition-colors flex flex-col"
+    data-testid="project-card">
+    @if (project.image) {
+      <img
+        [src]="project.image"
+        [alt]="project.title"
+        class="w-full h-40 object-cover mb-4 border border-terminal" />
+    }
+    <h3 class="text-lg font-bold text-primary mb-2 font-mono">
+      <a [routerLink]="['/projects', project.slug]" class="hover:underline">{{ project.title }}</a>
+    </h3>
+    @if (project.role || period(project)) {
+      <p class="text-sm text-muted font-mono mb-3">
+        @if (project.role) {
+          <span>{{ project.role }}</span>
+        }
+        @if (project.role && period(project)) {
+          <span> · </span>
+        }
+        @if (period(project)) {
+          <span>[{{ period(project) }}]</span>
+        }
+      </p>
+    }
+    @if (project.summary) {
+      <p class="text-secondary font-mono mb-4 flex-grow">{{ project.summary }}</p>
+    }
+    @if (project.techStack.length) {
+      <ul class="flex flex-wrap gap-2 mb-4" data-testid="project-stack">
+        @for (tech of project.techStack; track tech) {
+          <li
+            class="text-xs text-terminal-dim border border-terminal-dim px-2 py-0.5 rounded-sm font-mono">
+            {{ tech }}
+          </li>
+        }
+      </ul>
+    }
+    <div class="flex gap-4 font-mono text-sm">
+      @if (project.links.source) {
+        <a
+          [href]="project.links.source"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-primary hover:underline"
+          data-testid="project-source">
+          {{ 'PROJECTS.SOURCE' | translate }}
+        </a>
+      }
+      @if (project.links.demo) {
+        <a
+          [href]="project.links.demo"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-primary hover:underline"
+          data-testid="project-demo">
+          {{ 'PROJECTS.DEMO' | translate }}
+        </a>
+      }
+    </div>
+  </article>
+</ng-template>

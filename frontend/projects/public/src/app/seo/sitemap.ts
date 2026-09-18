@@ -42,6 +42,11 @@ const MAX_POST_PAGES = 20;
 export const STATIC_ROUTES: readonly { path: string; changefreq: string; priority: string }[] = [
     { path: '/', changefreq: 'weekly', priority: '1.0' },
     { path: '/blog', changefreq: 'weekly', priority: '0.8' },
+    // #92. Priority matches /blog rather than /cv: "what I built" is the
+    // highest-signal surface for the recruiter this site is written for, and
+    // the list page is always reachable even when the profile carries no
+    // projects (it renders its own empty state).
+    { path: '/projects', changefreq: 'weekly', priority: '0.8' },
     { path: '/cv', changefreq: 'monthly', priority: '0.8' },
     { path: '/llm', changefreq: 'monthly', priority: '0.5' },
 ];

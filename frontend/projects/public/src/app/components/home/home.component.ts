@@ -8,6 +8,7 @@ import { HeaderComponent } from '../header/header.component';
 import { HeroComponent } from '../hero/hero.component';
 import { AboutComponent } from '../about/about.component';
 import { ExperienceComponent } from '../experience/experience.component';
+import { ProjectsComponent } from '../projects/projects.component';
 import { SkillsComponent } from '../skills/skills.component';
 import { EducationComponent } from '../education/education.component';
 // import { RecommendationsComponent } from '../recommendations/recommendations.component';
@@ -28,6 +29,7 @@ import { buildPersonSchema } from '../../seo/person-schema';
     HeroComponent,
     AboutComponent,
     ExperienceComponent,
+    ProjectsComponent,
     SkillsComponent,
     EducationComponent,
     // RecommendationsComponent,
@@ -47,6 +49,7 @@ import { buildPersonSchema } from '../../seo/person-schema';
           <!-- Other sections below -->
           <app-about [profile]="profile"></app-about>
           <app-experience [profile]="profile"></app-experience>
+          <app-projects [standalone]="false" [profile]="profile"></app-projects>
           <app-skills [profile]="profile"></app-skills>
           <app-education [profile]="profile"></app-education>
           <!-- <app-recommendations [profile]="profile"></app-recommendations> -->

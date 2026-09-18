@@ -9,7 +9,8 @@
     "CONTACT": "Contact",
     "LLM": "LLM",
     "CV": "CV",
-    "YEARS": "Years"
+    "YEARS": "Years",
+    "PROJECTS": "Projects"
   },
   "CV": {
     "TITLE": "Request CV",
@@ -49,7 +50,8 @@
     "RECOMMENDATIONS": "> Recommendations",
     "BLOG": "> Blog_Posts",
     "CONTACT": "> Contact_Info",
-    "HIRE_ME": "Hire me"
+    "HIRE_ME": "Hire me",
+    "PROJECTS": "Projects"
   },
   "COMMON": {
     "VIEW_CREDENTIAL": "[ View Credential ]",
@@ -135,5 +137,13 @@
     "OPEN": "Open to offers",
     "LISTENING": "Open to conversations",
     "NOT_LOOKING": "Not looking right now"
+  },
+  "PROJECTS": {
+    "EMPTY": "No projects published yet.",
+    "VIEW_ALL": "All projects",
+    "SOURCE": "Source",
+    "DEMO": "Live demo",
+    "BACK": "Back to projects",
+    "NOT_FOUND": "That project no longer exists."
   }
 }

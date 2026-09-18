@@ -36,6 +36,10 @@ export class HeaderComponent {
 
   navItems = [
     { labelKey: 'NAV.BLOG', href: '#blog' },
+    // A ROUTE, not a fragment: the section only exists on home when the profile
+    // carries projects, and the nav is rendered on every page. `/projects`
+    // always resolves; `#projects` would be a dead anchor on /cv and /blog.
+    { labelKey: 'NAV.PROJECTS', href: '/projects' },
     { labelKey: 'NAV.ABOUT', href: '#about' },
     { labelKey: 'NAV.EXPERIENCE', href: '#experience' },
     { labelKey: 'NAV.SKILLS', href: '#skills' },

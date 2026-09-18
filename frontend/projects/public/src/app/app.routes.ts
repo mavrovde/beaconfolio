@@ -24,6 +24,23 @@ export const routes: Routes = [
       ),
   },
   {
+    path: 'projects',
+    loadComponent: () =>
+      import('./components/projects/projects.component').then(
+        (m) => m.ProjectsComponent
+      ),
+  },
+  {
+    // Must follow `projects` — a literal segment and a parameterised one are
+    // matched in declaration order, so `:slug` declared first would swallow
+    // `/projects` itself.
+    path: 'projects/:slug',
+    loadComponent: () =>
+      import('./components/projects/project-detail/project-detail.component').then(
+        (m) => m.ProjectDetailComponent
+      ),
+  },
+  {
     // Tailored application link (#250) — one unlisted page per application.
     // Deliberately NOT in the sitemap (`seo/sitemap.ts` STATIC_ROUTES) and
     // disallowed in robots.txt: the slug is the only thing keeping it private.

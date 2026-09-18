@@ -28,6 +28,10 @@ own name and domain.
 
 **Portfolio**
 - **Modern Portfolio**: Showcase experience, skills, education, and recommendations
+- **Projects Showcase**: A `projects` array in your profile JSON becomes a home-page section,
+  a `/projects` list and a `/projects/:slug` detail page per project — title, summary, stack,
+  role, dates, screenshot and repo/demo links, each detail page emitting `SoftwareSourceCode`
+  (or `CreativeWork`) structured data. Omit the array and the section simply is not there.
 - **Multilingual**: Full support for English and German with real-time switching
 - **Blog with Semantic Search**: AI-powered content discovery using `nomic-embed-text` embeddings
 - **AI Tag Generation**: Auto-suggest tags for posts using a local `llama3.2:1b` model

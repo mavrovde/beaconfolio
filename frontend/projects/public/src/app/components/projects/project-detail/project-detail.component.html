@@ -1,0 +1,85 @@
+<app-header></app-header>
+
+<section class="py-20 bg-black min-h-screen">
+  <div class="container mx-auto px-6 max-w-4xl">
+    @if (project$ | async; as project) {
+      <article data-testid="project-detail">
+        <a routerLink="/projects" class="text-muted hover:text-primary font-mono text-sm">
+          &lt; {{ 'PROJECTS.BACK' | translate }}
+        </a>
+        <h1 class="text-3xl font-bold text-primary mt-6 mb-2 font-mono">{{ project.title }}</h1>
+        @if (project.role || period(project)) {
+          <p class="text-sm text-muted font-mono mb-8">
+            @if (project.role) {
+              <span>{{ project.role }}</span>
+            }
+            @if (project.role && period(project)) {
+              <span> · </span>
+            }
+            @if (period(project)) {
+              <span>[{{ period(project) }}]</span>
+            }
+          </p>
+        }
+        @if (project.image) {
+          <img
+            [src]="project.image"
+            [alt]="project.title"
+            class="w-full mb-8 border border-terminal" />
+        }
+        @if (project.summary) {
+          <p class="text-lg text-secondary font-mono mb-6">{{ project.summary }}</p>
+        }
+        @if (project.description) {
+          <p class="text-secondary font-mono whitespace-pre-line mb-8">{{ project.description }}</p>
+        }
+        @if (project.techStack.length) {
+          <ul class="flex flex-wrap gap-2 mb-8" data-testid="detail-stack">
+            @for (tech of project.techStack; track tech) {
+              <li
+                class="text-xs text-terminal-dim border border-terminal-dim px-2 py-0.5 rounded-sm font-mono">
+                {{ tech }}
+              </li>
+            }
+          </ul>
+        }
+        <div class="flex gap-6 font-mono">
+          @if (project.links.source) {
+            <a
+              [href]="project.links.source"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-primary hover:underline"
+              data-testid="detail-source">
+              {{ 'PROJECTS.SOURCE' | translate }}
+            </a>
+          }
+          @if (project.links.demo) {
+            <a
+              [href]="project.links.demo"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-primary hover:underline"
+              data-testid="detail-demo">
+              {{ 'PROJECTS.DEMO' | translate }}
+            </a>
+          }
+        </div>
+      </article>
+    } @else {
+      <!--
+        An unknown slug says so rather than redirecting: a stale bookmark or a
+        project removed from the profile should explain itself, not drop the
+        visitor somewhere else with no account of why.
+      -->
+      <div data-testid="project-missing">
+        <h1 class="text-2xl font-bold text-primary mb-4 font-mono">
+          {{ 'PROJECTS.NOT_FOUND' | translate }}
+        </h1>
+        <a routerLink="/projects" class="text-primary hover:underline font-mono">
+          &lt; {{ 'PROJECTS.BACK' | translate }}
+        </a>
+      </div>
+    }
+  </div>
+</section>

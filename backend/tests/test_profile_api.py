@@ -397,3 +397,98 @@ async def test_endpoint_serves_experience_newest_first(client: AsyncClient, db_s
         "Acme Cloud GmbH",
         "Globex Digital",
     ]
+
+
+# --- Projects: the NESTED public allowlist (#92) ------------------------------
+#
+# `projects` is hand-authored, not scraped, so an entry can carry anything the
+# forker's notes carried. The top-level allowlist admits the FIELD; these pin
+# that it does not admit the field's contents wholesale.
+
+
+def test_project_entries_are_stripped_to_the_nested_allowlist():
+    from app.api.profile import public_profile_view
+
+    view = public_profile_view(
+        {
+            "projects": [
+                {
+                    "title": "Beaconfolio",
+                    "summary": "A portfolio template",
+                    "techStack": ["Angular"],
+                    "links": {"source": "https://github.com/janedoe/b"},
+                    "clientContact": "someone@example.com",
+                    "internalNotes": "do not publish",
+                }
+            ]
+        }
+    )
+    assert view["projects"] == [
+        {
+            "title": "Beaconfolio",
+            "summary": "A portfolio template",
+            "techStack": ["Angular"],
+            "links": {"source": "https://github.com/janedoe/b"},
+        }
+    ]
+
+
+def test_project_links_are_stripped_to_source_and_demo():
+    from app.api.profile import public_profile_view
+
+    view = public_profile_view(
+        {
+            "projects": [
+                {
+                    "title": "Beaconfolio",
+                    "links": {
+                        "source": "https://github.com/janedoe/b",
+                        "demo": "https://example.com",
+                        "internalTracker": "https://jira.internal/PROJ-1",
+                    },
+                }
+            ]
+        }
+    )
+    assert view["projects"][0]["links"] == {
+        "source": "https://github.com/janedoe/b",
+        "demo": "https://example.com",
+    }
+
+
+def test_project_entry_without_links_gains_none():
+    """An absent `links` stays absent — the projection never invents a key."""
+    from app.api.profile import public_profile_view
+
+    view = public_profile_view({"projects": [{"title": "Bare"}]})
+    assert view["projects"] == [{"title": "Bare"}]
+
+
+def test_non_dict_project_entries_and_non_list_projects_pass_through():
+    from app.api.profile import public_profile_view
+
+    # A non-dict entry carries no hidden key to strip; the renderer drops it.
+    assert public_profile_view({"projects": ["nope", None, 7]})["projects"] == [
+        "nope",
+        None,
+        7,
+    ]
+    # A malformed upload is left visible rather than silently emptied here.
+    assert public_profile_view({"projects": {"not": "a list"}})["projects"] == {
+        "not": "a list"
+    }
+
+
+def test_projects_survive_the_top_level_allowlist_while_pii_does_not():
+    from app.api.profile import public_profile_view
+
+    view = public_profile_view(
+        {
+            "name": "Jane Doe",
+            "projects": [{"title": "Beaconfolio"}],
+            "phone": "+00 000 000",
+            "birthday": "1 January",
+        }
+    )
+    assert view["projects"] == [{"title": "Beaconfolio"}]
+    assert "phone" not in view and "birthday" not in view
