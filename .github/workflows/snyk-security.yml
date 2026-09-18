@@ -5,13 +5,25 @@
 # (scan quota only — rule 10: it never enters test/E2E stacks).
 name: Snyk Security
 
+# Deliberately NOT on `pull_request` (owner directive 2026-09-18). Snyk bills
+# `snyk test` / `snyk code test` against a monthly private-test quota, and a PR
+# trigger spends it on EVERY commit of EVERY open PR — the quota was exhausted
+# mid-v1.15.0 ("You have used your limit of private tests"), so the check went
+# red on quota rather than on a finding, which is a signal that means nothing
+# (the "normalised red" argument, lessons §64). The scan still gates what it is
+# for: it runs on the MERGE (push to `main`), weekly, and on demand. Neither
+# `snyk` nor `security/snyk (mavrovde)` is a required status check on `main`.
+#
+# NOTE — this only removes the WORKFLOW's PR run. The `security/snyk (mavrovde)`
+# check comes from the Snyk GitHub App and is configured at app.snyk.io
+# (Settings -> Integrations -> GitHub -> Pull request tests), not from this repo.
+# Turn it off there too, or the per-commit quota burn continues.
 on:
   push:
     branches: ["main"]
-  pull_request:
-    branches: ["main"]
   schedule:
     - cron: '17 4 * * 5'   # weekly, before the Friday container scan
+  workflow_dispatch:       # on-demand re-run without waiting for a merge or the cron
 
 permissions:
   contents: read

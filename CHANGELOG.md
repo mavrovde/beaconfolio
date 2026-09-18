@@ -5,7 +5,20 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- Placeholder for next release.
+
+### Changed
+- **Snyk no longer runs on every PR commit — it runs on the MERGE (owner directive 2026-09-18)** —
+  `snyk-security.yml`'s `pull_request` trigger billed `snyk test` / `snyk code test` against the
+  monthly private-test quota on every commit of every open PR. The quota ran out mid-v1.15.0, so
+  `security/snyk` and the `snyk` job reported red on **quota, not on a finding**, on six
+  consecutive PRs (#429/#430/#433/#434/#435/#436) — a check that is always red stops being a
+  signal (the "normalised red" argument, lessons §64). The scan keeps gating what rule 8 actually
+  asks of it: `push` to `main`, the weekly cron, and now `workflow_dispatch` for an on-demand run.
+  Measured before changing anything: the branch-protection API lists 14 required contexts and
+  **neither `snyk` nor `security/snyk (mavrovde)` is among them**, so no merge gate is weakened.
+  Repo-side only — the `security/snyk (mavrovde)` check is published by the Snyk **GitHub App**
+  and is configured at app.snyk.io, not from this repository; the workflow header records that so
+  the second half is not forgotten.
 
 ## [1.15.0] - 2026-09-18
 
