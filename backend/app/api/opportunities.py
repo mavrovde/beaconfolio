@@ -365,6 +365,13 @@ INTERACTION_TO_OPPORTUNITY_SOURCE = {
     "contact_form": "recruiter_outreach",
     "cv_request": "discovery",
     "booking": "discovery",
+    # A voice message (#264) is a recruiter reaching out in their own words —
+    # the same intent as the contact form, a different keyboard. Listed
+    # EXPLICITLY rather than left to the `.get(..., "recruiter_outreach")`
+    # fallback, because #278's whole point is that this table is the record of
+    # a deliberate decision per source, not of whichever default happens to
+    # be right this time.
+    "voice_message": "recruiter_outreach",
 }
 
 

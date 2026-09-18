@@ -35,10 +35,10 @@ own name and domain.
 - **Admin Dashboard**: Secure interface for managing posts (rich editor, drafting, publishing)
 
 **Job search** (v1.12.0)
-- **Recruiter inbox** (#69): every inbound touch — public contact form, CV requests — lands as one
-  indexable interaction with a status workflow (new → contacted → in_progress → closed) and an
-  email alert to the owner. The public write is rate-limited per client IP and normalized
-  server-side.
+- **Recruiter inbox** (#69): every inbound touch — public contact form, CV requests, **voice
+  messages** (#264) — lands as one indexable interaction with a status workflow (new → contacted
+  → in_progress → closed) and an email alert to the owner. The public writes are rate-limited per
+  client IP and normalized server-side.
 - **Opportunity pipeline** (#247 phase 1): a stage board (lead → … → closed), a notes timeline per
   opportunity, and one-click **promote** turning an inbox message into a pipeline card that keeps
   the original text as its first note.
@@ -755,6 +755,56 @@ the original always one click away and never modified in storage**. Local Ollama
 (nothing leaves your machine); your Gemini key upgrades it if configured. `TRANSLATION_ENABLED=false`
 turns the whole feature off cleanly.
 
+## 🎙️ Voice channel (#264) — backend
+
+A visitor can leave a **voice message** instead of typing: the browser records it
+(`MediaRecorder`, no telephony provider and no per-minute cost), the audio lands in the same
+inbox as everything else as `source=voice_message`, and it is transcribed **locally by
+faster-whisper inside the backend container** — no API key exists for this feature and no
+billable call is made anywhere (rule 10). The only network access is a **one-time** anonymous
+model download into the `whisper_models` volume, so a container restart never re-downloads it
+(the same pattern `ollama_data` gives Ollama's models).
+
+**Off by default.** `VOICE_MESSAGES_ENABLED=false` (the shipped default, and the prod-compose
+default) means the public endpoint 404s and no model is ever fetched. The dev compose stack turns
+it on.
+
+What the backend guarantees, each pinned by a test:
+
+| Guarantee | How |
+|---|---|
+| Intake never blocks on AI | transcription, notification and translation are background tasks; the 201 is returned after the DB commit |
+| A broken transcriber never costs a contact | the audio row + inbox row are already committed; the payload records `transcription: "failed"` and the message stays playable |
+| The size cap is real — and the APP owns it | bounded read of `VOICE_MESSAGE_MAX_BYTES + 1` bytes → `413`; nothing is stored. The proxy must stay out of this decision: nginx's default `client_max_body_size` is **1 MB**, below the cap, so `proxy/default.conf.template` sets it to `3m` on the public `/api/app/` location — raise it there first if you raise the cap, or callers get nginx's HTML `413` instead of the endpoint's JSON |
+| The duration cap is not the client's word | the endpoint checks the browser's `duration_s`, and the transcriber re-checks the **decoded** length before decoding any segments (2 MB of WebM/Opus is ~3 minutes, i.e. twice the cap) |
+| Abuse budget | `VOICE_RATE_LIMIT_REQUESTS`/`_WINDOW_SECONDS` per client IP (3/60s default — tighter than the contact form's 5/60s, because a voice message costs storage *and* CPU) |
+| The transcript is an ordinary message | it is written to `Interaction.message`, so the inbox list, promote-to-pipeline and #248's translation need no per-source special case |
+| Recruiter audio is private | playback is admin-only; there is no public route to the bytes |
+
+**Measured latency** — faster-whisper 1.2.1, model `base`, `compute_type=int8`, 14.6 s of
+recorded speech (172 KB of WebM/Opus), on an 8-core arm64 laptop:
+
+| What | Measured |
+|---|---|
+| Cold start, first ever call (model **download** + load) | 20.6 s |
+| Warm start (weights already in the `whisper_models` volume) | 0.31 s |
+| Transcription, first call | 1.88 s |
+| Transcription, subsequent calls | 1.09 s (≈0.075× real time) |
+
+So a 90-second message costs roughly 7 s of CPU on that host. **The small-VPS numbers are NOT
+these** — a 2-vCPU VPS is the target host class and must be re-measured there before raising
+`WHISPER_MODEL` above `base`; the shape to expect is the same (a one-time download, then a
+sub-second load and a fraction-of-real-time transcription), scaled by core count.
+
+**Deliberately deferred — PSTN / telephony (verdict dated 2026-09-15).** A real phone number,
+call forwarding, voicemail-to-inbox via Twilio/SIP, and voice-**call** escalation as an owner
+notification are **not** implemented, for the same reason the CPaaS SMS channel is deferred in the
+notifications table above: they require a metered credential (number rental plus per-minute
+pricing), public webhook ingress, and call-recording consent handling that varies by jurisdiction.
+The seams they would plug into already exist — `NotificationChannel` for escalation, the
+`source`/`source_ref` pair for inbound voicemail — so each is a one-class add when an owner
+actually needs one. Re-opening the decision needs new evidence, not new enthusiasm.
+
 ## 📈 Engagement analytics (#249)
 
 A **private** dashboard in the admin panel (*Engagement*) answering the one question a job search
@@ -791,8 +841,10 @@ recovered from it. A repeated event needs one row per occurrence.
 ### Recruiter interactions (#69)
 
 - `POST /api/app/interactions/contact` - Public contact form (rate-limited per client IP; validated + normalized input)
+- `POST /api/app/interactions/voice` - Public voice message (#264, `multipart/form-data`: `audio` + `duration_s`, optional `name`/`email`/`company`). **404 when `VOICE_MESSAGES_ENABLED=false`**; `415` for anything but `audio/webm`/`audio/ogg`, `413` past the size or duration cap, `429` past the per-IP budget
 - `GET /api/app/admin/interactions` - Admin inbox: filter by `status`/`source`, paginated (auth required)
 - `PATCH /api/app/admin/interactions/{id}` - Move an interaction through the status workflow (auth required)
+- `GET /api/app/admin/interactions/{id}/voice` - Stream a voice message's audio for playback (auth required; **not** flag-gated, so turning intake off never orphans recordings already received)
 
 ### Engagement analytics (#249)
 
@@ -927,6 +979,7 @@ All three columns are `NULL` for posts not imported from LinkedIn. Two posts may
 | `promote0005` | Promote-from-inbox idempotency (#279): unique `opportunities.promoted_from_interaction_id` + an index on `opportunity_notes.interaction_id`, backfilled from the promotion note. |
 | `interview0006` | Interview calendar, pipeline phase 2 (#247/#70): the `interviews` table (UTC `scheduled_at`, duration, kind, location/link, interviewer, outcome) with `ON DELETE CASCADE` to `opportunities` and indexes for per-opportunity listing + the "next N days" range scan. Self-adopting: when the table already exists it adds only the missing indexes, comparing **column sets, not names** (a name check adds duplicates — see the guard note below). |
 | `engage0010` | Engagement analytics (#249): the `engagement_events` table (kind, nullable `subject_id` pointing at the source record, JSONB payload, indexes on `created_at` and `kind`). No FK on purpose — an event outlives the record it references, and the two have different retention. Self-adopting per the guard above. |
+| `voice0012` | Voice channel (#264): the `voice_messages` table (audio bytes, content type, size, the browser-claimed duration). No FK to `interactions` on purpose — the pointer runs the other way (`interactions.source_ref`), exactly like `cv_requests`. Self-adopting per the guard above. |
 
 New changes get their own revision on top of this baseline — see
 [How to write a migration](#how-to-write-a-migration) above.

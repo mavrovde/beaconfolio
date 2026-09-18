@@ -66,3 +66,40 @@ def post_contact(client: httpx.Client, payload: dict) -> httpx.Response:
         time.sleep(61)
         resp = client.post(f"{API}/interactions/contact", json=payload)
     return resp
+
+
+def post_voice(
+    client: httpx.Client,
+    audio: bytes,
+    *,
+    duration_s: str = "12.5",
+    content_type: str = "audio/webm",
+    **fields: str,
+) -> httpx.Response:
+    """POST a voice message THROUGH THE PROXY, absorbing the 3/60s limit.
+
+    RATE-LIMIT BUDGET (#264): the voice endpoint's own budget is
+    VOICE_RATE_LIMIT_REQUESTS=3 per 60s — tighter than the contact form's 5,
+    because one call writes TWO rows and schedules a transcription. The tier
+    spends it as: one accepted message, one oversize rejection (a rejection
+    still costs a slot — the limiter is a route dependency, so it runs before
+    the handler), and then the rate-limit case deliberately walks off the end.
+    Count the slots before adding a poster here.
+
+    Every voice request goes through PUBLIC_URL, never BACKEND_URL: the proxy
+    is part of this endpoint's contract (nginx's default body limit is BELOW
+    the app's cap — see proxy/default.conf.template), and mixing the two
+    origins would also split the limiter's per-IP key and make the budget
+    unreadable.
+    """
+    url = f"{PUBLIC_URL}/api/app/interactions/voice"
+    headers = {"Host": "localhost"}
+    files = {"audio": ("note.webm", audio, content_type)}
+    data = {"duration_s": duration_s, **fields}
+    resp = client.post(url, files=files, data=data, headers=headers)
+    for _ in range(3):
+        if resp.status_code != 429:
+            break
+        time.sleep(61)
+        resp = client.post(url, files=files, data=data, headers=headers)
+    return resp

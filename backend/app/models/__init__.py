@@ -10,6 +10,7 @@ from app.models.profile_snapshot import ProfileSnapshot
 from app.models.site_setting import SiteSetting
 from app.models.tailored_link import TailoredLink
 from app.models.user import User
+from app.models.voice_message import VoiceMessage
 
 __all__ = [
     "CvDocument",
@@ -25,4 +26,5 @@ __all__ = [
     "SiteSetting",
     "TailoredLink",
     "User",
+    "VoiceMessage",
 ]

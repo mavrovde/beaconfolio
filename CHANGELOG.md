@@ -19,6 +19,39 @@ All notable changes to this project will be documented in this file.
   non-empty, empty config means zero outbound requests, one dead channel never blocks another,
   and each failure path logs `type(e).__name__` only so neither the Matrix token nor the gateway
   password can reach a log line.
+- **Voice channel, backend half: browser voice messages → LOCAL Whisper transcription into the
+  inbox (#264)** — public `POST /interactions/voice` (multipart `audio` + `duration_s`, optional
+  `name`/`email`/`company`) stores the recording in a new `voice_messages` table
+  (migration `voice0012`) and creates an `Interaction` with `source=voice_message`,
+  `source_ref` → the audio row and a JSON payload carrying the audio reference, sizes, the
+  claimed duration and the transcription status/model — **no change to the #69 inbox schema**,
+  which was that design's bet. Transcription runs **in-process on the CPU via `faster-whisper`
+  1.2.1** (rule 10: no key, no endpoint, no metered call; the only network access is a one-time
+  anonymous model download into the new `whisper_models` volume, so a restart never re-downloads
+  it). Three background tasks in a contractual order — transcribe → notify → translate — so the
+  owner gets ONE #263 ping that already contains the transcript, and #248's translation applies
+  to it like any other message because the transcript is written to `Interaction.message`.
+  Caps and budgets: bounded read against `VOICE_MESSAGE_MAX_BYTES` (2 MB → `413`), duration
+  checked BOTH against the browser's claim (`413`) and against the DECODED audio before any
+  segment is decoded (a client lying about length cannot buy unbounded CPU), `415` for anything
+  but `audio/webm`/`audio/ogg`, and a per-client-IP limiter at 3/60s — tighter than the contact
+  form's 5/60s because a voice message costs storage *and* seconds of CPU. Admin-only
+  `GET /admin/interactions/{id}/voice` streams the audio for playback. Flag-gated and **OFF by
+  default** (`VOICE_MESSAGES_ENABLED`): off means the public endpoint 404s and no model is ever
+  fetched — while already-received recordings stay playable, because the flag governs sending.
+  Eight knobs wired into `backend/.env.example`, the root `.env.example` and the backend service
+  of **both** compose files (`WHISPER_MODEL_DIR` deliberately exempted as a volume mount target,
+  the `LINKEDIN_COOKIES_DIR` precedent). Measured on an 8-core arm64 host: 20.6 s first-ever cold
+  start incl. download, 0.31 s warm load, 1.09 s to transcribe 14.6 s of speech. Validated at the
+  composed layer too (#260's tier): three black-box cases through the real proxy — intake survives
+  a genuinely broken transcriber, the app's `413` is not shadowed by the proxy, and the endpoint
+  is rate limited — with the tier's Whisper model pinned to an invalid name so CI never downloads
+  weights. The recording widget and the admin player are a separate frontend PR.
+- **PSTN / telephony is documented-deferred with a dated verdict (#264)** — README's new voice
+  section records why a phone number, voicemail-to-inbox via Twilio/SIP and voice-**call**
+  escalation are not implemented (metered credential, public webhook ingress, per-jurisdiction
+  recording consent) and which seams they would plug into, in the same
+  verdict-with-a-date form the #263 notification table uses.
 - **v1.14.3 release retrospective (rule 8)** — `docs/retrospectives/v1.14.3.md`, sixth in the
   series; trend table extended. Headlines: mean rounds 2.00 (best since v1.14.0) at a RISING
   median PR size; zero post-merge verdict back-fills for the first time; one rule-13 violation
@@ -66,6 +99,16 @@ All notable changes to this project will be documented in this file.
   v1.14.2/v1.14.3 (#377/#393 shipped, the telemetry meta-target missed twice, the gate
   falsifier fired at six merges and then at one). Applies the v1.14.1-retro lesson: a release
   figure is written once and linked everywhere else.
+
+### Fixed
+- **The reverse proxy no longer shadows the app's own upload limits (#264)** — nginx had no
+  `client_max_body_size`, so its **1 MB default** silently governed every upload: the new voice
+  cap (2 MB; a ~90 s Opus recording is ~1.1 MB) and the long-standing 5 MB admin profile-JSON and
+  photo caps were all unreachable through the proxy, and a caller got nginx's opaque HTML `413`
+  instead of the endpoint's `{"detail": ...}`. `proxy/default.conf.template` now sets the limit
+  strictly above the app's caps on both `/api/app/` locations (public `3m`, admin `6m`) so the
+  application is the component that answers — found by the composed integration tier, which no
+  unit test could have caught (there is no nginx in an ASGI transport), and pinned there.
 
 ## [1.14.3] - 2026-09-15
 
