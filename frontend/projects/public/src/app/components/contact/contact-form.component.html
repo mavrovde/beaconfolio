@@ -13,7 +13,7 @@
     <div>
       <label for="contact-name" class="block text-secondary text-sm mb-1">{{ 'CONTACT.NAME' | translate }}</label>
       <input id="contact-name" type="text" formControlName="name"
-        class="w-full bg-black border border-secondary/40 focus:border-primary text-primary p-2 font-mono outline-none"
+        class="w-full bg-black border border-secondary/40 focus:border-primary text-primary p-2 font-sans outline-none"
         [attr.placeholder]="'CONTACT.NAME_PLACEHOLDER' | translate" />
       @if (contactForm.get('name')?.touched && contactForm.get('name')?.invalid) {
         <p class="text-red-400 text-sm mt-1">
@@ -25,7 +25,7 @@
     <div>
       <label for="contact-email" class="block text-secondary text-sm mb-1">{{ 'CONTACT.EMAIL' | translate }}</label>
       <input id="contact-email" type="email" formControlName="email"
-        class="w-full bg-black border border-secondary/40 focus:border-primary text-primary p-2 font-mono outline-none"
+        class="w-full bg-black border border-secondary/40 focus:border-primary text-primary p-2 font-sans outline-none"
         placeholder="you@company.com" />
       @if (contactForm.get('email')?.touched && contactForm.get('email')?.invalid) {
         <p
@@ -38,14 +38,14 @@
     <div>
       <label for="contact-company" class="block text-secondary text-sm mb-1">{{ 'CONTACT.COMPANY' | translate }}</label>
       <input id="contact-company" type="text" formControlName="company"
-        class="w-full bg-black border border-secondary/40 focus:border-primary text-primary p-2 font-mono outline-none"
+        class="w-full bg-black border border-secondary/40 focus:border-primary text-primary p-2 font-sans outline-none"
         [attr.placeholder]="'CONTACT.COMPANY_PLACEHOLDER' | translate" />
     </div>
 
     <div>
       <label for="contact-message" class="block text-secondary text-sm mb-1">{{ 'CONTACT.MESSAGE' | translate }}</label>
       <textarea id="contact-message" rows="5" formControlName="message"
-        class="w-full bg-black border border-secondary/40 focus:border-primary text-primary p-2 font-mono outline-none"
+        class="w-full bg-black border border-secondary/40 focus:border-primary text-primary p-2 font-sans outline-none"
       [attr.placeholder]="'CONTACT.MESSAGE_PLACEHOLDER' | translate"></textarea>
       @if (contactForm.get('message')?.touched && contactForm.get('message')?.invalid) {
         <p
@@ -58,7 +58,7 @@
     <p class="text-secondary/70 text-xs">{{ 'CONTACT.PRIVACY_NOTE' | translate }}</p>
 
     <button type="submit" [disabled]="contactForm.invalid || isLoading"
-      class="border border-primary text-primary px-6 py-2 font-mono hover:bg-primary hover:text-black transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+      class="border border-primary text-primary px-6 py-2 font-sans hover:bg-primary hover:text-black transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
       @if (!isLoading) {
         <span>{{ 'CONTACT.SUBMIT' | translate }}</span>
       }

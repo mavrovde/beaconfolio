@@ -1,6 +1,6 @@
 <section id="recommendations" class="py-20 border-b border-terminal bg-black">
   <div class="container mx-auto px-6">
-    <h2 class="text-2xl font-bold mb-16 text-secondary font-mono">
+    <h2 class="text-2xl font-bold mb-16 text-secondary font-sans">
       {{ 'SECTION.RECOMMENDATIONS' | translate }}
     </h2>
 
@@ -20,22 +20,22 @@
                   {{ rec.author.charAt(0) }}
                 </div>
                 <div>
-                  <h4 class="font-bold text-primary text-lg leading-tight font-mono">
+                  <h4 class="font-bold text-primary text-lg leading-tight font-sans">
                     {{ rec.author }}
                   </h4>
-                  <p class="text-muted text-sm mt-1 font-mono">{{ rec.authorTitle }}</p>
+                  <p class="text-muted text-sm mt-1 font-sans">{{ rec.authorTitle }}</p>
                 </div>
               </div>
               <div class="relative flex-grow">
-                <span class="absolute top-0 left-0 text-4xl text-terminal opacity-50 font-mono">"</span>
-                <p class="text-secondary text-sm leading-relaxed pl-6 font-mono italic">
+                <span class="absolute top-0 left-0 text-4xl text-terminal opacity-50 font-sans">"</span>
+                <p class="text-secondary text-sm leading-relaxed pl-6 font-sans italic">
                   {{ rec.text }}
                 </p>
               </div>
               <a
                 [href]="rec.authorLinkedInUrl"
                 target="_blank"
-                class="mt-6 text-xs text-muted hover:text-primary transition-colors flex items-center self-end font-mono"
+                class="mt-6 text-xs text-muted hover:text-primary transition-colors flex items-center self-end font-sans"
                 >
                 {{ 'COMMON.VIEW_LINKEDIN' | translate }}
               </a>

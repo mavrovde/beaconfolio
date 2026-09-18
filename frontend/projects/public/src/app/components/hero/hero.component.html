@@ -17,22 +17,22 @@
                the preset (#67). The VALUE is content and survives either way;
                the prompt and the `./welcome.sh` costume do not. -->
           @if (chrome$ | async) {
-            <span class="text-sm font-mono text-secondary">
+            <span class="text-sm font-sans text-secondary">
               {{ prompt$ | async }} ./welcome.sh --location="{{ profile.location }}"
             </span>
           } @else {
-            <span class="text-sm font-mono text-secondary">{{ profile.location }}</span>
+            <span class="text-sm font-sans text-secondary">{{ profile.location }}</span>
           }
         </div>
-        <h1 class="text-3xl md:text-5xl font-bold mb-6 font-mono text-primary">
+        <h1 class="text-3xl md:text-5xl font-bold mb-6 font-sans text-primary">
           {{ 'SECTION.HI' | translate }} {{ profile.name }}<span class="terminal-cursor"></span>
         </h1>
-        <p class="text-lg md:text-xl text-secondary max-w-3xl mx-auto mb-10 leading-relaxed font-mono">
+        <p class="text-lg md:text-xl text-secondary max-w-3xl mx-auto mb-10 leading-relaxed font-sans">
           // {{ profile.headline }}
         </p>
         @if (availability$ | async; as availability) {
           <div class="mb-6" data-testid="availability">
-            <span class="inline-flex items-center gap-2 px-3 py-1 border font-mono text-sm"
+            <span class="inline-flex items-center gap-2 px-3 py-1 border font-sans text-sm"
               [class.border-primary]="availability.state === 'open'"
               [class.text-primary]="availability.state === 'open'"
               [class.border-secondary]="availability.state !== 'open'"
@@ -47,15 +47,15 @@
         }
         <div class="flex flex-col sm:flex-row gap-4 justify-center">
           <a href="#contact" (click)="scrollTo('#contact', $event)" data-testid="hire-me-cta"
-            class="px-6 py-2 bg-primary text-black border-2 border-primary hover:bg-transparent hover:text-primary transition-all font-bold font-mono">
+            class="px-6 py-2 bg-primary text-black border-2 border-primary hover:bg-transparent hover:text-primary transition-all font-bold font-sans">
             {{ 'SECTION.HIRE_ME' | translate }}
           </a>
           <a href="#about" (click)="scrollTo('#about', $event)"
-            class="px-6 py-2 border-2 border-primary text-primary hover:bg-primary hover:text-black transition-all font-bold font-mono">
+            class="px-6 py-2 border-2 border-primary text-primary hover:bg-primary hover:text-black transition-all font-bold font-sans">
             {{ 'SECTION.READ_MORE' | translate }}
           </a>
           <a href="#contact"
-            class="px-6 py-2 border-2 border-secondary text-secondary hover:bg-secondary hover:text-black transition-all font-bold font-mono">
+            class="px-6 py-2 border-2 border-secondary text-secondary hover:bg-secondary hover:text-black transition-all font-bold font-sans">
             {{ 'SECTION.GET_IN_TOUCH' | translate }}
           </a>
         </div>

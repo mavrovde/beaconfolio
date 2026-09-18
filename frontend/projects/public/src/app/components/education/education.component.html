@@ -1,13 +1,13 @@
 <section id="education" class="py-20 bg-black">
   <div class="container mx-auto px-6">
-    <h2 class="text-2xl font-bold mb-16 text-secondary font-mono">
+    <h2 class="text-2xl font-bold mb-16 text-secondary font-sans">
       {{ 'SECTION.EDUCATION' | translate }}
     </h2>
 
     <div class="grid md:grid-cols-2 gap-12 max-w-6xl mx-auto">
       <!-- Education -->
       <div>
-        <h3 class="text-xl font-bold mb-8 text-primary flex items-center font-mono">
+        <h3 class="text-xl font-bold mb-8 text-primary flex items-center font-sans">
           <span class="mr-2">></span> {{ 'SECTION.EDUCATION_SUB' | translate }}
         </h3>
         @if (profile) {
@@ -15,11 +15,11 @@
             @for (edu of (profile.education || []); track edu) {
               <div
                 class="p-6 border border-terminal bg-black hover:border-primary transition-colors">
-                <h4 class="text-lg font-bold text-primary mb-2 font-mono">{{ edu.school }}</h4>
-                <p class="text-secondary mb-1 font-mono">{{ edu.degree }}</p>
-                <p class="text-sm text-muted font-mono mb-4">[{{ edu.years }}]</p>
+                <h4 class="text-lg font-bold text-primary mb-2 font-sans">{{ edu.school }}</h4>
+                <p class="text-secondary mb-1 font-sans">{{ edu.degree }}</p>
+                <p class="text-sm text-muted font-sans mb-4">[{{ edu.years }}]</p>
                 @if (edu.skills) {
-                  <p class="text-sm text-secondary font-mono">
+                  <p class="text-sm text-secondary font-sans">
                     <span class="text-muted font-medium">Focus:</span> {{ edu.skills }}
                   </p>
                 }
@@ -31,7 +31,7 @@
 
       <!-- Certifications -->
       <div>
-        <h3 class="text-xl font-bold mb-8 text-primary flex items-center font-mono">
+        <h3 class="text-xl font-bold mb-8 text-primary flex items-center font-sans">
           <span class="mr-2">></span> {{ 'SECTION.CERTIFICATIONS_SUB' | translate }}
         </h3>
         @if (profile) {
@@ -41,15 +41,15 @@
                 class="flex items-start p-4 border border-terminal bg-black hover:border-primary transition-colors">
                 <div class="flex-shrink-0 mt-1 text-primary">*</div>
                 <div class="ml-4 flex-grow">
-                  <h4 class="text-primary font-bold mb-1 font-mono tracking-wide">{{ cert.name }}</h4>
-                  <div class="flex justify-between items-center text-sm font-mono">
+                  <h4 class="text-primary font-bold mb-1 font-sans tracking-wide">{{ cert.name }}</h4>
+                  <div class="flex justify-between items-center text-sm font-sans">
                     <span class="text-terminal-dim">{{ cert.issuer }}</span>
                     <span class="text-terminal-dim text-xs border border-terminal-dim px-2 py-0.5 rounded-sm">{{ cert.date
                     }}</span>
                   </div>
                   @if (cert.credentialUrl) {
                     <a [href]="cert.credentialUrl" target="_blank"
-                      class="inline-flex items-center mt-2 text-xs text-primary hover:underline transition-colors font-mono">
+                      class="inline-flex items-center mt-2 text-xs text-primary hover:underline transition-colors font-sans">
                       {{ 'COMMON.VIEW_CREDENTIAL' | translate }}
                     </a>
                   }

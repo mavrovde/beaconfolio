@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
@@ -119,5 +119,76 @@ describe('theme token contract', () => {
             .filter((part) => /#[0-9a-f]{3,8}\b|\brgba?\(|:\s*(white|black)\b/i.test(part))
             .map((part) => part.replace(/\s+/g, ' '));
         expect(literals, `${relative} still carries colour literals`).toEqual([]);
+    });
+});
+
+/**
+ * Per-preset typography (#67 — the residual #339 deferred here).
+ *
+ * #339 pointed `body` at each preset's `--font-sans`, but 59 `font-mono`
+ * utilities across 13 public templates kept their own elements on the
+ * monospace face, so `classic` rendered a serif body around monospace
+ * headings, prose, buttons and form fields. Those utilities never meant
+ * "this is code" — they meant "the site's face", back when the site had
+ * exactly one. They now say `font-sans`.
+ *
+ * The whole safety argument for that sweep is ONE property: under `terminal`
+ * the two families are the same stack, so the swap is a no-op on the default
+ * preset. If that ever stops being true, `terminal` silently changes
+ * appearance and this file is the only thing that would say so.
+ */
+describe('per-preset typography (#67)', () => {
+    const familiesOf = (block: string) => ({
+        sans: /--font-sans:\s*([^;]+);/.exec(block)?.[1]?.trim(),
+        mono: /--font-mono:\s*([^;]+);/.exec(block)?.[1]?.trim(),
+    });
+
+    const blockFor = (preset: string) => {
+        const match = new RegExp(`\\[data-theme='${preset}'\\]\\s*\\{([\\s\\S]*?)\\n\\}`).exec(
+            STYLES,
+        );
+        expect(match, `no [data-theme='${preset}'] block`).toBeTruthy();
+        return match![1];
+    };
+
+    it('terminal declares ONE family under both names, so the sweep is a no-op there', () => {
+        const { sans, mono } = familiesOf(blockFor('terminal'));
+
+        expect(sans).toBeTruthy();
+        expect(mono).toBeTruthy();
+        expect(sans).toBe(mono);
+    });
+
+    // The other half: if every preset paired the same two families, swapping
+    // the utilities would have changed nothing anywhere and this whole sweep
+    // would be decoration. `classic` is the sharpest case — a serif body.
+    it('classic declares a DIFFERENT body family from its code family', () => {
+        const { sans, mono } = familiesOf(blockFor('classic'));
+
+        expect(sans).toMatch(/serif/);
+        expect(sans).not.toBe(mono);
+    });
+
+    // The sweep itself, asserted where it can actually regress: a template
+    // that regains `font-mono` pins its own elements to the code face on every
+    // document preset again. `llm.component.html` is the deliberate exception
+    // — an AI transcript IS terminal output, and it keeps the monospace face
+    // under every preset.
+    it('no public template pins the code face except the LLM transcript', () => {
+        const root = join(__dirname, 'components');
+        const offenders = readdirSync(root, { recursive: true, encoding: 'utf-8' })
+            .filter((relative) => relative.endsWith('.html'))
+            .filter((relative) => !relative.includes('llm'))
+            .filter((relative) => readFileSync(join(root, relative), 'utf-8').includes('font-mono'))
+            .sort();
+
+        expect(offenders, 'these templates pin monospace on every preset').toEqual([]);
+    });
+
+    it('and the LLM transcript still does', () => {
+        const llm = readFileSync(join(__dirname, 'components/llm/llm.component.html'), 'utf-8');
+
+        expect(llm).toContain('terminal-container font-mono');
+        expect(llm).toContain('multi-agent-container font-mono');
     });
 });

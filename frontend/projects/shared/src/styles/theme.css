@@ -54,17 +54,22 @@
  *   --color-muted         hairlines and disabled text
  *   --color-black         the GROUND, and the contrast pair for `--color-primary`
  *   --color-white         the high-emphasis foreground (hover, active, headings)
- *   --font-mono           monospace family (the `font-mono` utility)
- *   --font-sans           body family — `body` itself, via the `font-sans`
- *                         utility. NOT yet the whole page: 58 `font-mono`
- *                         utilities across 14 public templates still pin
- *                         their own elements to the monospace stack, so on
- *                         `classic` the serif reaches the body and those
- *                         blocks stay mono. Converting them is font ownership,
- *                         which belongs to #67 (config-driven fonts) and is
- *                         deliberately NOT done here — on `terminal`, where
- *                         both tokens are VT323, the difference is invisible
- *                         either way.
+ *   --font-mono           the CODE face (the `font-mono` utility). One public
+ *                         surface still asks for it: the `/llm` transcript,
+ *                         which IS terminal output and stays monospace on
+ *                         every preset.
+ *   --font-sans           the SITE's face — `body`, and now every heading,
+ *                         paragraph, button, nav item and form field with it.
+ *                         #339 pointed `body` here and left 59 `font-mono`
+ *                         utilities across 13 public templates pinning their
+ *                         own elements to the code face, so `classic` served
+ *                         a serif body around monospace everything-else. #67
+ *                         swept them: those utilities never meant "this is
+ *                         code", they meant "the site's face", from when the
+ *                         site had exactly one. The sweep is a NO-OP on
+ *                         `terminal`, where both tokens are the same VT323
+ *                         stack — a property `theme-contract.spec.ts` pins,
+ *                         because it is the whole safety argument for it.
  *
  * The last two are Tailwind's own `black`/`white` tokens, and re-pointing them
  * per theme is deliberate rather than a shortcut. The components carry 37

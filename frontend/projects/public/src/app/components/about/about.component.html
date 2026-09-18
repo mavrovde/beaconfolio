@@ -1,12 +1,12 @@
 <section id="about" class="py-20 relative">
   <div class="container mx-auto px-6">
-    <h2 class="text-2xl font-bold mb-12 text-secondary font-mono">
+    <h2 class="text-2xl font-bold mb-12 text-secondary font-sans">
       {{ 'SECTION.ABOUT' | translate }}
     </h2>
 
     <div class="max-w-4xl mx-auto p-8 border border-terminal bg-black">
       @if (profile) {
-        <div class="space-y-6 text-primary text-lg leading-relaxed whitespace-pre-line font-mono">
+        <div class="space-y-6 text-primary text-lg leading-relaxed whitespace-pre-line font-sans">
           {{ profile.about }}
         </div>
       }
