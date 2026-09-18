@@ -15,16 +15,39 @@
             {{ profile.contact.email }}
           </a>
         </div>
-        <div class="flex flex-col md:flex-row gap-2">
-          <span class="text-secondary opacity-70">user@portfolio:~$</span>
-          <span class="text-primary">echo $LINKEDIN</span>
-        </div>
-        <div class="pl-0 md:pl-8">
-          <a [href]="profile.contact.linkedin" target="_blank"
-            class="hover:bg-primary hover:text-black transition-colors px-1">
-            {{ profile.contact.linkedin }}
-          </a>
-        </div>
+        <!-- Code-host / social profiles (#93). Driven by the site config list
+             that also feeds Person.sameAs, so the links a recruiter clicks and
+             the links a crawler follows cannot disagree. The profile's own
+             LinkedIn field below is the FALLBACK for a deployment that has not
+             configured SOCIAL_LINKS — rendering both would duplicate it. -->
+        @if (profileLinks$ | async; as links) {
+          @if (links.length) {
+            @for (link of links; track link.url) {
+              <div class="flex flex-col md:flex-row gap-2">
+                <span class="text-secondary opacity-70">user@portfolio:~$</span>
+                <span class="text-primary">echo ${{ link.platform }}</span>
+              </div>
+              <div class="pl-0 md:pl-8 mb-6">
+                <span class="text-secondary opacity-70 mr-2" aria-hidden="true">{{ link.icon }}</span>
+                <a [href]="link.url" target="_blank" rel="noopener noreferrer"
+                  class="hover:bg-primary hover:text-black transition-colors px-1">
+                  {{ link.url }}
+                </a>
+              </div>
+            }
+          } @else {
+            <div class="flex flex-col md:flex-row gap-2">
+              <span class="text-secondary opacity-70">user@portfolio:~$</span>
+              <span class="text-primary">echo $LINKEDIN</span>
+            </div>
+            <div class="pl-0 md:pl-8">
+              <a [href]="profile.contact.linkedin" target="_blank" rel="noopener noreferrer"
+                class="hover:bg-primary hover:text-black transition-colors px-1">
+                {{ profile.contact.linkedin }}
+              </a>
+            </div>
+          }
+        }
       </div>
     }
 

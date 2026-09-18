@@ -1,8 +1,11 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
+import { of } from 'rxjs';
 import { ContactComponent } from './contact.component';
 import { TranslatePipe } from '@beaconfolio/shared';
 import { MockTranslatePipe } from '@beaconfolio/shared/testing';
 import { Profile } from '../../services/profile.service';
+import { DEFAULT_SITE_CONFIG, SiteConfigService } from '../../services/site-config.service';
 
 describe('ContactComponent', () => {
   let component: ContactComponent;
@@ -22,9 +25,17 @@ describe('ContactComponent', () => {
     recommendations: [],
   };
 
-  beforeEach(async () => {
+  /** Build the component with a given configured social-link list (#93). */
+  async function renderWith(socialLinks: string[], profile: Profile | null = mockProfile) {
+    TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [ContactComponent],
+      providers: [
+        {
+          provide: SiteConfigService,
+          useValue: { config$: of({ ...DEFAULT_SITE_CONFIG, socialLinks }) },
+        },
+      ],
     })
       .overrideComponent(ContactComponent, {
         remove: { imports: [TranslatePipe] },
@@ -34,11 +45,75 @@ describe('ContactComponent', () => {
 
     fixture = TestBed.createComponent(ContactComponent);
     component = fixture.componentInstance;
-    component.profile = mockProfile;
+    component.profile = profile;
     fixture.detectChanges();
+    return fixture;
+  }
+
+  const hrefs = () =>
+    fixture.debugElement
+      .queryAll(By.css('a[href]'))
+      .map((a) => a.nativeElement.getAttribute('href'));
+
+  beforeEach(async () => {
+    await renderWith([]);
   });
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('renders every configured code host, including one nobody registered', async () => {
+    await renderWith([
+      'https://github.com/janedoe',
+      'https://gitlab.com/janedoe',
+      'https://bitbucket.org/janedoe',
+      'https://codeberg.org/janedoe',
+    ]);
+    const links = hrefs();
+    expect(links).toContain('https://github.com/janedoe');
+    expect(links).toContain('https://gitlab.com/janedoe');
+    expect(links).toContain('https://bitbucket.org/janedoe');
+    expect(links).toContain('https://codeberg.org/janedoe');
+    expect(fixture.nativeElement.textContent).toContain('echo $CODEBERG');
+  });
+
+  // The regression guard. A deployment that has never set SOCIAL_LINKS still
+  // has a LinkedIn URL in its profile data, and it must not vanish — while a
+  // deployment that HAS set it must not see LinkedIn twice.
+  it('falls back to the profile LinkedIn only when nothing is configured', async () => {
+    expect(hrefs()).toContain('https://linkedin.com/test');
+
+    await renderWith(['https://linkedin.com/in/janedoe']);
+    const links = hrefs();
+    expect(links).toContain('https://linkedin.com/in/janedoe');
+    expect(links).not.toContain('https://linkedin.com/test');
+  });
+
+  it('still renders the email in both states', async () => {
+    expect(hrefs()).toContain('mailto:test@example.com');
+    await renderWith(['https://github.com/janedoe']);
+    expect(hrefs()).toContain('mailto:test@example.com');
+  });
+
+  it('opens outbound profiles in a new tab without handing over the opener', async () => {
+    await renderWith(['https://github.com/janedoe']);
+    const link = fixture.debugElement
+      .queryAll(By.css('a[href]'))
+      .find((a) => a.nativeElement.getAttribute('href') === 'https://github.com/janedoe');
+    expect(link!.nativeElement.getAttribute('target')).toBe('_blank');
+    expect(link!.nativeElement.getAttribute('rel')).toBe('noopener noreferrer');
+  });
+
+  it('renders no profile link at all when the configured value is unusable', async () => {
+    await renderWith(['javascript:alert(1)']);
+    expect(hrefs().some((h) => h.startsWith('javascript:'))).toBe(false);
+    // ...and the LinkedIn fallback takes over, because nothing survived.
+    expect(hrefs()).toContain('https://linkedin.com/test');
+  });
+
+  it('renders nothing but the form when there is no profile', async () => {
+    await renderWith(['https://github.com/janedoe'], null);
+    expect(hrefs()).toEqual([]);
   });
 });
