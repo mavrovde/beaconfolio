@@ -34,11 +34,20 @@ import { ViewportScroller } from '@angular/common';
  * defence in depth, taken while it is still cheap, so that the day some
  * unauthenticated text reaches post content this is not also true.
  *
+ * EVERY `<` is escaped, not just the ones that begin a closing tag — and
+ * that is not belt-and-braces. The HTML tokenizer leaves script-data
+ * state through `<` by TWO doors: `</` ends the element, and `<!--`
+ * opens a comment-escape state in which a following `<script` swallows
+ * the markup after it. A fix narrowed to the literal `</script>` passes
+ * every test in the spec beside this file and still loses the document
+ * to a headline reading `<!--<script>`. Escaping the one character both
+ * doors need closes both.
+ *
  * Flagged as `typescript:S6268` by the v1.16.0 release security triage. The
  * rule fires on every `bypassSecurityTrust*` call; here it was right.
  */
 export function jsonForScriptBlock(schema: unknown): string {
-  return JSON.stringify(schema, null, 2).replace(/</g, '\\u003c');
+  return JSON.stringify(schema, null, 2).replaceAll('<', String.raw`\u003c`);
 }
 
 @Component({

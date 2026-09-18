@@ -229,6 +229,45 @@ describe('JSON-LD script-block serialization (release security triage)', () => {
     expect(JSON.parse(jsonForScriptBlock(HOSTILE)).headline).toBe(HOSTILE.headline);
   });
 
+  // The mutant that survived round 1 of this PR's own mutation check: a fix
+  // narrowed to the literal closing tag passes every other case here and is
+  // still unsafe. `<!--` is the tokenizer's SECOND door out of script-data
+  // state — a following `<script` opens a comment-escape state that swallows
+  // the markup after it — so the guard is on the CHARACTER, not on the tag.
+  it('escapes the `<` that opens a comment-escape state, not only a closing tag', () => {
+    const serialized = jsonForScriptBlock({ headline: 'a <!--<scr' + 'ipt> b' });
+
+    expect(serialized).not.toContain('<');
+    expect(JSON.parse(serialized).headline).toBe('a <!--<scr' + 'ipt> b');
+  });
+
+  // The assertion the rule-12 table claims makes a browser tier unnecessary.
+  // Counting a substring in the PRE-PARSE string is a proxy; this parses the
+  // block the way the browser does and asserts the element actually contains
+  // the whole payload and nothing escaped it. `vitest.config.ts` already runs
+  // this project in jsdom, so the real tokenizer is free here.
+  it.each([
+    ['a closing tag', 'Post </scr' + 'ipt><img src=x onerror=alert(1)>'],
+    ['a comment-escape opener', 'Post <!--<scr' + 'ipt> swallowed?'],
+  ])('survives parsing as real HTML when the headline carries %s', (_label, headline) => {
+    const host = document.createElement('div');
+    host.innerHTML =
+      '<script type="application/ld+json">' +
+      jsonForScriptBlock({ '@type': 'BlogPosting', headline }) +
+      '</scr' + 'ipt><p id="after">after</p>';
+
+    const blocks = host.querySelectorAll('script[type="application/ld+json"]');
+    expect(blocks, 'the schema must not open a second block').toHaveLength(1);
+
+    // The payload survived intact — and no element was built from it.
+    expect(JSON.parse(blocks[0].textContent ?? '').headline).toBe(headline);
+    expect(host.querySelector('img'), 'no element may be built from the schema').toBeNull();
+
+    // …and the markup AFTER the block is still there, which is what the
+    // comment-escape door destroys when `<!--` is left unescaped.
+    expect(host.querySelector('#after')?.textContent).toBe('after');
+  });
+
   it('leaves a schema with no `<` untouched apart from formatting', () => {
     const plain = { '@context': 'https://schema.org' };
 

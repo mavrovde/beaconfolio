@@ -22,6 +22,14 @@ All notable changes to this project will be documented in this file.
   component to a bare `JSON.stringify` turns a spec red — since a helper the component never calls
   is decoration. Flagged as `typescript:S6268` by the v1.16.0 release security triage; the rule
   fires on every `bypassSecurityTrust*` call and here it was right.
+  **Every `<` is escaped, not only the ones that open a closing tag.** The HTML tokenizer leaves
+  script-data state by two doors: `</` ends the element, and `<!--` opens a comment-escape state
+  in which a following `<script` swallows the markup after it. A fix narrowed to the literal
+  closing tag passed every test written for this change and still lost the rest of the document
+  to a headline reading `<!--<script>` — that narrowed version is now a killed mutant, and the
+  guard is asserted on the character rather than on the tag. The block is also parsed as real
+  HTML in the test tier rather than counted as a substring, so the claim that it cannot break
+  out is made by the tokenizer and not by a proxy for it.
 
 ### Added
 - **A projects showcase, driven entirely by the profile JSON.** The template rendered experience,
@@ -278,6 +286,20 @@ All notable changes to this project will be documented in this file.
   `blog-post.component.config-ordering.spec.ts`, which drives the two streams by hand: it asserts
   both orderings produce the identical schema with an absolute `@id`, and three of its four cases
   fail against the field-latched code.
+- **SonarCloud reported 0% coverage for half the frontend, and the number was simply attributed to
+  the wrong file.** Every Vitest project sets `root: __dirname`, so each `lcov.info` carried `SF:`
+  paths relative to its own project — and `public` and `admin` therefore both claimed
+  `src/app/app.component.ts`, `src/app/app.config.ts` and every other shared filename. SonarCloud
+  resolves each path once against `sonar.sources`, awards the file to one project and reads
+  **0.0%** for the other, while both sat at 100% locally and in CI the entire time. `shared` never
+  collided, because its sources live under `src/lib/` — which is why two of three projects looked
+  correct and this stayed invisible. It is not cosmetic: `new_coverage` is a quality-gate
+  condition, so a PR touching a losing file failed the gate for a reason that had nothing to do
+  with the PR. `scripts/run_frontend_suites.sh` — the one wrapper both CI and the pre-push gate
+  already run — now rewrites each report's paths to be repo-root-relative and **asserts they are
+  unique across the three projects**, because the failure mode is a silently wrong number rather
+  than an error, and a guard nobody can see fail is not a guard. Setting Vitest's `coverage.root`
+  was tried first and measured: it does not move the emitted paths.
 
 ## [1.15.2] - 2026-09-18
 
