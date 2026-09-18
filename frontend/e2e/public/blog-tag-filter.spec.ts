@@ -12,13 +12,21 @@ import { waitForPostQueryable } from '../helpers';
  * tab-reachability, Enter, Space, and the row navigation that must survive alongside it.
  */
 test.describe('Blog tag chips — keyboard and pointer', () => {
-    const uniqueId = Date.now();
-    const slug = `tag-kbd-post-${uniqueId}`;
-    const title = `Tag Keyboard Post ${uniqueId}`;
-    const tagEnter = `kbd-enter-${uniqueId}`;
-    const tagSpace = `kbd-space-${uniqueId}`;
+    // Per TEST, not per describe: `beforeEach` seeds a post for every case, and a repeated
+    // slug is de-duplicated by the backend into `<slug>-<n>` — which made the second case
+    // navigate to a URL the pinned slug no longer matched (measured in CI, run 35407041236).
+    let slug = '';
+    let title = '';
+    let tagEnter = '';
+    let tagSpace = '';
 
     test.beforeEach(async ({ page }) => {
+        const uniqueId = Date.now();
+        slug = `tag-kbd-post-${uniqueId}`;
+        title = `Tag Keyboard Post ${uniqueId}`;
+        tagEnter = `kbd-enter-${uniqueId}`;
+        tagSpace = `kbd-space-${uniqueId}`;
+
         await page.addInitScript(() => {
             window.localStorage.setItem('cookie_consent', 'true');
         });
