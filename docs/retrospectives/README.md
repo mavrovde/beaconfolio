@@ -345,8 +345,9 @@ unreviewed and the cell is right; the claim "the bypass log holds nothing for th
 Corrected here rather than in three places — the analysis is in [v1.15.1 §3](v1.15.1.md).
 **A second, live defect fell out of it:** #392 specifies that a bypass leaves *both* a log line and
 a PR comment; **no comment was ever posted on #435**, because the comment is emitted from a detached
-background subshell with all output and failures discarded. An empty bypass log is still positive
-evidence; an absent bypass **comment** is not, and this convention should not be read as if it were.
+background subshell with all output and failures discarded — filed as **#453**. An empty bypass log
+is still positive evidence; an absent bypass **comment** is not, and this convention should not be
+read as if it were.
 
 **v1.15.0's prediction: 4 pass, 1 n/a, 1 partial — scored at v1.15.1.** Merged with no valid
 APPROVE **0 of 6** and stale approvals **0 of 6** ✅ (checked against the bypass log, which is empty
