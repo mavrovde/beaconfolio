@@ -127,10 +127,24 @@ body::after {
   text-shadow: 0 0 8px rgba(51, 255, 0, 0.8);
 }
 
-/* Force all buttons/links to follow the theme */
-button,
-a {
-  @apply text-primary border-primary hover:bg-primary/20 hover:text-white transition-colors duration-150;
+/* The theme DEFAULT for buttons and links — deliberately in @layer base.
+ *
+ * It must stay in a layer. Tailwind emits its utilities into `@layer utilities`,
+ * and UNLAYERED CSS beats every layered rule regardless of specificity — so
+ * while this block sat at the top level it silently defeated `text-black`,
+ * `text-secondary` and `hover:text-black` on every button and link in the app.
+ * The visible symptom was the hero's `bg-primary text-black` CTA rendering
+ * #33ff00 text on a #33ff00 background: a solid green block, contrast 1:1.
+ * The same classes on a <span> (the blog language badge) were unaffected, which
+ * is what localises the cause to this selector rather than to the palette.
+ *
+ * `@layer base` puts it below utilities, so it still themes an unstyled
+ * button/link and a component can still opt out with a utility class. */
+@layer base {
+  button,
+  a {
+    @apply text-primary border-primary hover:bg-primary/20 hover:text-white transition-colors duration-150;
+  }
 }
 
 @keyframes cursor-blink {

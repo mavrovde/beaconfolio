@@ -51,11 +51,84 @@ PUBLIC_PROFILE_FIELDS = frozenset(
 PUBLIC_CONTACT_FIELDS = frozenset({"email", "linkedin"})
 
 
+# Sections rendered as a dated timeline. A LinkedIn scrape carries NO ordering
+# guarantee — the stored array is whatever order the export happened to emit, and
+# on a real deployment that surfaced as a thirteen-year-old role leading the
+# career section while the CURRENT, still-ongoing role sat eighth. Ordering here
+# rather than in the Angular component fixes the site and the JSON Resume / CV
+# export together, because both read this one projection.
+TIMELINE_FIELDS = ("experience", "education")
+
+_MONTHS = {
+    "jan": 1,
+    "feb": 2,
+    "mar": 3,
+    "apr": 4,
+    "may": 5,
+    "jun": 6,
+    "jul": 7,
+    "aug": 8,
+    "sep": 9,
+    "oct": 10,
+    "nov": 11,
+    "dec": 12,
+}
+# Only an EXPLICIT marker counts as ongoing. A merely missing end date is
+# ambiguous — treating it as "now" would float an undated entry to the top.
+_ONGOING = frozenset({"present", "current", "now", "heute", "aktuell"})
+# Sorts above every real date, so an ongoing role leads the list.
+_ONGOING_KEY = (9999, 12)
+# Sorts below every real date, so an unparseable entry sinks instead of leading.
+_UNDATED_KEY = (0, 0)
+
+
+def _month_year(value: object) -> tuple[int, int] | None:
+    """``"Mar 2025"`` -> ``(2025, 3)``; ``"1986"`` -> ``(1986, 0)``; else ``None``."""
+    if not isinstance(value, str):
+        return None
+    parts = value.strip().split()
+    if len(parts) == 2 and parts[1].isdigit():
+        month = _MONTHS.get(parts[0][:3].lower())
+        if month is not None:
+            return (int(parts[1]), month)
+    if len(parts) == 1 and parts[0].isdigit() and len(parts[0]) == 4:
+        return (int(parts[0]), 0)
+    return None
+
+
+def _timeline_sort_key(entry: object) -> tuple[int, int, int, int]:
+    """Reverse-chronological key: ongoing first, then by end date, then start."""
+    if not isinstance(entry, dict):
+        return (*_UNDATED_KEY, *_UNDATED_KEY)
+    start = _month_year(entry.get("startDate")) or _UNDATED_KEY
+    raw_end = entry.get("endDate")
+    if isinstance(raw_end, str) and raw_end.strip().lower() in _ONGOING:
+        end = _ONGOING_KEY
+    else:
+        # No parseable end: fall back to the start so a still-dated entry is
+        # placed by when it began rather than dumped at the bottom.
+        end = _month_year(raw_end) or start
+    return (*end, *start)
+
+
+def _sorted_timeline(entries: object) -> object:
+    """Order a timeline section newest-first, leaving anything else untouched."""
+    if not isinstance(entries, list):
+        return entries
+    # `sorted` is stable, so entries sharing an end AND start date keep the
+    # relative order the source gave them — a contractor role and the agency
+    # that placed it routinely carry identical dates.
+    return sorted(entries, key=_timeline_sort_key, reverse=True)
+
+
 def public_profile_view(data: object) -> dict:
     """Project stored profile data down to the public allowlist."""
     if not isinstance(data, dict):
         return {}
     view: dict = {k: v for k, v in data.items() if k in PUBLIC_PROFILE_FIELDS}
+    for field in TIMELINE_FIELDS:
+        if field in view:
+            view[field] = _sorted_timeline(view[field])
     contact = data.get("contact")
     if isinstance(contact, dict):
         view["contact"] = {
