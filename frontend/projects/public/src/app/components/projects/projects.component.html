@@ -11,7 +11,7 @@
 @if (standalone) {
   <section id="projects" class="py-20 bg-black min-h-screen" data-testid="projects-page">
     <div class="container mx-auto px-6">
-      <h2 class="text-2xl font-bold mb-16 text-secondary font-mono">
+      <h2 class="text-2xl font-bold mb-16 text-secondary font-sans">
         {{ 'SECTION.PROJECTS' | translate }}
       </h2>
       @if (projects$ | async; as projects) {
@@ -19,7 +19,7 @@
           @for (project of projects; track project.slug) {
             <ng-container *ngTemplateOutlet="card; context: { $implicit: project }"></ng-container>
           } @empty {
-            <p class="text-muted font-mono" data-testid="projects-empty">
+            <p class="text-muted font-sans" data-testid="projects-empty">
               {{ 'PROJECTS.EMPTY' | translate }}
             </p>
           }
@@ -36,7 +36,7 @@
   -->
   <section id="projects" class="py-20 bg-black" data-testid="projects-section">
     <div class="container mx-auto px-6">
-      <h2 class="text-2xl font-bold mb-16 text-secondary font-mono">
+      <h2 class="text-2xl font-bold mb-16 text-secondary font-sans">
         {{ 'SECTION.PROJECTS' | translate }}
       </h2>
       <div class="grid md:grid-cols-2 gap-8 max-w-6xl mx-auto">
@@ -47,7 +47,7 @@
       <div class="mt-12 text-center">
         <a
           routerLink="/projects"
-          class="text-primary hover:underline font-mono"
+          class="text-primary hover:underline font-sans"
           data-testid="projects-all-link">
           {{ 'PROJECTS.VIEW_ALL' | translate }} &gt;
         </a>
@@ -66,11 +66,11 @@
         [alt]="project.title"
         class="w-full h-40 object-cover mb-4 border border-terminal" />
     }
-    <h3 class="text-lg font-bold text-primary mb-2 font-mono">
+    <h3 class="text-lg font-bold text-primary mb-2 font-sans">
       <a [routerLink]="['/projects', project.slug]" class="hover:underline">{{ project.title }}</a>
     </h3>
     @if (project.role || period(project)) {
-      <p class="text-sm text-muted font-mono mb-3">
+      <p class="text-sm text-muted font-sans mb-3">
         @if (project.role) {
           <span>{{ project.role }}</span>
         }
@@ -83,19 +83,19 @@
       </p>
     }
     @if (project.summary) {
-      <p class="text-secondary font-mono mb-4 flex-grow">{{ project.summary }}</p>
+      <p class="text-secondary font-sans mb-4 flex-grow">{{ project.summary }}</p>
     }
     @if (project.techStack.length) {
       <ul class="flex flex-wrap gap-2 mb-4" data-testid="project-stack">
         @for (tech of project.techStack; track tech) {
           <li
-            class="text-xs text-terminal-dim border border-terminal-dim px-2 py-0.5 rounded-sm font-mono">
+            class="text-xs text-terminal-dim border border-terminal-dim px-2 py-0.5 rounded-sm font-sans">
             {{ tech }}
           </li>
         }
       </ul>
     }
-    <div class="flex gap-4 font-mono text-sm">
+    <div class="flex gap-4 font-sans text-sm">
       @if (project.links.source) {
         <a
           [href]="project.links.source"

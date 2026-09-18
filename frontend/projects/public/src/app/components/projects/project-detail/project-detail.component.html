@@ -5,12 +5,12 @@
     @if (vm$ | async; as vm) {
       @if (vm.project; as project) {
         <article data-testid="project-detail">
-          <a routerLink="/projects" class="text-muted hover:text-primary font-mono text-sm">
+          <a routerLink="/projects" class="text-muted hover:text-primary font-sans text-sm">
             &lt; {{ 'PROJECTS.BACK' | translate }}
           </a>
-          <h1 class="text-3xl font-bold text-primary mt-6 mb-2 font-mono">{{ project.title }}</h1>
+          <h1 class="text-3xl font-bold text-primary mt-6 mb-2 font-sans">{{ project.title }}</h1>
           @if (project.role || period(project)) {
-            <p class="text-sm text-muted font-mono mb-8">
+            <p class="text-sm text-muted font-sans mb-8">
               @if (project.role) {
                 <span>{{ project.role }}</span>
               }
@@ -29,10 +29,10 @@
               class="w-full mb-8 border border-terminal" />
           }
           @if (project.summary) {
-            <p class="text-lg text-secondary font-mono mb-6">{{ project.summary }}</p>
+            <p class="text-lg text-secondary font-sans mb-6">{{ project.summary }}</p>
           }
           @if (project.description) {
-            <p class="text-secondary font-mono whitespace-pre-line mb-8">
+            <p class="text-secondary font-sans whitespace-pre-line mb-8">
               {{ project.description }}
             </p>
           }
@@ -40,13 +40,13 @@
             <ul class="flex flex-wrap gap-2 mb-8" data-testid="detail-stack">
               @for (tech of project.techStack; track tech) {
                 <li
-                  class="text-xs text-terminal-dim border border-terminal-dim px-2 py-0.5 rounded-sm font-mono">
+                  class="text-xs text-terminal-dim border border-terminal-dim px-2 py-0.5 rounded-sm font-sans">
                   {{ tech }}
                 </li>
               }
             </ul>
           }
-          <div class="flex gap-6 font-mono">
+          <div class="flex gap-6 font-sans">
             @if (project.links.source) {
               <a
                 [href]="project.links.source"
@@ -79,15 +79,15 @@
           exist flashed "no longer exists" first.
         -->
         <div data-testid="project-missing">
-          <h1 class="text-2xl font-bold text-primary mb-4 font-mono">
+          <h1 class="text-2xl font-bold text-primary mb-4 font-sans">
             {{ 'PROJECTS.NOT_FOUND' | translate }}
           </h1>
-          <a routerLink="/projects" class="text-primary hover:underline font-mono">
+          <a routerLink="/projects" class="text-primary hover:underline font-sans">
             &lt; {{ 'PROJECTS.BACK' | translate }}
           </a>
         </div>
       } @else {
-        <div class="text-secondary animate-pulse font-mono" data-testid="project-loading">
+        <div class="text-secondary animate-pulse font-sans" data-testid="project-loading">
           $ loading project...
         </div>
       }
