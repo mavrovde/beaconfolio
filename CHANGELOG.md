@@ -91,6 +91,36 @@ All notable changes to this project will be documented in this file.
   and is configured at app.snyk.io, not from this repository; the workflow header records that so
   the second half is not forgotten.
 
+### Fixed
+
+- **An e2e test could type into a server-rendered page before Angular hydrated it, and the failure
+  read as something else entirely.** The public app is SSR, so a form is in the DOM before its
+  controls bind; filling it in that window is silently undone, because `setUpControl` calls
+  `writeValue` as the control binds. The FormGroup stays pristine and invalid, the submit button
+  never enables, and the test dies 120 seconds later on `page.click` against a `disabled` button —
+  three steps from the cause. `contact-form.spec.ts` gained the
+  `await page.waitForLoadState('networkidle')` barrier as a review blocker after the race was
+  reproduced 1-in-60, and its comment claimed "Every other public spec uses this idiom". **That was
+  false, and measuring it is what found this:** `cv.spec.ts` had four fills and zero barriers, the
+  only public spec with none. It survived on timing luck until #425's control-flow rewrite changed
+  that template's render shape and tipped it, turning `main` red and blocking the v1.15.1 release.
+  `cv.spec.ts` now crosses the barrier and asserts `toBeEnabled` on the submit button *before*
+  clicking, so a form that never becomes valid fails in seconds naming the real broken state;
+  `llm-interaction.spec.ts` gains the barrier too — `/llm` is public SSR and its terminal input is
+  bound with `[(ngModel)]`, which is a `ControlValueAccessor` and takes the same `writeValue`.
+
+- **`scripts/check_e2e_hydration_barrier.sh` — the comment's claim is now enforced instead of
+  asserted.** After a `page.goto` onto a PUBLIC route, a fill must be preceded by a barrier. The
+  unit of judgement is the NAVIGATION, not the directory: a first draft scoped to
+  `frontend/e2e/public/**` produced four false positives in `blog-display.spec.ts`, which lives
+  there but drives the CSR admin app, where nothing is in the DOM until Angular renders it and the
+  hazard cannot occur. Runs in the pre-push gate on the new `e2ebarrier` leg and in CI, with a
+  self-test whose mutation contract is 5 killed / 0 survived / 0 invalid. Its own first draft is
+  case 1 of that self-test: it matched the `beforeEach` body with a regex that ended at the first
+  `});` — a nested `addInitScript` callback, above the `page.goto` — so five genuinely unguarded
+  fills were classified "destination unknown" and it printed a green tick over the exact defect it
+  exists to catch.
+
 ## [1.15.0] - 2026-09-18
 
 ### Added

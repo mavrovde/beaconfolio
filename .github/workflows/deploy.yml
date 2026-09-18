@@ -425,6 +425,17 @@ jobs:
       # file byte-identically and drop duplicated entries, not just headings.
       - name: Self-test the CHANGELOG dedup tool
         run: bash scripts/dedup_changelog_unreleased.test.sh --mutations
+      # SSR hydration-barrier contract: an e2e test that types into a
+      # server-rendered page before Angular attaches has its input wiped by
+      # setUpControl's writeValue, and fails 120s later at a disabled button.
+      # cv.spec.ts carried that exposure until #425's template rewrite tipped it
+      # and turned `main` red. The lint runs on the specs, the self-test pins
+      # that it can still fail — including the false-negative shape the first
+      # draft shipped, where a nested `});` ended the beforeEach above the goto.
+      - name: Check the e2e hydration barrier
+        run: bash scripts/check_e2e_hydration_barrier.sh
+      - name: Self-test the e2e hydration-barrier lint
+        run: bash scripts/check_e2e_hydration_barrier.test.sh --mutations
       # Shared-edge apply contract (#338/#420): apply.sh is the only sanctioned
       # writer of /etc/caddy/Caddyfile on the multi-tenant host, so its
       # fail-closed behaviors (read-only default, stdin refusal, diff-and-

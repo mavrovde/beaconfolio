@@ -18,7 +18,10 @@ test.describe('Public contact form', () => {
         await page.goto('/');
         // Hydration barrier (review blocker): filling before Angular hydrates
         // lets setUpControl's writeValue wipe the typed values — reproduced as
-        // 1 failure in 60 runs. Every other public spec uses this idiom.
+        // 1 failure in 60 runs. It is now required by
+        // scripts/check_e2e_hydration_barrier.sh, which is here because this
+        // comment used to claim "Every other public spec uses this idiom" and
+        // that was false: cv.spec.ts had four fills and no barrier.
         await page.waitForLoadState('networkidle');
         const form = page.locator('form[aria-label="contact form"]');
         await expect(form).toBeVisible();
@@ -34,7 +37,10 @@ test.describe('Public contact form', () => {
         await page.goto('/');
         // Hydration barrier (review blocker): filling before Angular hydrates
         // lets setUpControl's writeValue wipe the typed values — reproduced as
-        // 1 failure in 60 runs. Every other public spec uses this idiom.
+        // 1 failure in 60 runs. It is now required by
+        // scripts/check_e2e_hydration_barrier.sh, which is here because this
+        // comment used to claim "Every other public spec uses this idiom" and
+        // that was false: cv.spec.ts had four fills and no barrier.
         await page.waitForLoadState('networkidle');
         const submit = page.locator('form[aria-label="contact form"] button[type="submit"]');
         await expect(submit).toBeDisabled();
@@ -70,7 +76,10 @@ test.describe('Public contact form', () => {
         await page.goto('/');
         // Hydration barrier (review blocker): filling before Angular hydrates
         // lets setUpControl's writeValue wipe the typed values — reproduced as
-        // 1 failure in 60 runs. Every other public spec uses this idiom.
+        // 1 failure in 60 runs. It is now required by
+        // scripts/check_e2e_hydration_barrier.sh, which is here because this
+        // comment used to claim "Every other public spec uses this idiom" and
+        // that was false: cv.spec.ts had four fills and no barrier.
         await page.waitForLoadState('networkidle');
         await page.fill('#contact-name', '  Rita Recruiter  ');
         await page.fill('#contact-email', 'rita@agency.example');
@@ -99,7 +108,10 @@ test.describe('Public contact form', () => {
         await page.goto('/');
         // Hydration barrier (review blocker): filling before Angular hydrates
         // lets setUpControl's writeValue wipe the typed values — reproduced as
-        // 1 failure in 60 runs. Every other public spec uses this idiom.
+        // 1 failure in 60 runs. It is now required by
+        // scripts/check_e2e_hydration_barrier.sh, which is here because this
+        // comment used to claim "Every other public spec uses this idiom" and
+        // that was false: cv.spec.ts had four fills and no barrier.
         await page.waitForLoadState('networkidle');
         await page.fill('#contact-name', 'Rita Recruiter');
         await page.fill('#contact-email', 'rita@agency.example');

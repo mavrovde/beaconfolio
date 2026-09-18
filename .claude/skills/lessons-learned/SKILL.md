@@ -2122,3 +2122,49 @@ true of the workflow and false of the run.
   they all source, #237), plus a `*.test.sh` self-test beside each hook — the merge gate's carries
   a mutation contract with an identity control, because its first two versions certified themselves
   green while pinning nothing.
+
+## 77. On an SSR page, a fill BEFORE hydration is silently undone — and the failure appears three steps later (#425/#442)
+
+**The trap.** The public app is server-rendered, so a form is in the DOM before Angular binds its
+controls. Playwright's auto-waiting sees a visible, editable input and types into it happily. Then
+hydration runs, `setUpControl` calls `writeValue` on each control as it binds, and **the typed value
+is wiped**. The FormGroup stays pristine and invalid, `[disabled]="form.invalid || …"` never
+releases, and the test dies **120 seconds later** on `page.click` against a `disabled` button.
+
+**Why it bites.** Every visible symptom points somewhere else. The stack trace names the click, the
+selector is correct, the element exists, and the same spec passes locally and on nine reruns out of
+ten — so it reads as a flaky selector or a slow backend. The actual defect is four lines earlier and
+has no error of its own. It is also *timing*-dependent, not logic-dependent, which means **a spec
+can carry the bug for months and only fail when something changes the page's render shape.** That is
+exactly what happened: `cv.spec.ts` was exposed from the day it was written and only went red when
+#425's `control-flow` codemod rewrote `*ngIf="!successMessage"` on the `<form>` into
+`@if (!successMessage) { <form …> }`.
+
+**It is NOT limited to reactive forms.** `[(ngModel)]` goes through a `ControlValueAccessor` too, so
+`writeValue` applies identically — `llm-interaction.spec.ts` had the same exposure on `/llm`. And it
+is not limited to `fill`: a **click** on a server-rendered button that has not yet hydrated is
+swallowed just as silently.
+
+**The admin app is NOT exposed, and that distinction matters.** Admin is a CSR SPA — nothing is in
+the DOM until Angular renders it, so there is no pre-hydration window. This is why the hazard is
+**per navigation, not per file**: `blog-display.spec.ts` lives in `e2e/public/` but drives the admin
+app to seed posts, and flagging its fills produces false positives that get the whole check
+excluded.
+
+**How to apply.**
+1. After `page.goto()` onto a **public** route and **before the first fill or click**:
+   `await page.waitForLoadState('networkidle');`
+2. **Assert the state you actually depend on, at the layer that can enforce it.** A barrier is a
+   proxy for "hydrated", not a proof of it. Before clicking a conditionally-enabled submit, assert
+   `await expect(submit).toBeEnabled({ timeout: 15000 })` — a form that never becomes valid then
+   fails in seconds *naming the real broken state* instead of timing out on a symptom.
+3. `scripts/check_e2e_hydration_barrier.sh` enforces step 1 (pre-push `e2ebarrier` leg + CI).
+
+**The meta-lesson, which is the expensive half.** The barrier was *already* in
+`contact-form.spec.ts`, added as a review blocker after the race was reproduced 1-in-60, under a
+comment reading *"Every other public spec uses this idiom."* **Nobody had measured that, and it was
+false** — `cv.spec.ts` had four fills and zero barriers. A claim in a comment has no way to stay
+true: the next spec is written by someone who never reads it. When a footgun recurs despite being
+documented, the fix is a **guard**, not a louder paragraph (same class as items 4, 18 and the
+#142/#177 startup refusals). And when you find a comment asserting a repo-wide invariant, **grep it
+before you trust it** — that grep is what found this bug.
