@@ -2177,7 +2177,9 @@ before you trust it** — that grep is what found this bug.
 app, in Node, with **no backend behind it**. Anything wired into `provideAppInitializer` /
 `APP_INITIALIZER` that touches `SiteConfigService.config$` therefore starts an HTTP request that
 never settles, and the build dies with `AbortError: Routes extraction was aborted` /
-`TimeoutError`. **Measured (#339): ~34s to the abort, against 3.5s for a green build.**
+`TimeoutError`. **Measured (#339, one machine, at the fix's head): 33.479 s to the abort, against 3.370 s for
+the green build. One figure, quoted the same way in `theme.service.ts` and the CHANGELOG — the
+first draft carried three different readings of one measurement.**
 
 **Why it bites — and why the obvious fixes don't work.** Three escapes were tried and all three
 failed:

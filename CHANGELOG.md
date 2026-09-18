@@ -46,7 +46,11 @@ All notable changes to this project will be documented in this file.
   served on `/api/app/config/site` beside the rest of the site's identity. **`terminal`'s palette is
   unchanged token for token** — every former literal moved into a token whose default value is that
   same literal — but the compiled stylesheet is NOT byte-identical (42,792 B to 47,837 B; `#000`
-  serialises as `#000000`, and so on), and two long-broken component stylesheets now paint
+  serialises as `#000000`, and so on). It **renders** identically: a review-round diff of 40,159
+  computed declarations across `/`, `/cv`, `/llm` and `/blog` in Chromium found 32 differences and
+  every one is benign — four `body::before` samples caught at different phases of the live
+  `flicker` animation, four gradient serialisations, one in-flight fade-in and twenty readings of
+  the new custom properties. Two long-broken component stylesheets now paint
   deliberately on every theme, `terminal` included. `cv.component.css` referenced eight custom
   properties (`--surface-card`, `--text-primary`, `--primary-color`, `--primary-color-rgb`, …)
   that have **zero declarations anywhere in the public app**: an unresolvable `var()` is
@@ -72,8 +76,17 @@ All notable changes to this project will be documented in this file.
   **not** from an app initializer: `ng build public` runs a route-extraction bootstrap with no
   backend behind it, and an initializer that reads the config starts a request that never settles
   — because the stream is `shareReplay(1)`, its source subscription is never torn down and an RxJS
-  `timeout` does not rescue it either, so the build aborts (measured: ~34s to `AbortError` versus
-  3.5s green from `ngOnInit`).
+  `timeout` does not rescue it either, so the build aborts (measured: **33.479 s** to
+  `AbortError` versus **3.370 s** green from `ngOnInit`).
+  Two scope notes, so the record matches what ships. `body` now takes each preset's `--font-sans`
+  rather than a fixed `font-mono`, which is a no-op on `terminal` (both tokens are the same VT323
+  stack) and the only way `classic`'s serif or `modern`'s system stack can reach the page — but 58
+  `font-mono` utilities across 14 public templates still pin their own elements to monospace, so a
+  non-terminal preset is mixed rather than uniform until #67 makes fonts config-driven; the admin
+  picker's descriptions say "body" for that reason. And the fixed stats bar now dims its CONTENT
+  instead of itself: `opacity` on the bar also thinned its ground — supplied by the unlayered
+  `.border-terminal`, not by `bg-black` — so the page ghosted through it on every non-terminal
+  preset.
 
 ## [1.15.2] - 2026-09-18
 

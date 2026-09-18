@@ -10,12 +10,22 @@
  * contract for custom, non-preset themes, which is why it is written down
  * here rather than left implicit in the preset blocks.
  *
- * A theme MUST supply every token in both groups. A partial theme does not
+ * A theme MUST supply every token in every group. A partial theme does not
  * fall back per-token to `terminal`: it inherits whatever the previous
- * declaration left, which is how you get a half-themed component. The backend
- * vocabulary (`THEME_PRESETS` in `backend/app/api/site_settings.py`) and the
- * `[data-theme]` blocks here are pinned to each other by a backend test that
- * reads this file, so a preset can never ship without its tokens.
+ * declaration left, which is how you get a half-themed component.
+ *
+ * Two DIFFERENT checks read this file, and the difference matters (#339 review
+ * r1 found the claim here overstated one of them):
+ *   - `backend/tests/test_site_settings.py` pins the VOCABULARY — every preset
+ *     the API accepts has a block here, and the three copies of the preset list
+ *     (Python, public service, admin service) are the same SET, both
+ *     directions. It says nothing about a block's contents: a one-token block
+ *     passes it.
+ *   - `frontend/projects/public/src/app/theme-contract.spec.ts` pins the
+ *     CONTENTS — every non-terminal preset must declare every base token in its
+ *     OWN block. `terminal` is the base itself and is deliberately spread
+ *     across `@theme` + `:root` + its own block (which declares none of the
+ *     `--fx-*`), so it is checked as a union.
  *
  * ## Group 1 — palette and type (Tailwind `@theme`, so they also generate
  * utilities like `bg-background` / `text-primary`)
@@ -27,8 +37,17 @@
  *   --color-muted         hairlines and disabled text
  *   --color-black         the GROUND, and the contrast pair for `--color-primary`
  *   --color-white         the high-emphasis foreground (hover, active, headings)
- *   --font-mono           monospace family
- *   --font-sans           body family
+ *   --font-mono           monospace family (the `font-mono` utility)
+ *   --font-sans           body family — `body` itself, via the `font-sans`
+ *                         utility. NOT yet the whole page: 58 `font-mono`
+ *                         utilities across 14 public templates still pin
+ *                         their own elements to the monospace stack, so on
+ *                         `classic` the serif reaches the body and those
+ *                         blocks stay mono. Converting them is font ownership,
+ *                         which belongs to #67 (config-driven fonts) and is
+ *                         deliberately NOT done here — on `terminal`, where
+ *                         both tokens are VT323, the difference is invisible
+ *                         either way.
  *
  * The last two are Tailwind's own `black`/`white` tokens, and re-pointing them
  * per theme is deliberate rather than a shortcut. The components carry 37
@@ -62,6 +81,9 @@
  *   --fx-panel-bg             `.border-terminal` ground
  *   --fx-active-shadow        active button shadow      (`none`)
  *   --fx-active-text-shadow   active button text glow   (`none`)
+ *   --fx-accent-glow          outer halo on an accent   (`none`)
+ *   --fx-accent-glow-inset    inner halo in a bubble    (`none`)
+ *   --fx-hero-grid            the hero's grid overlay   (`none`)
  *
  * ## Group 3 — console/form surfaces (`--fx-console-*`)
  *
@@ -137,6 +159,11 @@
   /* Group 3. These four are the zinc literals `llm.component.css` already
    * carried, moved here unchanged, so terminal's console keeps its exact
    * colours while every other theme can state its own. */
+  --fx-accent-glow: 0 0 15px rgba(51, 255, 0, 0.3);
+  --fx-accent-glow-inset: inset 0 0 10px rgba(51, 255, 0, 0.1);
+  --fx-hero-grid:
+    linear-gradient(rgba(0, 255, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 255, 0, 0.03) 1px, transparent 1px);
   --fx-console-fg: #a1a1aa;
   --fx-console-fg-strong: #e4e4e7;
   --fx-console-panel: #18181b;
@@ -202,6 +229,9 @@
   --fx-panel-bg: #1a1c21;
   --fx-active-shadow: none;
   --fx-active-text-shadow: none;
+  --fx-accent-glow: none;
+  --fx-accent-glow-inset: none;
+  --fx-hero-grid: none;
   --fx-console-fg: #8a8f98;
   --fx-console-fg-strong: #e6e6e6;
   --fx-console-panel: #1a1c21;
@@ -238,6 +268,9 @@
   --fx-panel-bg: #f6f8fa;
   --fx-active-shadow: none;
   --fx-active-text-shadow: none;
+  --fx-accent-glow: none;
+  --fx-accent-glow-inset: none;
+  --fx-hero-grid: none;
   --fx-console-fg: #57606a;
   --fx-console-fg-strong: #1f2328;
   --fx-console-panel: #f6f8fa;
@@ -275,6 +308,9 @@
   --fx-panel-bg: #ffffff;
   --fx-active-shadow: 0 1px 2px rgba(79, 70, 229, 0.25);
   --fx-active-text-shadow: none;
+  --fx-accent-glow: none;
+  --fx-accent-glow-inset: none;
+  --fx-hero-grid: none;
   --fx-console-fg: #475569;
   --fx-console-fg-strong: #0b1220;
   --fx-console-panel: #ffffff;
@@ -311,6 +347,9 @@
   --fx-panel-bg: #f3ece1;
   --fx-active-shadow: none;
   --fx-active-text-shadow: none;
+  --fx-accent-glow: none;
+  --fx-accent-glow-inset: none;
+  --fx-hero-grid: none;
   --fx-console-fg: #6b6259;
   --fx-console-fg-strong: #2b2724;
   --fx-console-panel: #f3ece1;
@@ -318,8 +357,13 @@
 }
 
 body {
-  /* `bg-black` still, and it is now a THEMED token — see the contract above. */
-  @apply bg-black text-primary font-mono antialiased overflow-x-hidden;
+  /* `bg-black` still, and it is now a THEMED token — see the contract above.
+   * The body family is `font-sans`, NOT `font-mono`: every preset declares
+   * both, and on `terminal` the two are the same VT323 stack, so this is a
+   * no-op there and the only way `classic`'s serif or `modern`'s system stack
+   * can ever reach the page. See the `--font-sans` note in the contract for
+   * what still overrides it. */
+  @apply bg-black text-primary font-sans antialiased overflow-x-hidden;
   text-shadow: var(--fx-text-shadow);
   position: relative;
   min-height: 100vh;
@@ -455,4 +499,20 @@ body::after {
   50% {
     opacity: 0;
   }
+}
+
+/* The three effect tokens the TEMPLATES need. A Tailwind arbitrary value like
+ * `shadow-[0_0_15px_rgba(51,255,0,0.3)]` is a literal in markup — the same
+ * un-themeable thing as a literal in a stylesheet, and harder to find (#339
+ * review r1 found seven). These give the markup a class to say it with. */
+@utility fx-accent-glow {
+  box-shadow: var(--fx-accent-glow);
+}
+
+@utility fx-accent-glow-inset {
+  box-shadow: var(--fx-accent-glow-inset);
+}
+
+@utility fx-hero-grid {
+  background-image: var(--fx-hero-grid);
 }

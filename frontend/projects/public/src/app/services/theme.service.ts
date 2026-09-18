@@ -30,10 +30,11 @@ import { SiteConfigService, normalizeTheme } from './site-config.service';
  * never settles, and because `config$` is a `shareReplay(1)` its subscription
  * is never torn down — so an RxJS `timeout` does not rescue it either. The
  * build then fails with `TimeoutError: The operation was aborted due to
- * timeout` (measured: 4.6s for a clean build, vs. a 34s abort with the
- * initializer). Route extraction does not render the root template, which is
- * why the identical `config$` read behind `gtmNoscriptUrl$` has always been
- * safe — and it is why this one lives beside it, in the same `ngOnInit`.
+ * timeout` (measured at this head: **33.479 s** to the abort with the
+ * initializer, against **3.370 s** for the green build without it). Route
+ * extraction does not render the root template, which is why the identical
+ * `config$` read behind `gtmNoscriptUrl$` has always been safe — and it is why
+ * this one lives beside it, in the same `ngOnInit`.
  *
  * A cosmetic choice must not be able to fail a production build.
  */

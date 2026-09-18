@@ -21,7 +21,7 @@
 }
 
 .slider-arrow:hover:not(:disabled) {
-  text-shadow: 0 0 8px rgba(0, 255, 65, 0.8);
+  text-shadow: var(--fx-active-text-shadow);
 }
 
 .slider-arrow:disabled {
@@ -36,9 +36,9 @@
 
 .slider-year:hover {
   opacity: 1 !important;
-  text-shadow: 0 0 6px rgba(0, 255, 65, 0.4);
+  text-shadow: var(--fx-active-text-shadow);
 }
 
 .slider-year.selected {
-  text-shadow: 0 0 10px rgba(0, 255, 65, 0.7);
+  text-shadow: var(--fx-active-text-shadow);
 }

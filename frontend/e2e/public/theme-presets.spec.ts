@@ -12,9 +12,26 @@ import { test, expect } from '@playwright/test';
  * about what the page is actually painted with. That is the whole gap here.
  *
  * Runs against the composed stack; the backend serves the real /config/site.
+ *
+ * These tests MUTATE SHARED STATE: the selected theme is one row in the
+ * backend's site settings, so every test here PUTs a preset and restores
+ * `terminal` in a `finally`. That is why the block is `mode: 'serial'` — two
+ * workers interleaving PUTs would each read the other's theme — and why a
+ * failure mid-run can leave the stack on a non-default preset until the next
+ * run's restore.
  */
 
-/** Every token the stylesheet's documented contract obliges a preset to supply. */
+/**
+ * A SAMPLE of the token contract, not the whole of it.
+ *
+ * Completeness is asserted in the unit tier by
+ * `projects/public/src/app/theme-contract.spec.ts`, which reads `styles.css`
+ * and derives the full list from `@theme` ∪ `:root` — a hand-kept copy here
+ * once said 23 while the stylesheet said 22. What this list is for is the
+ * browser-only half: these tokens must RESOLVE DIFFERENTLY per preset, which
+ * no source-reading test can see. Adding a token here is optional; adding one
+ * to the stylesheet obliges every preset automatically, over there.
+ */
 const CONTRACT_TOKENS = [
     '--color-primary',
     '--color-secondary',
@@ -77,14 +94,39 @@ test.describe('Theme presets', () => {
         // Deliberately NOT page.goto: this asserts the server's bytes. Reading
         // the attribute off a hydrated DOM would pass even if the client had
         // stamped it, which is exactly the flash this criterion forbids.
-        const res = await request.get(`${baseURL}/`);
-        expect(res.ok()).toBe(true);
-        const html = await res.text();
-        const root = /<html[^>]*>/.exec(html)?.[0] ?? '';
-        expect(root).toMatch(/data-theme="(terminal|dark|light|modern|classic)"/);
-        // And the value is a real preset, not the literal default written by a
-        // client that never got a config: the attribute must precede <body>.
-        expect(html.indexOf('data-theme')).toBeLessThan(html.indexOf('<body'));
+        const rootOf = async () => {
+            const res = await request.get(`${baseURL}/`);
+            expect(res.ok()).toBe(true);
+            const html = await res.text();
+            // The attribute must precede <body>, or the page paints once
+            // unthemed and then corrects itself — the flash AC3 forbids.
+            expect(html.indexOf('data-theme')).toBeLessThan(html.indexOf('<body'));
+            return /<html[^>]*>/.exec(html)?.[0] ?? '';
+        };
+
+        expect(await rootOf()).toMatch(/data-theme="(terminal|dark|light|modern|classic)"/);
+
+        // …and the value is the CHOSEN one, not a constant. The form above
+        // passes against a server that hardcodes the default, because the
+        // default IS a member of the vocabulary (review round 1). So select a
+        // NON-default preset over the admin API and read the bytes again.
+        const backend = process.env['BACKEND_URL'] || baseURL || 'http://localhost:4200';
+        const token = await login(request, backend);
+        test.skip(token === null, `admin API unreachable via ${backend}`);
+        const put = (value: string) =>
+            request.put(`${backend}/api/app/admin/site-settings/theme`, {
+                headers: { Authorization: `Bearer ${token}` },
+                data: { value },
+            });
+
+        const probe = await put('classic');
+        test.skip(probe.status() === 404, 'backend image predates #339');
+        expect(probe.ok()).toBe(true);
+        try {
+            expect(await rootOf()).toContain('data-theme="classic"');
+        } finally {
+            await put('terminal');
+        }
     });
 
     test('AC5 — every preset supplies the complete token contract, as PAINTED', async ({

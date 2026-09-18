@@ -3,6 +3,8 @@
 Both are admin-editable at runtime and surfaced publicly on /config/site.
 """
 
+import re
+
 import pytest
 from httpx import AsyncClient
 
@@ -239,7 +241,10 @@ def test_every_theme_preset_has_a_stylesheet_block():
     languages. A preset the API accepts but `styles.css` has no
     `[data-theme="..."]` block for renders untokenized — the page keeps
     whatever `:root` holds, which is a half-themed render rather than a clean
-    fallback. This is the check that fails before that can ship."""
+    fallback. This pins the VOCABULARY only — a one-token block passes it.
+    The token CONTENTS are pinned by
+    `frontend/projects/public/src/app/theme-contract.spec.ts`, which reads the
+    same file (#339 review r1, major 3: this docstring used to claim both)."""
     from app.api.site_settings import THEME_PRESETS
 
     css = (
@@ -266,13 +271,22 @@ def test_theme_vocabulary_matches_both_frontend_copies():
         root / "admin" / "src" / "app" / "services" / "site-settings.service.ts"
     ).read_text()
 
-    for preset in THEME_PRESETS:
-        assert f"'{preset}'" in public_svc, (
-            f"site-config.service.ts is missing '{preset}'"
-        )
-        assert f"'{preset}'" in admin_svc, (
-            f"site-settings.service.ts is missing '{preset}'"
-        )
+    # BOTH directions (#339 review r1, minor 8). Looping over the Python tuple
+    # alone catches a preset the backend gained and a frontend missed, but not
+    # the live case in the other direction: a sixth preset added to the ADMIN
+    # list alone renders a picker button that 422s on click.
+    def _declared(source: str) -> set[str]:
+        match = re.search(r"THEME_PRESETS = \[(.*?)\]", source, re.DOTALL)
+        assert match, "no THEME_PRESETS array found"
+        return set(re.findall(r"'([a-z0-9-]+)'", match.group(1)))
+
+    expected = set(THEME_PRESETS)
+    assert _declared(public_svc) == expected, (
+        f"site-config.service.ts vocabulary differs: {_declared(public_svc) ^ expected}"
+    )
+    assert _declared(admin_svc) == expected, (
+        f"site-settings.service.ts vocabulary differs: {_declared(admin_svc) ^ expected}"
+    )
 
     # The DEFAULT is load-bearing on its own: the public service derives it
     # from the FIRST entry, so a reordering there would silently change what an

@@ -16,13 +16,21 @@ export const AVAILABILITY_STATES = ['open', 'listening', 'not_looking'] as const
 export const THEME_PRESETS = ['terminal', 'dark', 'light', 'modern', 'classic'] as const;
 
 /** A one-line description per preset, shown beside the picker so the choice is
- *  legible without opening the public site in five tabs. */
+ *  legible without opening the public site in five tabs.
+ *
+ *  Keep these HONEST about type: `body` takes `--font-sans` per preset, but 58
+ *  `font-mono` utilities across 14 public templates still pin their own
+ *  elements to the monospace stack, so a non-terminal preset is mixed rather
+ *  than uniformly serif/sans until #67 makes fonts config-driven. The wording
+ *  below says "body" for that reason — a picker that promised a serif site and
+ *  delivered a serif paragraph beside monospace panels would be the same class
+ *  of claim-without-measurement the theme contract exists to stop. */
 export const THEME_DESCRIPTIONS: Readonly<Record<string, string>> = {
     terminal: 'Green phosphor CRT — the default, with scanlines and glow',
     dark: 'Neutral dark, no CRT effects',
     light: 'Light background, dark text',
-    modern: 'High-contrast sans with soft elevation',
-    classic: 'Serif on warm paper, document-like',
+    modern: 'System sans body on white, soft elevation',
+    classic: 'Serif body on warm paper, document-like',
 };
 
 export interface AvailabilityValue {
