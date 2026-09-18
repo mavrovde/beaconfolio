@@ -50,7 +50,18 @@ jobs:
       - uses: actions/checkout@v7
       - name: Self-test the auditor first (a broken detector must not report clean)
         run: bash scripts/audit_no_verdict_merges.test.sh --mutations
+      # --limit is a TRUNCATION GUARD, not a page size: the script exits 2
+      # ("cannot measure") the moment the window fills it, rather than silently
+      # auditing a prefix. SINCE never moves forward, so the window only grows —
+      # measured 2026-09-18: 39 merged PRs since the cutover (23 of them on the
+      # 14th itself; ~4/day since), so 100 would have tripped inside a fortnight
+      # and turned this alarm into a maintenance nag. 400 is ~3 months of
+      # headroom at that rate. When it binds again, do NOT just raise the number:
+      # the real ceiling is the GraphQL budget — the script spends one
+      # `gh pr view` per in-window PR and GITHUB_TOKEN allows ~1000/hour — so the
+      # fix at that point is to bound the window, with the ledger carrying the
+      # history the bound would drop.
       - name: Every merged PR since the cutover was GATED by a pre-merge verdict
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/audit_no_verdict_merges.sh --since 2026-09-14T00:00:00Z --limit 100
+        run: bash scripts/audit_no_verdict_merges.sh --since 2026-09-14T00:00:00Z --limit 400

@@ -239,6 +239,13 @@ LIST="$("${GH_LIST[@]}" 2>/dev/null)"
 printf '%s' "$LIST" | jq -e 'type == "array" and all(.[]; has("number") and has("mergedAt"))' >/dev/null 2>&1 \
   || { echo "audit: gh pr list output is not the expected array — cannot measure" >&2; exit 2; }
 
+# The window grows without bound (--since is pinned at the cutover and never
+# moves forward), and the loop below spends one `gh pr view` per PR in it. So
+# --limit has to be raised from time to time, and it is a TRUNCATION GUARD, not
+# a page size: filling it is "cannot measure", never a prefix audited quietly.
+# The number is not raisable forever — GITHUB_TOKEN allows roughly 1000 GraphQL
+# calls per hour, so a window past ~900 PRs needs a bounded window instead, with
+# verdict-audit-acknowledged.txt carrying the history the bound would drop.
 NLIST="$(printf '%s' "$LIST" | jq 'length')"
 if [ "$NLIST" -ge "$LIMIT" ]; then
   echo "audit: window holds >= $LIMIT PRs — possibly truncated; raise --limit. Cannot measure" >&2
