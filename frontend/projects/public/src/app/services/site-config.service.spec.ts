@@ -76,8 +76,11 @@ describe('SiteConfigService', () => {
     it('treats absent brand assets exactly like empty ones', () => {
         let received: SiteConfig | undefined;
         service.config$.subscribe((c) => (received = c));
-        const { brand_favicon_url, brand_logo_url, brand_og_image_url,
-                brand_font_css_url, brand_font_family, ...preBrandBackend } = DTO;
+        // Renamed to `_`-prefixed bindings because they exist only to be
+        // OMITTED from the rest — the lint's documented escape for that.
+        const { brand_favicon_url: _favicon, brand_logo_url: _logo,
+                brand_og_image_url: _card, brand_font_css_url: _fontCss,
+                brand_font_family: _fontFamily, ...preBrandBackend } = DTO;
         httpMock.expectOne(url).flush(preBrandBackend);
 
         expect(received).toMatchObject({
