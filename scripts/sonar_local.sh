@@ -22,7 +22,9 @@
 #
 # Coverage is REUSED, not produced here — run beforehand for coverage-aware gates:
 #   backend:  cd backend && pytest --cov-report=xml   (→ backend/coverage.xml)
-#   frontend: cd frontend && npm run test:coverage    (→ coverage/<proj>/lcov.info)
+#   frontend: bash scripts/run_frontend_suites.sh --coverage  (→ coverage/<proj>/lcov.info)
+#             NOT `npm run test:coverage` — that leaves every `SF:` path relative
+#             to its own project, so this gate reads the very collision #458 fixed.
 # Missing reports only degrade coverage metrics; the analysis still runs.
 
 set -euo pipefail
@@ -94,7 +96,7 @@ TOKEN="$(printf '%s' "$TOKEN_JSON" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)"
 [ -f "${REPO_ROOT}/backend/coverage.xml" ] \
   || log "note: backend/coverage.xml missing — run 'cd backend && pytest --cov-report=xml' for coverage metrics"
 [ -f "${REPO_ROOT}/frontend/coverage/public/lcov.info" ] \
-  || log "note: frontend lcov reports missing — run 'cd frontend && npm run test:coverage'"
+  || log "note: frontend lcov reports missing — run 'bash scripts/run_frontend_suites.sh --coverage'"
 
 # --- 5. run the scanner ------------------------------------------------------
 # From a git WORKTREE, .git is a pointer file to the main repo's .git/worktrees/*

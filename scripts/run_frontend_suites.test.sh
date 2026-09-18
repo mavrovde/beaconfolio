@@ -125,6 +125,47 @@ run_one public 'echo "Tests 3 failed | 334 passed"; exit 1'
   && ok "…and is not retried" || bad "CI real failure retried" "$(cat "$LAST_DIR/test:coverage:public" 2>/dev/null)"
 rm -rf "$LAST_DIR"
 
+# --- 9. THE COVERAGE-PATH REWRITE (#458) ------------------------------------
+#     Vitest emits `SF:` relative to each project, so `public` and `admin` both
+#     report `src/app/app.component.ts` and SonarCloud awards the file to one,
+#     reading 0% for the other. The wrapper rewrites the paths; these cases pin
+#     that it does, on BOTH success paths, and that a report it could not fix
+#     fails the run rather than shipping a wrong number under a green tick.
+LCOV='mkdir -p "$FAKE_STATE_DIR/coverage/public"
+printf "SF:src/app/app.component.ts\nDA:1,1\nend_of_record\n" > "$FAKE_STATE_DIR/coverage/public/lcov.info"'
+
+run_one public "$LCOV"'; echo "$target: 10 passed"; exit 0'
+[ "$RC" -eq 0 ] && ok "coverage run: rc 0" || bad "coverage rewrite green" "rc=$RC out=$OUT"
+grep -q '^SF:frontend/projects/public/src/app/app.component.ts$' "$LAST_DIR/coverage/public/lcov.info" \
+  && ok "…SF: paths are rewritten to resolve from the repo root" \
+  || bad "rewrite" "$(cat "$LAST_DIR/coverage/public/lcov.info" 2>/dev/null)"
+rm -rf "$LAST_DIR"
+
+# --- 10. …and the RETRY path rewrites too -----------------------------------
+#     Round 1 of #458 rewrote only on the first-attempt path. `public` is both
+#     the project that collides AND the one the teardown race is measured on
+#     (1 in 25), so ~4% of coverage runs silently shipped unresolvable paths
+#     with `✓ lcov paths …` printed beside them. This is that regression.
+run_one public "$LCOV"'; if [ "$n" -eq 1 ]; then
+  echo "Tests 337 passed (337)"; echo "'"$TEARDOWN"'"; exit 1; fi; echo ok; exit 0'
+[ "$RC" -eq 0 ] && ok "retry path: flake retried and survives with coverage" || bad "retry coverage rc" "rc=$RC out=$OUT"
+grep -q '^SF:frontend/projects/public/src/app/app.component.ts$' "$LAST_DIR/coverage/public/lcov.info" \
+  && ok "…and the report the RETRY produced is rewritten too" \
+  || bad "retry-path rewrite skipped" "$(cat "$LAST_DIR/coverage/public/lcov.info" 2>/dev/null)"
+rm -rf "$LAST_DIR"
+
+# --- 11. A report the rewrite could NOT fix fails the run -------------------
+#     The sed only touches `^SF:src/`. Anything else still fails to resolve
+#     from the repo root, and the failure mode is a silently WRONG number, so
+#     the guard must turn it into a loud non-zero exit.
+run_one public 'mkdir -p "$FAKE_STATE_DIR/coverage/public"
+printf "SF:../admin/src/x.ts\nDA:1,1\nend_of_record\n" > "$FAKE_STATE_DIR/coverage/public/lcov.info"
+echo "$target: 10 passed"; exit 0'
+[ "$RC" -eq 1 ] && ok "an unresolvable coverage path fails the run" || bad "unresolvable path" "rc=$RC out=$OUT"
+printf '%s' "$OUT" | grep -q 'do not resolve from the repo root' \
+  && ok "…and says so, naming the project" || bad "unresolvable message" "$OUT"
+rm -rf "$LAST_DIR"
+
 # ---------------------------------------------------------------------------
 # Mutation contract (#393): neuter ONE arm of the wrapper at a time in a COPY
 # and require the pinned case to go red. Every assert runs against the FAKE
@@ -184,6 +225,19 @@ PY
   assert_coverage_target() { MPROJ=public MCOV=--coverage runm "$1" 'echo "$target: 10 passed"; exit 0'
     [ "$RC" -eq 0 ] && printf '%s' "$OUT" | grep -q 'test:coverage:public'; }
 
+  assert_rewrite_first_path() { MPROJ=public MCOV=--coverage runm "$1" 'mkdir -p "$FAKE_STATE_DIR/coverage/public"
+      printf "SF:src/a.ts\nDA:1,1\nend_of_record\n" > "$FAKE_STATE_DIR/coverage/public/lcov.info"
+      echo ok; exit 0'
+    [ "$RC" -eq 0 ] && grep -q '^SF:frontend/projects/public/src/a.ts$' "$LAST_DIR/coverage/public/lcov.info"; }
+  assert_rewrite_retry_path() { MPROJ=public MCOV=--coverage runm "$1" 'mkdir -p "$FAKE_STATE_DIR/coverage/public"
+      printf "SF:src/a.ts\nDA:1,1\nend_of_record\n" > "$FAKE_STATE_DIR/coverage/public/lcov.info"
+      if [ "$n" -eq 1 ]; then echo "Tests 337 passed (337)"; echo "'"$TEARDOWN"'"; exit 1; fi; echo ok; exit 0'
+    [ "$RC" -eq 0 ] && grep -q '^SF:frontend/projects/public/src/a.ts$' "$LAST_DIR/coverage/public/lcov.info"; }
+  assert_unresolvable_fails() { MPROJ=public MCOV=--coverage runm "$1" 'mkdir -p "$FAKE_STATE_DIR/coverage/public"
+      printf "SF:../admin/src/x.ts\nDA:1,1\nend_of_record\n" > "$FAKE_STATE_DIR/coverage/public/lcov.info"
+      echo ok; exit 0'
+    [ "$RC" -eq 1 ]; }
+
   mutate "failure propagation removed (a failed project exits 0)" \
     '  overall=1' '  overall=0' assert_real_failure_fails
   mutate "loop exits on first failure (later projects hidden — the npm-test chain bug)" \
@@ -197,14 +251,25 @@ PY
     '  if true \' assert_crash_not_retried
   mutate "retry-success requirement removed (a recurring flake passes)" \
     '    if [ "$rc" -eq 0 ]; then
-      printf '"'"'  ⚠ FLAKE SURVIVED' \
+      # The retry produced the coverage report' \
     '    if true; then
-      printf '"'"'  ⚠ FLAKE SURVIVED' assert_recurring_flake_fails
+      # The retry produced the coverage report' assert_recurring_flake_fails
   mutate "loud flake report removed (the retry absorbs silently)" \
     "printf '  ⚠ FLAKE SURVIVED: %s passed on the retry. Not a code failure — record it, do not ignore it.\\n' \"\$target\"" \
     ': "$target"' assert_flake_loud
   mutate "--coverage routing removed (CI targets the bare script)" \
     '[ "${1-}" = "--coverage" ] && SUFFIX="coverage:"' 'true' assert_coverage_target
+
+  mutate "coverage-path rewrite removed on the first-attempt path (SonarCloud reads 0%)" \
+    '    rewrite_lcov_paths "$p"
+    printf '"'"'  ✓ %s\n'"'"' "$target"' \
+    '    printf '"'"'  ✓ %s\n'"'"' "$target"' assert_rewrite_first_path
+  mutate "coverage-path rewrite removed on the RETRY path (the round-1 blocker)" \
+    '      rewrite_lcov_paths "$p"
+      printf '"'"'  ⚠ FLAKE SURVIVED' \
+    '      printf '"'"'  ⚠ FLAKE SURVIVED' assert_rewrite_retry_path
+  mutate "resolvability guard removed (a wrong coverage number ships green)" \
+    '    if [ -n "$_stray" ]; then' '    if false; then' assert_unresolvable_fails
 
   echo "run_frontend_suites mutations: $KILLED killed, $SURVIVED survived, $INVALID invalid"
   [ "$SURVIVED" -eq 0 ] && [ "$INVALID" -eq 0 ] || fail=$((fail+1))

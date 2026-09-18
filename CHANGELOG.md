@@ -296,9 +296,19 @@ All notable changes to this project will be documented in this file.
   correct and this stayed invisible. It is not cosmetic: `new_coverage` is a quality-gate
   condition, so a PR touching a losing file failed the gate for a reason that had nothing to do
   with the PR. `scripts/run_frontend_suites.sh` — the one wrapper both CI and the pre-push gate
-  already run — now rewrites each report's paths to be repo-root-relative and **asserts they are
-  unique across the three projects**, because the failure mode is a silently wrong number rather
-  than an error, and a guard nobody can see fail is not a guard. Setting Vitest's `coverage.root`
+  already run — now rewrites each report's paths to be repo-root-relative, on **both** of its
+  success paths, and **asserts that every `SF:` path resolves from the repo root** before the run
+  is allowed to pass. The guard is per-project resolvability rather than cross-project uniqueness
+  (what review round 1 shipped): once each path carries its own project's prefix a collision is
+  impossible by construction, and uniqueness is blind in the per-project CI jobs, which is where
+  the reports SonarCloud actually consumes are produced. That distinction is not academic — round
+  2 measured the rewrite being skipped on the tolerated-flake retry path, on the one project that
+  is *both* the collider and the one the teardown race is measured on (1 in 25), so roughly 4% of
+  coverage runs re-shipped the defect with `✓` printed beside it; uniqueness could not see it and
+  resolvability fails it. `verify_all.sh` and `scripts/sonar_local.sh` were still invoking
+  `npm run test:coverage` directly, bypassing the wrapper entirely, and now go through it.
+  The wrapper's mutation contract goes **7 → 10 killed / 0 survived / 0 invalid** (one mutant per
+  new arm, including the retry-path rewrite that round 1 omitted). Setting Vitest's `coverage.root`
   was tried first and measured: it does not move the emitted paths.
 
 ## [1.15.2] - 2026-09-18

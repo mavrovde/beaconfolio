@@ -256,16 +256,21 @@ describe('JSON-LD script-block serialization (release security triage)', () => {
       jsonForScriptBlock({ '@type': 'BlogPosting', headline }) +
       '</scr' + 'ipt><p id="after">after</p>';
 
+    // ORDER MATTERS, and review round 2 of #458 is why. The structural
+    // assertions come FIRST because a breakout makes `blocks[0].textContent`
+    // unparseable: put the `JSON.parse` above them and every failing cell dies
+    // on a `SyntaxError` two lines before reaching the assertion that states
+    // this PR's actual claim, so the case can never report what it documents.
     const blocks = host.querySelectorAll('script[type="application/ld+json"]');
-    expect(blocks, 'the schema must not open a second block').toHaveLength(1);
-
-    // The payload survived intact — and no element was built from it.
-    expect(JSON.parse(blocks[0].textContent ?? '').headline).toBe(headline);
     expect(host.querySelector('img'), 'no element may be built from the schema').toBeNull();
 
-    // …and the markup AFTER the block is still there, which is what the
+    // The markup AFTER the block is still there — this is what the
     // comment-escape door destroys when `<!--` is left unescaped.
     expect(host.querySelector('#after')?.textContent).toBe('after');
+    expect(blocks, 'the schema must not open a second block').toHaveLength(1);
+
+    // …and only now, on a block we have shown is intact, the payload itself.
+    expect(JSON.parse(blocks[0].textContent ?? '').headline).toBe(headline);
   });
 
   it('leaves a schema with no `<` untouched apart from formatting', () => {

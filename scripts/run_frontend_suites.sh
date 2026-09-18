@@ -63,19 +63,43 @@ rewrite_lcov_paths() {
 }
 
 # The failure mode this guards is a silently WRONG number, not an error, so it
-# has to be asserted rather than trusted. Only meaningful when one run produced
-# all three reports — CI runs one project per job.
-assert_unique_lcov_paths() {
+# has to be asserted rather than trusted.
+#
+# The invariant is that every `SF:` path RESOLVES FROM THE REPO ROOT, which is
+# what SonarCloud does with `sonar.sources`. A path still relative to its
+# project (`SF:src/...`) is the defect itself: two projects then emit the same
+# string, the scanner awards the file to one of them and reads 0% for the other.
+#
+# It is deliberately NOT a cross-project uniqueness check (what round 1 of #458
+# shipped). Uniqueness cannot fail once each path carries its own project's
+# prefix — measured: 100/100 `SF:` lines start with `src/`, so prefixing makes a
+# collision impossible by construction — and it is blind in the per-project CI
+# jobs, which is where the reports SonarCloud actually consumes are produced.
+# Resolvability bites in both, and it is what catches a rewrite that was skipped
+# on one of the two success paths.
+#
+# A project whose suite FAILED can trip this on a stale report from an earlier
+# run. That is acceptable: the run is already failing, and the alternative —
+# only checking projects we believe we rewrote — is blind to exactly the bug
+# this exists to catch.
+assert_lcov_paths_resolvable() {
   [ -n "$SUFFIX" ] || return 0
-  for _p in shared public admin; do
-    [ -f "$FRONTEND/coverage/$_p/lcov.info" ] || return 0
+  _bad=0
+  _seen=0
+  for _p in $PROJECTS; do
+    _lcov="$FRONTEND/coverage/$_p/lcov.info"
+    [ -f "$_lcov" ] || continue
+    _seen=1
+    _stray="$(grep '^SF:' "$_lcov" | grep -v "^SF:frontend/projects/$_p/" | head -3)"
+    if [ -n "$_stray" ]; then
+      printf '  ✗ %s reports coverage paths that do not resolve from the repo root — SonarCloud will award the file to another project and read 0%% here:\n%s\n' \
+        "$_p" "$_stray"
+      _bad=1
+    fi
   done
-  _dupes="$(grep -h '^SF:' "$FRONTEND"/coverage/*/lcov.info | sort | uniq -d)"
-  if [ -n "$_dupes" ]; then
-    printf '  ✗ two projects report the same coverage path — SonarCloud will award it to one and read 0%% for the other:\n%s\n' "$_dupes"
-    return 1
-  fi
-  printf '  ✓ lcov paths are unique across projects\n'
+  [ "$_bad" -eq 0 ] || return 1
+  [ "$_seen" -eq 1 ] && printf '  ✓ lcov paths resolve from the repo root\n'
+  return 0
 }
 
 flakes=0
@@ -96,6 +120,13 @@ for p in $PROJECTS; do
     out="$( (cd "$FRONTEND" && "$NPM" run "$target" 2>&1) )"; rc=$?
     printf '%s\n' "$out"
     if [ "$rc" -eq 0 ]; then
+      # The retry produced the coverage report this run will ship, so it needs
+      # the same rewrite the first-attempt path does. Omitted here in review
+      # round 1 of #458: `public` is BOTH the project that collides and the one
+      # the teardown race is measured on (1 in 25, see the header), so roughly
+      # 4% of coverage runs silently re-shipped the unresolvable paths — under a
+      # green checkmark, because the guard below could not see it either.
+      rewrite_lcov_paths "$p"
       printf '  ⚠ FLAKE SURVIVED: %s passed on the retry. Not a code failure — record it, do not ignore it.\n' "$target"
       flakes=$((flakes+1))
       continue
@@ -106,7 +137,7 @@ for p in $PROJECTS; do
   overall=1
 done
 
-assert_unique_lcov_paths || overall=1
+assert_lcov_paths_resolvable || overall=1
 
 [ "$flakes" -gt 0 ] && printf '\n⚠ %d project(s) needed the teardown retry this run.\n' "$flakes"
 [ "$overall" -eq 0 ] && printf '\n✓ all frontend projects passed: %s\n' "$PROJECTS"
