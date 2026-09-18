@@ -71,6 +71,21 @@ describe('toProfileLinks (#93)', () => {
         );
     });
 
+    // The template tracks `@for` by `link.url`. A duplicate key there is a
+    // reconciliation bug, not merely a repeated row — and a comma-separated env
+    // var makes a copy-paste duplicate an ordinary operator slip.
+    it('collapses a repeated URL, including one that only differs by whitespace', () => {
+        const links = toProfileLinks([
+            'https://github.com/janedoe',
+            '  https://github.com/janedoe  ',
+            'https://gitlab.com/janedoe',
+        ]);
+        expect(links.map((l) => l.url)).toEqual([
+            'https://github.com/janedoe',
+            'https://gitlab.com/janedoe',
+        ]);
+    });
+
     it('handles a single-label host without throwing', () => {
         expect(toProfileLinks(['http://localhost/janedoe'])[0].platform).toEqual('LOCALHOST');
     });

@@ -34,7 +34,9 @@ All notable changes to this project will be documented in this file.
   first. A deployment that never set `SOCIAL_LINKS` still shows its profile's LinkedIn, so nothing
   disappears on upgrade. The last real code-host handle left anywhere in the public app — a leftover
   in a home-page test fixture, which the issue's own verification grep flags — is anonymized to the
-  demo persona at the same time.
+  demo persona at the same time. A URL repeated in the configured list is collapsed, because the
+  template tracks its rows by URL and a repeated track key is a reconciliation bug rather than
+  merely a repeated row.
 
 ## [1.15.2] - 2026-09-18
 

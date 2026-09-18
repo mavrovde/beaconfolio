@@ -79,6 +79,10 @@ export function toProfileLinks(urls: readonly string[] | undefined): ProfileLink
         return [];
     }
     const links: ProfileLink[] = [];
+    // `SOCIAL_LINKS` is a comma-separated env var, so a copy-paste duplicate is
+    // an ordinary operator slip — and the template tracks `@for` by `link.url`,
+    // where a repeated key is a reconciliation bug, not just a repeated row.
+    const seen = new Set<string>();
     for (const raw of urls) {
         if (typeof raw !== 'string' || !raw.trim()) {
             continue;
@@ -92,11 +96,16 @@ export function toProfileLinks(urls: readonly string[] | undefined): ProfileLink
         if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
             continue;
         }
+        const normalized = parsed.toString();
+        if (seen.has(normalized)) {
+            continue;
+        }
+        seen.add(normalized);
         const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
         const known = REGISTRY[host];
         links.push({
             platform: (known?.platform ?? deriveLabel(host)).toUpperCase(),
-            url: parsed.toString(),
+            url: normalized,
             icon: known?.icon ?? DEFAULT_ICON,
         });
     }
