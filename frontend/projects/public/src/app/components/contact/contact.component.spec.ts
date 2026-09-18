@@ -107,7 +107,13 @@ describe('ContactComponent', () => {
 
   it('renders no profile link at all when the configured value is unusable', async () => {
     await renderWith(['javascript:alert(1)']);
-    expect(hrefs().some((h) => h.startsWith('javascript:'))).toBe(false);
+    // Assert the ALLOWLIST, not the one scheme this case feeds in. Checking
+    // only `javascript:` is `js/incomplete-url-scheme-check` — `data:` and
+    // `vbscript:` execute too — and it is also the weaker assertion: this is
+    // what the parser actually guarantees about every href on the page.
+    const rendered = hrefs();
+    expect(rendered.length).toBeGreaterThan(0);
+    expect(rendered.every((h) => /^(https?:\/\/|mailto:)/.test(h))).toBe(true);
     // ...and the LinkedIn fallback takes over, because nothing survived.
     expect(hrefs()).toContain('https://linkedin.com/test');
   });
