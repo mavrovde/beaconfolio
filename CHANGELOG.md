@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed
+- **The hero's "Hire me" CTA shipped as a solid green rectangle with an invisible label.** The
+  theme rule `button, a { @apply text-primary … }` in both apps' `styles.css` sat OUTSIDE a cascade
+  layer, and unlayered CSS beats layered CSS regardless of specificity — so it silently defeated
+  every Tailwind utility on every button and link in the app. `bg-primary text-black` therefore
+  painted `#33ff00` on `#33ff00`: contrast ratio **1:1**. The same classes on a `<span>` (the blog
+  language badge) rendered correctly, which is what localised the cause to the selector rather than
+  to the palette. Moving the block into `@layer base` restores the authored intent — and with it
+  `text-secondary` on the nav links and `[ Get in Touch ]`, and `hover:text-black` on seven further
+  call sites, all of which had been overridden the same way. Guarded by two new browser tests in
+  `frontend/e2e/public/design.spec.ts`: one asserts every filled button/link clears a 4.5:1
+  contrast ratio (the outcome, so any future cause is caught), the other asserts a utility class can
+  still override the theme default (the mechanism, so the cause is named directly). Both fail on the
+  pre-fix stylesheet.
+- **Career history was served in arbitrary order — the current role appeared eighth.** A LinkedIn
+  export carries no ordering guarantee and nothing in the stack imposed one, so a deployment's
+  Experience section could open on a role that ended thirteen years earlier while the current,
+  still-ongoing role sat at index 8. `public_profile_view` now orders the dated timeline sections (`experience`, `education`)
+  newest-first: an explicitly ongoing role leads, then by end date, then by start date, with a
+  stable sort so equally-dated entries keep their source order and undateable entries sink instead
+  of floating to the top. Fixed at that projection because it is the single chokepoint feeding both
+  the public `/profile` endpoint and the JSON Resume / CV export, so the site and the downloadable
+  CV agree.
+
 ## [1.15.1] - 2026-09-18
 
 ### Added

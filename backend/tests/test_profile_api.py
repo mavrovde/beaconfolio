@@ -215,3 +215,185 @@ async def test_get_handles_non_dict_stored_data(client: AsyncClient, db_session)
     r = await client.get(URL, params={"lang": "en"})
     assert r.status_code == 200
     assert r.json() == {}
+
+
+# --- Timeline ordering (#443) ------------------------------------------------
+#
+# A LinkedIn export carries no ordering guarantee, and a real deployment proved
+# it: the stored array led with a role that had ended thirteen years earlier
+# while the CURRENT, still-ongoing role sat eighth. Ordering lives in
+# `public_profile_view` because that one projection feeds BOTH the public
+# endpoint and the JSON Resume / CV export. Fixtures here use the repository's
+# anonymised demo companies — never a real employment history (#66).
+
+
+def _companies(view):
+    return [e["company"] for e in view["experience"]]
+
+
+def test_experience_is_ordered_newest_first():
+    from app.api.profile import public_profile_view
+
+    view = public_profile_view(
+        {
+            "experience": [
+                {
+                    "company": "Globex Digital",
+                    "startDate": "Nov 2012",
+                    "endDate": "Mar 2013",
+                },
+                {
+                    "company": "Initech Solutions",
+                    "startDate": "Jan 2024",
+                    "endDate": "Mar 2025",
+                },
+                {
+                    "company": "Acme Cloud GmbH",
+                    "startDate": "Mar 2025",
+                    "endDate": "Present",
+                },
+                {
+                    "company": "Umbrella Labs",
+                    "startDate": "Apr 2025",
+                    "endDate": "Dec 2025",
+                },
+            ]
+        }
+    )
+    # The ongoing role leads even though Umbrella Labs STARTED a month later — an
+    # end-date sort alone would bury the current job.
+    assert _companies(view) == [
+        "Acme Cloud GmbH",
+        "Umbrella Labs",
+        "Initech Solutions",
+        "Globex Digital",
+    ]
+
+
+def test_ongoing_markers_are_recognised_case_insensitively():
+    from app.api.profile import public_profile_view
+
+    for marker in ("Present", "present", "CURRENT", "Heute", "  now  "):
+        view = public_profile_view(
+            {
+                "experience": [
+                    {"company": "old", "startDate": "Jan 2000", "endDate": "Dec 2030"},
+                    {"company": "now", "startDate": "Jan 1999", "endDate": marker},
+                ]
+            }
+        )
+        assert _companies(view)[0] == "now", marker
+
+
+def test_year_only_dates_sort_and_do_not_crash():
+    from app.api.profile import public_profile_view
+
+    view = public_profile_view(
+        {
+            "education": [
+                {"school": "School", "startDate": "1986", "endDate": "1996"},
+                {
+                    "school": "University",
+                    "startDate": "Sep 1997",
+                    "endDate": "Jun 2002",
+                },
+            ]
+        }
+    )
+    assert [e["school"] for e in view["education"]] == ["University", "School"]
+
+
+def test_entries_with_equal_dates_keep_their_source_order():
+    from app.api.profile import public_profile_view
+
+    view = public_profile_view(
+        {
+            "experience": [
+                {
+                    "company": "Acme Cloud GmbH",
+                    "startDate": "Sep 2009",
+                    "endDate": "Sep 2012",
+                },
+                {
+                    "company": "Initech Solutions",
+                    "startDate": "Sep 2009",
+                    "endDate": "Sep 2012",
+                },
+            ]
+        }
+    )
+    assert _companies(view) == ["Acme Cloud GmbH", "Initech Solutions"]
+
+
+def test_undated_and_malformed_entries_sink_rather_than_lead():
+    from app.api.profile import public_profile_view
+
+    view = public_profile_view(
+        {
+            "experience": [
+                {"company": "undated"},
+                {"company": "garbage", "startDate": "??", "endDate": "soon"},
+                {"company": "dated", "startDate": "Jan 2020", "endDate": "Jan 2021"},
+                "not-a-dict",
+                {"company": "year-only", "startDate": "2015", "endDate": "2016"},
+            ]
+        }
+    )
+    ordered = [
+        e.get("company") if isinstance(e, dict) else e for e in view["experience"]
+    ]
+    assert ordered[:2] == ["dated", "year-only"]
+    # Everything undateable lands after every dated entry, in source order.
+    assert ordered[2:] == ["undated", "garbage", "not-a-dict"]
+
+
+def test_missing_end_date_is_placed_by_its_start_not_treated_as_ongoing():
+    from app.api.profile import public_profile_view
+
+    view = public_profile_view(
+        {
+            "experience": [
+                {"company": "recent", "startDate": "Jan 2024", "endDate": "Jan 2025"},
+                {"company": "open-ended", "startDate": "Jan 2010"},
+            ]
+        }
+    )
+    assert _companies(view) == ["recent", "open-ended"]
+
+
+def test_non_list_timeline_section_is_left_untouched():
+    from app.api.profile import public_profile_view
+
+    view = public_profile_view({"experience": "not a list", "education": None})
+    assert view["experience"] == "not a list"
+    assert view["education"] is None
+
+
+async def test_endpoint_serves_experience_newest_first(client: AsyncClient, db_session):
+    await _seed(
+        db_session,
+        version="v1",
+        language="en",
+        data={
+            "name": "Testa",
+            "experience": [
+                {
+                    "company": "Globex Digital",
+                    "startDate": "Nov 2012",
+                    "endDate": "Mar 2013",
+                },
+                {
+                    "company": "Acme Cloud GmbH",
+                    "startDate": "Mar 2025",
+                    "endDate": "Present",
+                },
+            ],
+        },
+        is_active=True,
+    )
+    r = await client.get(URL, params={"lang": "en"})
+    assert r.status_code == 200
+    assert [e["company"] for e in r.json()["experience"]] == [
+        "Acme Cloud GmbH",
+        "Globex Digital",
+    ]
