@@ -64,7 +64,10 @@ echo "=== corpus (eyeball against: git log --oneline $PREV..HEAD) ==="
 CORPUS="$(gh pr list --repo "$REPO" --state merged --limit 100 \
     --json number,mergedAt,changedFiles,additions,deletions,createdAt \
     -q "[.[] | select(.mergedAt > \"$LOWER\" and .mergedAt <= \"$UPPER\")]")"
-echo "$CORPUS" | jq -r '.[] | "  #\(.number)\tfiles=\(.changedFiles)\tlines=\(.additions + .deletions)"' | sort -n -k1.3
+# Sorted in jq, numerically. `sort -n -k1.3` looks right and is not: it keys on the
+# substring after "#4", so a corpus spanning #99 and #433 comes out misordered.
+echo "$CORPUS" | jq -r 'sort_by(.number) | .[]
+    | "  #\(.number)\tfiles=\(.changedFiles)\tlines=\(.additions + .deletions)"'
 N="$(echo "$CORPUS" | jq 'length')"
 echo "PRs merged: $N"
 echo
