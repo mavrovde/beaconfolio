@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Placeholder for next release.
+
+## [1.15.0] - 2026-09-18
+
+### Added
 - **Two more owner-notification channels on the #263 seam, both free and self-hostable (#431)** —
   **Matrix** (`MatrixChannel`: `PUT …/rooms/{roomId}/send/m.room.message/{txnId}` with a bearer
   token, sent as `m.notice`, fresh `uuid4` transaction id per send so the homeserver cannot
