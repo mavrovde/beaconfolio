@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { catchError, shareReplay, switchMap } from 'rxjs/operators';
 import { LanguageService } from '@beaconfolio/shared';
 import { environment } from '../../environments/environment';
+import { Project } from '../projects-model/projects';
 
 export interface Profile {
   name: string;
@@ -19,7 +20,15 @@ export interface Profile {
   languages?: Language[];
   recommendations?: Recommendation[];
   contact?: Contact;
+  // #92. Optional for the same reason as the block above: the backend already
+  // allowlists `projects` and the bundled demo carries an empty array, so an
+  // older uploaded profile simply omits it and every consumer must render
+  // nothing rather than fail. The shape lives in `projects-model/projects.ts`
+  // with the pure projection that makes it renderable.
+  projects?: Project[];
 }
+
+export type { Project } from '../projects-model/projects';
 
 export interface Contact {
   email: string;

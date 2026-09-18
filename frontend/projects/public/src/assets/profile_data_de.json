@@ -74,7 +74,44 @@
     { "name": "Englisch", "proficiency": "Verhandlungssicher" },
     { "name": "Deutsch", "proficiency": "Fließend" }
   ],
-  "projects": [],
+  "projects": [
+    {
+      "title": "Beaconfolio",
+      "role": "Autorin & Maintainerin",
+      "startDate": "2025",
+      "endDate": "heute",
+      "summary": "Eine quelloffene, recruiter-orientierte Portfolio-Vorlage: forken, eigene Inhalte einsetzen, fertig.",
+      "description": "Ein Full-Stack-Portfolio mit Blog, semantischer Suche und lokalem LLM. Vorn Angular 22 mit SSR, dahinter FastAPI und PostgreSQL mit pgvector — der gesamte Stack als Docker-Images, ausgeliefert durch einen einzigen Push auf main.\n\nAlles, was eine Forkerin ändern muss, ist Inhalt oder Konfiguration — niemals eine Komponente.",
+      "techStack": ["Angular", "TypeScript", "FastAPI", "PostgreSQL", "pgvector", "Docker"],
+      "links": {
+        "source": "https://github.com/janedoe/beaconfolio",
+        "demo": "https://example.com"
+      }
+    },
+    {
+      "title": "Semantischer Suchdienst",
+      "role": "Backend-Entwicklerin",
+      "startDate": "2024",
+      "endDate": "2025",
+      "summary": "Embedding-basierte Suche über einen Dokumentenbestand, Antwort in unter 100 ms im 95. Perzentil.",
+      "description": "Chunking, Embeddings und Nächste-Nachbarn-Suche über pgvector, mit einem kleinen Reranking-Schritt vor der Ausgabe. Durchgängig instrumentiert: Eine langsame Anfrage benennt die langsame Stufe.",
+      "techStack": ["Python", "pgvector", "Ollama", "Redis"],
+      "links": {
+        "source": "https://github.com/janedoe/semantic-search"
+      }
+    },
+    {
+      "title": "Dashboard für Pipeline-Observability",
+      "role": "Full-Stack-Entwicklerin",
+      "startDate": "2023",
+      "endDate": "2024",
+      "summary": "Ein Dashboard für Build-Pipelines, das zeigt, warum ein Lauf langsam war — nicht nur, dass er es war.",
+      "techStack": ["TypeScript", "D3", "Go"],
+      "links": {
+        "demo": "https://example.com"
+      }
+    }
+  ],
   "recommendations": [
     {
       "author": "Alex Example",

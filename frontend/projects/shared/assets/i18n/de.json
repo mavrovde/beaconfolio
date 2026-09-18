@@ -9,7 +9,8 @@
     "CONTACT": "Kontakt",
     "LLM": "LLM",
     "CV": "Lebenslauf",
-    "YEARS": "Jahre"
+    "YEARS": "Jahre",
+    "PROJECTS": "Projekte"
   },
   "CV": {
     "TITLE": "Lebenslauf anfordern",
@@ -49,7 +50,8 @@
     "RECOMMENDATIONS": "> Empfehlungen",
     "BLOG": "> Blog_Beiträge",
     "CONTACT": "> Kontakt_Info",
-    "HIRE_ME": "Jetzt anfragen"
+    "HIRE_ME": "Jetzt anfragen",
+    "PROJECTS": "> Projekte"
   },
   "COMMON": {
     "VIEW_CREDENTIAL": "[ Zertifikat ansehen ]",
@@ -135,5 +137,13 @@
     "OPEN": "Offen für Angebote",
     "LISTENING": "Gesprächsbereit",
     "NOT_LOOKING": "Derzeit nicht auf der Suche"
+  },
+  "PROJECTS": {
+    "EMPTY": "Noch keine Projekte veröffentlicht.",
+    "VIEW_ALL": "Alle Projekte",
+    "SOURCE": "Quellcode",
+    "DEMO": "Live-Demo",
+    "BACK": "Zurück zu den Projekten",
+    "NOT_FOUND": "Dieses Projekt existiert nicht mehr."
   }
 }

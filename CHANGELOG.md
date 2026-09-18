@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **A projects showcase, driven entirely by the profile JSON.** The template rendered experience,
+  skills, education and a blog but had no way to present *work* — the single most recruiter-facing
+  thing a portfolio can carry. A `projects` array in the uploaded profile (or the bundled demo
+  asset) now renders as a section on the home page, a `/projects` list route and a
+  `/projects/:slug` detail page per project, reachable from the header nav; each project carries
+  title, summary, long description, role, dates, tech stack, screenshot and source/demo links, and
+  nothing about it is hardcoded. With the array empty or omitted the home section does not exist at
+  all — a "no projects yet" band on a stranger's portfolio is worse than silence — while
+  `/projects` stays a real page with an empty state, because the nav entry is always visible.
+  Three things are less obvious than the feature:
+  **the slug is de-duplicated, not derived**, because two projects called "Portfolio" are an
+  ordinary thing for a person to have and a duplicate `@for` track key is a reconciliation fault in
+  the list plus a detail page that silently serves the wrong project; the detail route therefore
+  resolves through the same projection the list linked from, and an unknown slug renders a
+  not-found panel with a **real SSR 404**, not a soft 404 served as 200 (the `blog-post` contract
+  from #109). The same argument applies to `techStack`, which is de-duplicated for the same
+  reason — both templates track that list by its value, and a repeated entry logs `NG0955` and
+  reconciles the wrong node. The not-found panel is gated on a resolved state rather than on
+  "nothing yet", so a navigation to a project that DOES exist no longer flashes "no longer
+  exists" while the profile is in flight.
+  **The backend now strips each project entry to a nested allowlist** (`title`, `slug`, `summary`,
+  `description`, `role`, `startDate`, `endDate`, `techStack`, `links`, `image`, and within `links`
+  only `source`/`demo`). `experience` and `education` pass their nested keys through because their
+  shape comes from the LinkedIn scraper; a `projects` array is hand-authored, so a stored
+  `{"title": "…", "clientContact": "…"}` would otherwise have been served verbatim to
+  unauthenticated callers. `links` is projected explicitly rather than inherited from the
+  top-level allowlist, because the allowlist admits the KEY and nothing else constrained the
+  VALUE: a hand-authored `"links": [{"internalTracker": …}]` (a list, not an object) skipped the
+  nested projection entirely and reached the public wire intact. The ten servable keys are named
+  in the README, so a forker can see that a field outside them is dropped before the API answers
+  rather than merely unrendered.
+  **The structured data picks its `@type`**: a project with a repository is `SoftwareSourceCode`
+  (which is what `codeRepository` and `programmingLanguage` belong to) and anything else is a
+  `CreativeWork`, which names its maker `creator` rather than `author` — emitting one type's
+  properties on the other is invalid either way round.
 - **The analytics tag is now a Google Tag Manager container, configured at runtime.** The site
   previously hard-wired a `gtag.js` install driven by `BEACONFOLIO_ANALYTICS_ID`, so adding any
   second tag — a conversion pixel, a consent tool, a search-console verification — meant a code

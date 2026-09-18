@@ -50,6 +50,30 @@ PUBLIC_PROFILE_FIELDS = frozenset(
 # Within `contact`, only these are public (email + linkedin are shown on the site).
 PUBLIC_CONTACT_FIELDS = frozenset({"email", "linkedin"})
 
+# Within each `projects` entry, only these keys are public (#92). `experience`
+# and `education` pass their nested keys through because their shape comes from
+# the LinkedIn scraper and is known; a `projects` array is HAND-AUTHORED — a
+# forker pastes it from their own notes — so a stored
+# `{"title": "...", "clientContact": "..."}` would otherwise be served verbatim
+# to unauthenticated callers. The public site renders exactly these keys, so
+# anything else on the wire has no consumer and is pure attack surface.
+PUBLIC_PROJECT_FIELDS = frozenset(
+    {
+        "title",
+        "slug",
+        "summary",
+        "description",
+        "role",
+        "startDate",
+        "endDate",
+        "techStack",
+        "links",
+        "image",
+    }
+)
+# Within a project's `links`, only these are public.
+PUBLIC_PROJECT_LINK_FIELDS = frozenset({"source", "demo"})
+
 
 # Sections rendered as a dated timeline. A LinkedIn scrape carries NO ordering
 # guarantee — the stored array is whatever order the export happened to emit, and
@@ -121,6 +145,42 @@ def _sorted_timeline(entries: object) -> object:
     return sorted(entries, key=_timeline_sort_key, reverse=True)
 
 
+def _public_projects(entries: object) -> object:
+    """Project each `projects` entry down to the nested allowlist.
+
+    A non-dict entry is left untouched: it carries no hidden keys to strip, and
+    the frontend drops it anyway. Anything that is not a list is returned as-is
+    so a malformed upload fails visibly at the renderer rather than silently
+    becoming an empty section here.
+    """
+    if not isinstance(entries, list):
+        return entries
+    projected: list = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            projected.append(entry)
+            continue
+        # `links` is EXCLUDED here and re-added below, never inherited. It is
+        # itself in PUBLIC_PROJECT_FIELDS, so admitting it in the comprehension
+        # copies the value verbatim and the nested projection — which only fires
+        # for a dict — never sees a list or a scalar. A hand-authored
+        # `"links": [{"internalTracker": ...}]` then reached the public wire
+        # unstripped (PR #451 review round 1, blocker 4). Only the documented
+        # object shape is servable; anything else has no renderer and is dropped.
+        item = {
+            k: v
+            for k, v in entry.items()
+            if k in PUBLIC_PROJECT_FIELDS and k != "links"
+        }
+        links = entry.get("links")
+        if isinstance(links, dict):
+            item["links"] = {
+                k: v for k, v in links.items() if k in PUBLIC_PROJECT_LINK_FIELDS
+            }
+        projected.append(item)
+    return projected
+
+
 def public_profile_view(data: object) -> dict:
     """Project stored profile data down to the public allowlist."""
     if not isinstance(data, dict):
@@ -129,6 +189,8 @@ def public_profile_view(data: object) -> dict:
     for field in TIMELINE_FIELDS:
         if field in view:
             view[field] = _sorted_timeline(view[field])
+    if "projects" in view:
+        view["projects"] = _public_projects(view["projects"])
     contact = data.get("contact")
     if isinstance(contact, dict):
         view["contact"] = {
