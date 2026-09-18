@@ -489,9 +489,15 @@ So the series stays comparable, count the same way every time:
   ```
 
   **What the corrected block returns, and why it is not the published number.** Measured on the
-  v1.12.0 window at #452 round 2: the OLD bare-`--limit 100` form returned **5** PRs (the reviewer
-  measured 7 on the same command — default order is not stable, which is the whole defect); the
-  corrected form returns **9 PRs / 22 loose verdicts**. The published row is **10 / 24**, and the
+  v1.12.0 window at #452 round 2: the OLD bare-`--limit 100` form returned **5** PRs where the
+  reviewer measured **7** on what looked like the same command. The tempting explanation — "the
+  default order is not stable" — is wrong, and measurement says so: re-run within one moment and
+  the old form is perfectly repeatable (`%aI`-rendered bounds → 6, 6, 6; UTC-rendered bounds →
+  5, 5). Two other things moved instead. The two runs **rendered the window bounds differently**,
+  which shifts which PRs fall inside the window, and the `--limit 100` prefix **shifts as the
+  repository grows**, so a reading taken before #455 merged is not the same corpus as one taken
+  after. Neither is a stability property of `gh`; both are the defect the corrected form removes,
+  which returns **9 PRs / 22 loose verdicts**. The published row is **10 / 24**, and the
   difference is one PR: **#281, the v1.12.0 release PR itself, merged at `07:53:36Z` — one second
   after its own tag commit's `07:53:35Z`** — carrying exactly 2 verdicts. 9 + 1 = 10 and 22 + 2 =
   24. That is note 28's one-second asymmetry demonstrated a third time, and it is why the corpus of
