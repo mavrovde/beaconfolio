@@ -41,10 +41,15 @@ disclosure requirement). Everything else here is evidence, not opinion. Collect 
 reason.
 
 ```bash
-# The release's issues and PRs
-gh pr list --repo mavrovde/beaconfolio --state merged --search "merged:>=<prev-tag-date>" \
+# The release's issues and PRs.
+# `--limit` as well as `--search`: gh's DEFAULT page is 30, and windows in this series
+# have reached 18 merged PRs — the bound and the page size are two different guards, and
+# only one of them was here before #452 round 2.
+gh pr list --repo mavrovde/beaconfolio --state merged --limit 400 \
+  --search "merged:>=<prev-tag-date>" \
   --json number,title,labels,mergedAt,reviews
-gh issue list --repo mavrovde/beaconfolio --state closed --search "closed:>=<prev-tag-date>" \
+gh issue list --repo mavrovde/beaconfolio --state closed --limit 400 \
+  --search "closed:>=<prev-tag-date>" \
   --json number,title,body,comments
 
 # Every review verdict in the window — the richest signal in the repo.
@@ -68,8 +73,20 @@ actually holds and that anyone can re-derive: PR count, verdict count, rounds, `
 (median PR size), and open→merge wall clock:
 
 ```bash
-gh pr list --state merged --limit 100 --json number,createdAt,mergedAt,changedFiles \
-  --jq '.[] | [.number, .changedFiles, (((.mergedAt|fromdate)-(.createdAt|fromdate))/60|floor)] | @tsv'
+# BOUNDED AND GUARDED, like the listing at the top of this file — this line was a bare
+# `--limit 100` in default order until #452 round 2, which is §79's "second instance in
+# the same file" in the file that TEACHES the method. `gh pr list` does not list in merge
+# order, so a bare limit hands you an arbitrary prefix.
+# The date is rendered in UTC: `%cs`/`%aI` use the COMMIT's own offset (note 11) — on
+# 5012056c (00:09:14+02:00) `%cs` says 2026-09-19, a day late, dropping 22:09Z..24:00Z.
+PREV=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%d <prev-tag>)
+LIM=400
+PRS=$(gh pr list --state merged --limit $LIM --search "merged:>=$PREV" \
+        --json number,createdAt,mergedAt,changedFiles)
+[ "$(printf '%s' "$PRS" | jq length)" -lt $LIM ] \
+  || echo "TRUNCATED at $LIM — raise it; these figures cannot be measured"
+printf '%s' "$PRS" \
+  | jq -r '.[] | [.number, .changedFiles, (((.mergedAt|fromdate)-(.createdAt|fromdate))/60|floor)] | @tsv'
 ```
 
 **Count verdicts with the heading-anchored filter** (this directory's README carries the command and

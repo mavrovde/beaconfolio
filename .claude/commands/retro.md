@@ -21,8 +21,11 @@ git log --oneline "$PREV..$TAG" | cat                # what shipped
 # prefix and a client-side mergedAt filter then runs over a set that need not
 # contain the window — measured on this repo at PR #452: the v1.12.0 window
 # returned 7 of its 10 PRs at --limit 100, silently.
+# The date is rendered in UTC: `%cs` uses the COMMIT's own offset, so a tag cut between
+# 22:00Z and midnight bounds a day LATE and silently drops its own window's tail
+# (measured on 5012056c: `%cs` -> 2026-09-19; UTC -> 2026-09-18). Note 11's hazard.
 gh pr list --repo mavrovde/beaconfolio --state merged --limit 200 \
-  --search "merged:>=$(git log -1 --format=%cs "$PREV")" \
+  --search "merged:>=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%d "$PREV")" \
   --json number,title,labels,mergedAt,url
 ```
 

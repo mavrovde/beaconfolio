@@ -101,7 +101,9 @@ gh issue edit 74 --milestone "CI/CD, tooling & docs"
 Inspect and list:
 ```bash
 gh issue view 74
-gh issue list --state open --json number,title,milestone,labels
+# --limit, because gh's DEFAULT is 30 and the open backlog measured exactly 30 at
+# #452 round 2 — i.e. already at the silent truncation boundary.
+gh issue list --state open --limit 200 --json number,title,milestone,labels
 gh label list --limit 100        # confirm a label exists before adding
 gh api repos/mavrovde/beaconfolio/milestones --jq '.[].title'
 ```

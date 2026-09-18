@@ -205,7 +205,26 @@ All notable changes to this project will be documented in this file.
   prefix now that the repo is past 450 merged PRs. All nine published `PRs merged` and
   `Median files/PR` cells were re-derived afterwards rather than spot-checked. An all-digit argument
   that also names a git commit is now refused as ambiguous instead of guessed, with explicit `pr:`
-  and `ref:` forms.
+  and `ref:` forms. **Round 2 then ran that grep over the WHOLE toolkit, which round 1 had claimed
+  to do and had not:** three more live sites — both of `docs/retrospectives/README.md`'s canonical
+  *"Run this, do not count by hand"* commands (one returned the wrong corpus) and
+  `.claude/skills/release-retro/SKILL.md`, four lines below a sibling in the same file that was
+  already bounded — plus four listings with **no `--limit` at all**, silently capped at gh's default
+  of 30 (the open-issue backlog measured exactly 30 that day). **Eleven invocations across seven
+  files**, and the sweep's command and output are printed in the PR so the next reader can check it
+  rather than trust it. The dates in those snippets are rendered in **UTC**: `git log --format=%cs`
+  uses the commit's own offset, so a tag cut between 22:00Z and midnight bounds a day late and
+  silently drops its own window's tail (measured on `5012056c`: `%cs` → `2026-09-19`, UTC →
+  `2026-09-18`).
+- **`scripts/retro_metrics.test.sh` — the instrument's five refusal arms are now pinned.** It grew a
+  truncation guard, a strict array parse, an ambiguity refusal, a malformed-argument refusal and two
+  unmerged-bound refusals, and its output is cited in a permanent trend table; the evidence that a
+  silent rot goes unnoticed is the script's own history. Seventeen hermetic cases (stubbed `gh`,
+  throwaway git repos, no network) plus a **10 killed / 0 survived / 0 invalid** mutation contract —
+  one mutant per arm, each asserted on the script's own message rather than its exit code, because
+  several arms share one. One case is argv-observed: it pins that the listing still carries
+  `--search`, a property invisible in the output and therefore exactly the one that rotted. Runs in
+  CI (`deploy.yml`), not in the pre-push gate, whose sub-minute budget this does not belong in.
 - **Release figures are no longer restated in the wiki articles.** `docs/wiki/delivery-statistics.md`
   carried a ten-row copy of the trend table and `docs/wiki/team-and-process.md` carried two prose
   figures; all three were stale, and one — "mean rounds have stayed above 1.8 in every release

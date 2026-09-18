@@ -88,7 +88,10 @@ and `backend/docker-entrypoint.sh` (`set -e`, `db_probe.py`) crash-loops — a f
 
 ## Workflow
 1. **Scope.** Confirm which issues/PRs are in this release (given to you, or infer
-   from merged PRs since the last tag: `gh pr list --state merged`, `git log <lastTag>..main`).
+   from merged PRs since the last tag — and BOUND that listing, because a bare
+   `gh pr list --state merged` returns gh's DEFAULT 30 in DEFAULT order, not the window:
+   `gh pr list --state merged --limit 400 --search "merged:>=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%d <lastTag>)"`,
+   plus `git log <lastTag>..main`).
    **Never cut the release PR while issues planned under `release:vX.Y.Z` are still open**
    unless the owner explicitly de-scopes them, named one by one. At v1.14.3 the release PR
    (#411) was cut with 11 planned issues open; the owner-ordered revert (#412) cost two PRs,
@@ -166,12 +169,17 @@ and `backend/docker-entrypoint.sh` (`set -e`, `db_probe.py`) crash-loops — a f
     # --limit 100 relabels an arbitrary prefix and silently skips the rest. Bound by
     # merge date on the PREVIOUS tag and refuse a filled limit rather than flipping
     # part of the set.
+    # The date is rendered in UTC. `%cs` uses the COMMIT's own offset, so a tag cut
+    # between 22:00Z and midnight bounds a day LATE and drops its own window's tail
+    # (measured on 5012056c: `%cs` -> 2026-09-19, UTC -> 2026-09-18). Note 11's hazard.
     PREV=$(git tag --sort=-v:refname | sed -n '2p')
-    PRS=$(gh pr list --state merged --limit 200 \
-            --search "merged:>=$(git log -1 --format=%cs "$PREV")" \
+    SINCE=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%d "$PREV")
+    PRS=$(gh pr list --state merged --limit 200 --search "merged:>=$SINCE" \
             --json number --jq '.[].number')
-    [ "$(printf '%s\n' "$PRS" | grep -c .)" -lt 200 ] \
-      || { echo "listing filled --limit 200 — raise it; do NOT relabel a prefix"; exit 1; }
+    # No `exit` in a paste-able snippet — it closes an interactive shell. Guard the loop.
+    if [ "$(printf '%s\n' "$PRS" | grep -c .)" -ge 200 ]; then
+      echo "listing filled --limit 200 — raise it; do NOT relabel a prefix"; PRS=""
+    fi
     for n in $PRS; do
       sha=$(gh pr view "$n" --json mergeCommit --jq '.mergeCommit.oid')
       if [ -n "$(git tag --contains "$sha" 2>/dev/null)" ]; then

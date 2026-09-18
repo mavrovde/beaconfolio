@@ -332,10 +332,14 @@ server-side `merged:>=` bound and the truncation guard added in #452, the whole 
   `245 281` → 10, `281 300` → 16, `300 327` → 11, `327 385` → 17, `385 406` → 14, `406 428` → 17,
   `428 436` → 6, `436 441` → 6, `441 446` → 3.
 - **`Median files/PR` re-derives for all nine rows** (17, 14, 20, 8, 7, 8, 7, 9, 6).
-- **The TAG form over-counts three windows by exactly one PR** — v1.13.0 16→17, v1.14.1 17→18,
-  v1.14.3 17→18 — and in each the extra is the *previous release's own PR* (#281, #327, #406).
-  That is this note's one-second asymmetry, reproduced on three older windows, and it is the
-  measured argument for the PR-number bound.
+- **The TAG form over-counts FOUR of the nine windows by exactly one PR**, and in each the extra is
+  the *previous release's own PR*: three older windows — v1.13.0 16→17 (#281), v1.14.1 17→18
+  (#327), v1.14.3 17→18 (#406) — **plus v1.15.1 itself**, this note's motivating case
+  (`ref:v1.15.0 441` → **7**, extra #436, against 6 under the PR form). The other five agree with
+  the PR form exactly. So the asymmetry is not a v1.15.1 curiosity: it reproduces on four of nine
+  windows, which is the measured argument for the PR-number bound. *(Round 2 of #452 caught this
+  cell at "three windows" — the count had silently excluded the very window the sentence two
+  paragraphs above uses as its example.)*
 - **The verdict counts and the rates derived from them do NOT re-derive before v1.15.0, and were
   never expected to:** those cells were counted with the matchers notes 1 and 5 describe, which
   this instrument replaced (e.g. v1.12.0 publishes 24 loose verdicts / 2.4 mean; the instrument's
@@ -450,18 +454,48 @@ So the series stays comparable, count the same way every time:
   posted on #240). **Run this, do not count by hand** — four hand counts (30, 32, 34, 29)
   were reported for v1.12.0 and none reproduced:
 
+  **`scripts/retro_metrics.sh` RUNS the canonical half of this, with the server-side bound and the
+  truncation guard — run it rather than pasting.** The two blocks below are kept because they show
+  the loose and the anchored matcher *side by side*, which the script does not; both were themselves
+  instances of the `--limit` defect until #452 round 2 (the first returned **7** for the v1.12.0
+  window against the correct **10**), which is why they now carry the same bound and guard.
+
   ```bash
   # The corpus is every PR MERGED BETWEEN THE TAGS — not `git log <prev>..<tag>`,
   # which cites issue numbers as well as PRs and sweeps in PRs that merged before
   # the previous tag. Both published counts for v1.12.0 (29/14 and 32/12) came
   # from getting the CORPUS wrong, not the matcher.
-  PREV=$(git log -1 --format=%aI <prev-tag>); CUR=$(git log -1 --format=%aI <tag>)
-  gh pr list --state merged --limit 100 --json number,mergedAt,reviews,comments \
-    --jq "[.[] | select(.mergedAt > \"$PREV\" and .mergedAt <= \"$CUR\")]
+  #
+  # TWO bounds, both load-bearing:
+  #   * the DATES are rendered in UTC. `%aI`/`%cI`/`%cs` render in the COMMIT's own
+  #     offset, and a `+02:00` string compared against a `Z` value mis-selects the
+  #     corpus (note 11). Measured: `%cs` on 5012056c (2026-09-19T00:09:14+02:00)
+  #     gives 2026-09-19 — one day LATE, silently dropping every merge 22:09Z..24:00Z.
+  #   * the LISTING is bounded server-side and `--limit` is a truncation guard, not a
+  #     page size: `gh pr list` runs in DEFAULT order, so a bare limit filtered
+  #     client-side returns an arbitrary prefix.
+  PREV=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ <prev-tag>)
+  CUR=$(TZ=UTC git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ <tag>)
+  LIM=400
+  PRS=$(gh pr list --state merged --limit $LIM --search "merged:>=${PREV%%T*}" \
+          --json number,mergedAt,reviews,comments)
+  [ "$(printf '%s' "$PRS" | jq length)" -lt $LIM ] \
+    || echo "TRUNCATED at $LIM — raise it; this count cannot be measured"
+  printf '%s' "$PRS" \
+    | jq "[.[] | select(.mergedAt > \"$PREV\" and .mergedAt <= \"$CUR\")]
           | map([(.reviews[]?.body),(.comments[]?.body)]
                 | map(select(test(\"APPROVE|REQUEST CHANGES\"))) | length)
           | add"
   ```
+
+  **What the corrected block returns, and why it is not the published number.** Measured on the
+  v1.12.0 window at #452 round 2: the OLD bare-`--limit 100` form returned **5** PRs (the reviewer
+  measured 7 on the same command — default order is not stable, which is the whole defect); the
+  corrected form returns **9 PRs / 22 loose verdicts**. The published row is **10 / 24**, and the
+  difference is one PR: **#281, the v1.12.0 release PR itself, merged at `07:53:36Z` — one second
+  after its own tag commit's `07:53:35Z`** — carrying exactly 2 verdicts. 9 + 1 = 10 and 22 + 2 =
+  24. That is note 28's one-second asymmetry demonstrated a third time, and it is why the corpus of
+  record is `retro_metrics.sh` bounded on the release PR's `mergedAt`, not this block.
 
   Case matters: a lowercase "approve" in prose is not a verdict, and matching case-insensitively
   inflated the v1.12.0 count by one. And run the widened sweep even when you expect nothing:
@@ -481,8 +515,9 @@ So the series stays comparable, count the same way every time:
   still contains pre-mandate releases:
 
   ```bash
-  gh pr list --state merged --limit 100 --json number,mergedAt,reviews,comments \
-    --jq "[.[] | select(.mergedAt > \"$PREV\" and .mergedAt <= \"$CUR\")]
+  # Same corpus, same bound and guard as the block above (PRS/PREV/CUR/LIM are reused).
+  printf '%s' "$PRS" \
+    | jq "[.[] | select(.mergedAt > \"$PREV\" and .mergedAt <= \"$CUR\")]
           | map([(.reviews[]?.body),(.comments[]?.body)]
                 | map(select(split(\"\n\") | map(select(test(\"\\\\S\"))) | (.[0]//\"\")
                              | test(\"REQUEST CHANGES|APPROVED?\"))) | length)
