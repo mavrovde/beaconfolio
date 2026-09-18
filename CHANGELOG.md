@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.15.1] - 2026-09-18
+
 ### Added
 - **`scripts/retro_metrics.sh` — the release retrospective's figures become EXECUTABLE.** Prints
   the corpus, median files/PR, canonical verdicts, mean rounds, round-1 approvals and rework share
