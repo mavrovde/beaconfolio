@@ -1,0 +1,45 @@
+# Acknowledged rule-13 violations — merges that are ALREADY on the record.
+#
+# WHY THIS FILE EXISTS (#409). Making the audit order-aware turned the cutover
+# window from "clean" into seven real violations. Every one of them is a merge
+# that already happened and CANNOT be repaired: back-filling a verdict is the
+# right thing to do afterwards and it is explicitly NOT a gate, which is the
+# whole point of the ordering fix. Left alone, the scheduled Verdict Audit would
+# be red forever — and a permanently red alarm is a disabled alarm, which is the
+# failure mode this control was created to avoid.
+#
+# WHY NOT JUST MOVE --since FORWARD. Because that is amnesty by DATE: it hides
+# every violation in the range, including ones nobody has looked at, and it hides
+# the next one too if the range is ever widened. This file names each PR
+# individually. A violation that is not listed here still turns the workflow red,
+# in the same window, on the same run.
+#
+# RULES FOR ADDING A LINE — all three, or do not add it:
+#   1. The merge has already happened and cannot be un-merged.
+#   2. It is written up in a retrospective under docs/retrospectives/, named.
+#   3. The line says WHICH shape it was and points at the write-up.
+# An entry is NOT a way to merge something unreviewed and tidy up afterwards.
+# The gate (.claude/hooks/pre-merge-gate.sh) is what prevents; this is a ledger
+# of what already escaped, and it should stop growing.
+#
+# FORMAT: a line whose first field is the PR number. Blank lines and lines
+# starting with '#' are ignored. Anything after the number is the reason.
+# A missing or unreadable file is treated as EMPTY — the audit can only get
+# redder, never greener, if this file disappears.
+
+# --- the v1.14.2 cutover window (docs/retrospectives/v1.14.2.md §1, §7 change G)
+# Five Dependabot/security-tab merges through the GitHub WEB UI, where a
+# PreToolUse hook does not exist. All five received `APPROVE — retrospective
+# review (round 1)` between 15:45:11Z and 15:45:30Z, ~70 minutes after merge.
+394  NO-VERDICT  chore(deps): backend-minor group — web-UI merge, verdict back-filled 15:45Z
+395  NO-VERDICT  chore(deps): angular group — web-UI merge, verdict back-filled 15:45Z
+396  NO-VERDICT  chore(ci): actions group — web-UI merge, verdict back-filled 15:45Z
+397  NO-VERDICT  chore(deps-dev): frontend-minor group — web-UI merge, verdict back-filled 15:45Z
+403  NO-VERDICT  chore(sonar): activate SonarCloud + SonarQube MCP — verdict back-filled 15:45Z
+
+# The only UNAPPROVED merge on record: the gate ran, said no, and the merge
+# happened anyway. This shape had no detector at all before #409.
+402  UNAPPROVED  merged 14:36:08Z over a REQUEST CHANGES standing from 13:34:49Z
+
+# --- v1.14.3 (docs/retrospectives/v1.14.3.md §4; README trend note 19)
+412  NO-VERDICT  P0 revert of the premature v1.14.3 cut — merged 9 minutes after opening
