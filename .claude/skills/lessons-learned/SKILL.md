@@ -2330,3 +2330,48 @@ forbids — "never close on assumption".
   `git log origin/main..HEAD --format=%B | grep -niE '\b(closes|fixes|resolves) #'`
 - The same applies to the merge-gate check: `pre-merge-gate.sh` reads the PR body for `Closes #NN`,
   so a branch-commit keyword the body does not mention is invisible to it in both directions.
+
+---
+
+## 81. You cannot EDIT an `[Unreleased]` entry that is already on `main` — `check_changelog_merge.sh` reads it as loss (#458/v1.16.0)
+
+**Trap.** `#458`'s round-4 review left a wording residual: the CHANGELOG entry called the lcov
+guard "per-project resolvability" when it checks prefix conformance. The obvious fix — edit those
+two lines on the release branch — fails the push gate:
+
+```
+FAIL check 4: [Unreleased] line on base is LOST in the merge: `at `^SF:src/`, but a check must …`
+FAIL check 4: [Unreleased] line on base is LOST in the merge: `resolvability fails it. `verify_al…`
+```
+
+**Why it bites.** Check 4 is **set semantics over lines**: every non-empty `[Unreleased]` line on
+`origin/main` must appear somewhere in the merged result. An edit deletes the old string and adds a
+new one, which is byte-for-byte indistinguishable from a rebase dropping somebody's entry — the
+exact accident the check exists to catch. The consequences people get wrong:
+
+- **No branch can do it.** Branching fresh from `main` does not help; the base is still `main`, and
+  the base still has the old line. This is not a staleness problem.
+- **Rotating first does not help either.** A release PR's rotation is exempted only because the
+  moved lines are found again under a heading that is NEW in the merge. Rotating an **edited** line
+  moves a *different string*, so it is still absent from the rotated set and still fails.
+- **The check reads `HEAD`, not the working tree** (deliberate — the push pushes HEAD). Reverting
+  the edit in the working tree and re-running the check still fails until you actually commit the
+  revert, which reads as the lint being broken when it is doing exactly what it says.
+
+**How to apply.** An `[Unreleased]` entry already on `main` is **append-only until it ships**.
+- To correct one, wait until the release PR rotates it under `## [X.Y.Z]`, then fix it there: check
+  4 guards `[Unreleased]` only, and check 3 guards released *headings*, not bodies (its stated
+  limit), so a correction to a released section passes.
+- Correct every OTHER surface immediately — the source comment, the test label, the docs — and say
+  in the PR that the CHANGELOG half is deferred and why. A correction that lands in three of four
+  places is §79 all over again.
+- Relabelling a mutant is safe; renaming around its needle is not (§ the rotted needles in #458).
+  `mutate` greps the NEEDLE, so changing the human-readable label cannot turn a mutant INVALID —
+  but re-run the contract anyway and read `0 invalid`, because that is the only thing that proves
+  it.
+
+This is the fourth first-contact failure of this lint (see the three in
+`scripts/check_changelog_merge.sh`'s own header). The polarity is right and the check should NOT be
+loosened — "someone's entry vanished in a rebase" is a far more common and far more expensive event
+than "someone wants to reword a shipped-but-unreleased entry". The cost is a deferral, which is
+cheap; the cure would be a hole in the one lint that catches silent content loss.
