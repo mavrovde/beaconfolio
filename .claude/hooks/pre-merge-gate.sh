@@ -150,6 +150,17 @@ case "$CMD" in
 esac
 
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/hook-parse-lib.sh"
+# The verdict-heading grammar is SHARED with scripts/audit_no_verdict_merges.sh
+# and scripts/retro_metrics.sh: three copies of "the first line states the
+# verdict" drifted apart, and the loosest of them decided merges. The sweep that
+# produced the grammar — 229 merged PRs, 361 marker-bearing first lines, 7
+# rejected, 3 of them ALLOW->DENY here — is in the library's header.
+# $VERDICT_HEADING_LIB lets the mutation harness point a mutant copy at the real
+# library instead of dying for the wrong reason.
+VERDICT_HEADING_LIB="${VERDICT_HEADING_LIB:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../../scripts" 2>/dev/null && pwd)/verdict-heading-lib.sh}"
+[ -r "$VERDICT_HEADING_LIB" ] && . "$VERDICT_HEADING_LIB"
+[ -n "${VERDICT_HEADING_JQ_DEFS:-}" ] \
+  || deny "cannot read the verdict-heading grammar (${VERDICT_HEADING_LIB}) — refusing to merge unverified"
 INSPECT_DEADLINE=$((START + PARSE_DEADLINE_SECONDS))
 
 # Does this SEGMENT (separator-split, quote-aware) invoke `gh pr merge`?
@@ -459,41 +470,41 @@ past_deadline && deny "could not finish within ${DEADLINE_SECONDS}s — an unana
 # the prose "expect to approve immediately" (line 108) — which the old
 # case-insensitive body-wide match read as the verdict and allowed on.
 #
-# KNOWN RESIDUAL, deliberately unpinned (lessons §43): a fix report whose FIRST
-# LINE itself carries a marker is still selected and still allows.
+# THE RESIDUAL THIS SELECTION CARRIED IS CLOSED (v1.16.0 retrospective; it was
+# "KNOWN RESIDUAL, deliberately unpinned", lessons §43). A fix report whose first
+# line MENTIONS a marker was selected over the reviewer's verdict. The old note
+# argued no lexical rule separates it from a real heading that puts prose before
+# the marker (`## Round 3 — ✅ APPROVED`, `PR-REVIEWER VERDICT: APPROVE`);
+# measurement refuted that — 361 marker-bearing first lines across 229 merged
+# PRs, 354 accepted and 7 rejected — six of them author notes (correct), and one
+# a REAL reviewer APPROVE the grammar rejects (#83's July blockquote verdict).
+# That seventh is the over-strict failure mode, measured at 1 in 229: rejecting
+# a genuine verdict BLOCKS a legitimate merge, which is worse than the
+# permissiveness this replaces. It is named rather than averaged away because it
+# is the only evidence we have for it. The selection below now uses
+# the SHARED grammar in scripts/verdict-heading-lib.sh, which requires the first
+# line to BEGIN with the marker; that file carries the measurement.
 #
-# THIS SHAPE IS POSTED IN THIS REPO — measured, not hypothetical. Sweeping all
-# 145 merged PRs (179 marker-bearing headings across 92 of them) finds two author
-# fix reports that the selection above picks OVER the reviewer's verdict:
-#   #281 (2026-09-06) "Round-1 APPROVE findings applied on `1abb0fe` …", 6 min
-#        after the reviewer's `## ✅ APPROVED`;
-#   #181 (2026-08-30) "Approved-with-findings applied before merge:", 2 min
-#        after the reviewer's `**✅ APPROVED** — …`.
-# Both were DECISION-NEUTRAL — the standing verdict was itself APPROVE — so no
-# false-allow has occurred. Flip the standing verdict and the same sentence
-# allows a merge against REQUEST CHANGES: the #291 hole, one line up.
+# It stopped being harmless before it was closed: on #458 the author's
+# "Round-3 delta — … the round-3 APPROVE covered `70a8cfb4`; … it needs a
+# delta-confirm rather than standing" satisfied check 1 (first marker reads
+# APPROVE) AND check 1b (posted after the last commit) — a sentence asking for a
+# verdict, read as the verdict, for the fourteen minutes before the real one.
 #
-# It stays unpinned anyway, because no lexical rule separates it from a REAL
-# reviewer heading that also puts prose BEFORE the marker — all measured in this
-# repo: `## Round 3 — ✅ APPROVED` and `## Round 2 — ⛔ REJECTED (…)` (#255), and
-# `PR-REVIEWER VERDICT: APPROVE` (#171). The first is already pinned as a case in
-# pre-merge-gate.test.sh. Tightening buys the residual at the price of rejecting
-# those. The GUARD is therefore the charter convention (`pr-reviewer.md`
-# charter: a fix report opens "## Round N — what changed", never with
-# a marker), and a case asserting the residual could never fail, so it is
-# documented rather than tested (the #240 answer, applied again).
-#
-# REVISIT TRIGGER — deliberately NOT "an actual bad merge": the shape exists, so
-# waiting for the incident is the posture this repo argues against. Revisit on the
-# first fix report with a leading marker posted while the standing verdict is
-# NEGATIVE — that instance is decision-CHANGING, and it is the cheap signal.
-SELECTED="$(printf '%s' "$PR_JSON" | jq -c '
-  def heading: (.body // "") | split("\n") | map(select(test("\\S"))) | (.[0] // "");
+# Note what the old REVISIT TRIGGER got wrong, because the shape recurs: it said
+# "revisit on the first fix report posted while the standing verdict is
+# NEGATIVE", which is check 1's failure mode. Check 1b was added to the SAME
+# selection one release later (v1.14.0), and against check 1b the dangerous standing
+# verdict is a POSITIVE one that no longer covers the head — so the trigger
+# could not fire on the case that mattered. A revisit trigger written for one
+# consumer of a shared selection does not migrate when a second consumer joins:
+# prefer a case that fails to a condition someone has to remember.
+SELECTED="$(printf '%s' "$PR_JSON" | jq -c "$VERDICT_HEADING_JQ_DEFS"'
   [ ((.reviews // [])[]  | {at: .submittedAt, body: (.body // ""), assoc: (.authorAssociation // "NONE")}),
     ((.comments // [])[] | {at: .createdAt,   body: (.body // ""), assoc: (.authorAssociation // "NONE")}) ]
   | map(select(.at != null
       and (.assoc == "OWNER" or .assoc == "MEMBER" or .assoc == "COLLABORATOR")
-      and (heading | test("APPROVE|APPROVED|REQUEST CHANGES"; "i"))))
+      and (vh_heading | vh_is_verdict)))
   | sort_by(.at) | (last // {at: null, body: ""})' 2>/dev/null)"
 VERDICT="$(printf '%s' "$SELECTED" | jq -r '.body // ""' 2>/dev/null)"
 # The same selection's TIMESTAMP — check 1b below asks what landed after it.

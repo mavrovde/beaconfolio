@@ -13,6 +13,11 @@
 set -u
 
 SCRIPT="$(cd "$(dirname "$0")" && pwd)/audit_no_verdict_merges.sh"
+# The shared verdict-heading grammar is resolved relative to the SCRIPT, and the
+# mutation harness runs mutant copies from a temp dir. Point them at the real
+# library, or every mutant dies with "cannot read the grammar" — a kill for the
+# wrong reason, which is the fake-green class these contracts exist to catch.
+export VERDICT_HEADING_LIB="$(cd "$(dirname "$0")" && pwd)/verdict-heading-lib.sh"
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); }
 bad() { FAIL=$((FAIL+1)); echo "  ✗ $1"; [ $# -gt 1 ] && echo "      $2"; }
@@ -104,6 +109,33 @@ pr lowercase 15 <<EOF
 EOF
 rc=$(run lowercase)
 [ "$rc" = 0 ] && ok || bad "a lowercase 'approved' first line must count (gate parity)" "$(cat "$T/out")"
+
+# --- an author's NOTE ABOUT a verdict is not a verdict (v1.16.0 retro) -------
+# The loose filter read "a marker anywhere in the first line". Measured on #458:
+# the author wrote "Round-3 delta — head is now `89e05b78`. The round-3 APPROVE
+# covered `70a8cfb4`; … it needs a delta-confirm rather than standing." — a
+# sentence asking for a new verdict. As the NEWEST pre-merge "verdict" it would
+# report this PR as gated. The grammar now requires the line to BEGIN with the
+# marker (scripts/verdict-heading-lib.sh).
+fix authornote
+pr authornote 458 <<EOF
+{"number":458,"title":"author delta request","mergedAt":"$MERGED","reviews":[],
+ "comments":[{"authorAssociation":"OWNER","createdAt":"$BEFORE","body":"Round-3 delta — head is now \`89e05b78\`. The round-3 APPROVE covered \`70a8cfb4\`; two things moved since, so it needs a delta-confirm rather than standing."}]}
+EOF
+rc=$(run authornote)
+if [ "$rc" = 1 ] && grep -q "NO-VERDICT merged PR #458" "$T/out"; then ok
+else bad "an author's request for a delta-confirm must NOT count as the gating verdict" "$(cat "$T/out")"; fi
+
+# --- …and the same shape must not OUTRANK a real standing REQUEST CHANGES ----
+fix authornote2
+pr authornote2 459 <<EOF
+{"number":459,"title":"note posted over a standing REQUEST CHANGES","mergedAt":"$MERGED","reviews":[],
+ "comments":[{"authorAssociation":"OWNER","createdAt":"$BEFORE","body":"## ⛔ REQUEST CHANGES — round 1"},
+             {"authorAssociation":"OWNER","createdAt":"$LATER","body":"Round-1 APPROVE findings applied on \`1abb0fe\` (wording only)."}]}
+EOF
+rc=$(run authornote2)
+if [ "$rc" = 1 ] && grep -q "UNAPPROVED merged PR #459" "$T/out"; then ok
+else bad "an author fix report must not convert a standing REQUEST CHANGES into a gate" "$(cat "$T/out")"; fi
 
 # ==========================================================================
 # ORDERING — the #409 cases. Each of these PASSED the pre-#409 detector.
@@ -366,16 +398,25 @@ PY
   assert_quoting_clean()   { [ "$(runm "$1" quoting)" = 0 ]; }
   assert_undated_red()     { [ "$(runm "$1" undated)" = 1 ] && grep -q "NO-VERDICT merged PR #17" "$T/out"; }
   assert_nomerged_is_2()   { [ "$(runm "$1" nomerged)" = 2 ]; }
+  assert_authornote_red()  { [ "$(runm "$1" authornote)" = 1 ] && grep -q "NO-VERDICT merged PR #458" "$T/out"; }
 
   mutate "the red exit is neutered (a no-verdict merge reports green)" \
     'exit "$DIRTY"
 fi' 'exit 0
 fi' assert_red_on_none
+  # The grammar itself (first line, anchoring, the marker alphabet) is mutated in
+  # scripts/verdict-heading-lib.test.sh, which owns it. What these three mutants
+  # pin is this script's USE of it — the three ways the call site can go loose.
   mutate "the first-line filter widens to the whole body (a fix report counts as a verdict)" \
-    'split("\n") | map(select(test("\\S"))) | (.[0] // "")' \
-    'split("\n") | join(" ")' assert_red_on_buried
+    '(vh_heading | vh_is_verdict)' \
+    '((.body // "") | test("APPROVE|APPROVED|REQUEST CHANGES"; "i"))' assert_red_on_buried
   mutate "the marker test matches everything" \
-    'test("APPROVE|APPROVED|REQUEST CHANGES"; "i")' 'test(""; "i")' assert_red_on_none
+    '(vh_heading | vh_is_verdict)' '(true)' assert_red_on_none
+  # v1.16.0: the filter this detector shipped until now — a marker ANYWHERE in
+  # the first line, which read #458's author note as the gating verdict.
+  mutate "the grammar falls back to marker-anywhere-in-the-first-line" \
+    '(vh_heading | vh_is_verdict)' \
+    '(vh_heading | test("APPROVE|APPROVED|REQUEST CHANGES"; "i"))' assert_authornote_red
   mutate "the trust filter is dropped (a drive-by NONE APPROVE silences the alarm)" \
     '(.assoc == "OWNER" or .assoc == "MEMBER" or .assoc == "COLLABORATOR")' \
     '(true)' assert_untrusted_red

@@ -224,6 +224,14 @@ must respect —
    author share one GitHub identity here, so only the marker's POSITION separates them.)
 2. **Do not write `REJECTED` alone.** It contains neither marker; the gate cannot read it. This
    charter said "⛔ REJECTED" until v1.13.0 and the gate would have denied a merge on that heading.
+3. **The first line must STATE the marker, not mention it** (v1.16.0). Since #458 the gate reads
+   the shared grammar in `scripts/verdict-heading-lib.sh`: after decoration and at most a
+   `Round N —` or `VERDICT:` prefix, the line must BEGIN with the marker. `## ✅ APPROVE — round 3`,
+   `## Round 3 — ✅ APPROVED` and `PR-REVIEWER VERDICT: APPROVE` all pass; a sentence *about* a
+   verdict ("the round-3 APPROVE covered `70a8cfb4`, so this needs a delta-confirm") is no longer a
+   verdict at all. That is deliberate — on #458 exactly that sentence would have let the merge
+   through for 14 minutes. If you get "no posted review verdict", repost the heading; do not
+   rephrase the gate.
 Quoting the other marker later in the body is fine and expected ("the REQUEST CHANGES findings from
 round 2 are fixed") — only the first line decides.
 
@@ -233,6 +241,14 @@ Your review body must:
 - State the **verdict** up front (✅ APPROVE / ⛔ REQUEST CHANGES) and one-line rationale.
 - List findings as a numbered list, each: **severity** (blocker / major / minor / nit), `file:line`, the problem, why it matters, and a concrete suggested fix. Separate blockers from nits clearly.
 - Confirm explicitly whether **each acceptance criterion** of the linked issue is met.
+- **State your PROVENANCE in one line, in every verdict, in both directions.** CLAUDE.md rule 13
+  obliges a *non-independent* verdict to disclose; that makes silence ambiguous, because an
+  independent review that says nothing is byte-identical to a self-review that says nothing.
+  Measured at v1.16.0: 21 of 26 verdicts declared an independent `pr-reviewer` run, 2 declared they
+  were not one — and **3 said nothing at all**, so the trend table's `Non-independent verdicts`
+  column had a denominator of 23 out of 26. Write "This is an independent `pr-reviewer` review; I
+  did not author, rebase, or touch this branch" (name what you DID touch if you touched anything),
+  or the disclosure paragraph rule 13 specifies. One sentence, always.
 - Note the CI status you observed.
 - Never approve on assumption — if you could not verify something (e.g. E2E only runs post-merge), say so and weigh the residual risk.
 

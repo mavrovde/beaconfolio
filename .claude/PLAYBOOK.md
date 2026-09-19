@@ -58,12 +58,13 @@ WORKING DISCIPLINE (learned the hard way — see .claude/skills/lessons-learned/
   NOTHING in the chain runs (the commit silently never happened, which once
   cascaded into destroyed work). Fix, commit, `git log --oneline -1`, then push
   alone. (lessons §39)
-- A REVIEW VERDICT states APPROVE or REQUEST CHANGES in its FIRST NON-EMPTY LINE;
-  the merge gate reads only that line. So when you post a FIX REPORT, do not open
-  it with either marker — title it "## Round N — what changed". On #291 two author
-  fix-reports opened with `APPROVED` further in, and under the old body-wide rule
-  either would have been read as the newest verdict while the standing verdict was
-  REQUEST CHANGES. (lessons §43)
+- A REVIEW VERDICT states APPROVE or REQUEST CHANGES in its FIRST NON-EMPTY LINE —
+  states, not mentions. So when you post a FIX REPORT or ask for a delta-confirm, do
+  not open it with either marker: title it "## Round N — what changed". Since the
+  v1.16.0 retro this is mechanical (`scripts/verdict-heading-lib.sh`), because the
+  convention alone did not hold — on #458 the author's "the round-3 APPROVE covered
+  `70a8cfb4`; … it needs a delta-confirm rather than standing" was read by the gate
+  as the delta-confirm, for the 14 minutes until the real one. (lessons §43)
 - ONE MACHINE, ONE DOCKER STACK — and a concurrent agent gets its own git
   WORKTREE, never a shared checkout. In v1.14.0 three compose projects ran at
   once (`hirefolio-*`, `hirefolio250-*`, `mavrovde-*`), the disk reached zero and <!-- de-brand:historical: the v1.14.0 disk incident, verbatim -->

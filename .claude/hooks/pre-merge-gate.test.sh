@@ -7,10 +7,16 @@
 # Only 4 of 10 mutations bit. That is the exact fake-green class the retrospective
 # this hook came from is about, so every case here now asserts the DECISION
 # (parsed out of the JSON) and the mutation list below is part of the contract:
-# `bash pre-merge-gate.test.sh --mutations` re-runs them and must report 23 killed.
+# `bash pre-merge-gate.test.sh --mutations` re-runs them and must report 24 killed.
 set -u
 
 HOOK="${HOOK:-$(cd "$(dirname "$0")" && pwd)/pre-merge-gate.sh}"
+# The shared verdict-heading grammar is resolved RELATIVE TO THE HOOK, and the
+# mutation harness runs mutant copies from a temp dir. Point them at the real
+# library or every mutant "dies" because it cannot load a grammar, which is a
+# kill for the wrong reason (the harness already guards hook-parse-lib.sh the
+# same way).
+export VERDICT_HEADING_LIB="${VERDICT_HEADING_LIB:-$(cd "$(dirname "$0")/../../scripts" && pwd)/verdict-heading-lib.sh}"
 PASS=0; FAIL=0
 STUB="$(mktemp -d)"
 trap 'rm -rf "$STUB"' EXIT
@@ -485,6 +491,38 @@ GH_STUB_PR_JSON='{"reviews":[{"submittedAt":"2026-09-06T10:00:00Z","body":"## �
 GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ✅ APPROVED')" \
   run "no commits field at all does not block" allow "gh pr merge 284 --squash"
 
+# 4c. THE FIRST LINE MUST *STATE* THE VERDICT, NOT MENTION ONE (v1.16.0 retro).
+# Until this release all three verdict readers accepted a marker ANYWHERE in the
+# first line, so the author's own note was selected over the reviewer's verdict.
+# Measured on #458: the reviewer approved `70a8cfb4` at 00:03:54Z, three commits
+# landed (head `89e05b78`, 00:07:27Z), and the author then posted "Round-3 delta
+# — head is now `89e05b78`. The round-3 APPROVE covered `70a8cfb4`; … it needs a
+# delta-confirm rather than standing." That sentence passed check 1 (its first
+# marker reads APPROVE) and check 1b (it post-dates the head): for the 14 minutes
+# until the real round-4 APPROVE, the gate would have allowed the merge on a
+# sentence asking for the opposite. The grammar now lives in
+# scripts/verdict-heading-lib.sh; these cases pin the GATE's use of it.
+delta458() { # <author-note-body>
+  printf '{"reviews":[{"submittedAt":"2026-09-19T00:03:54Z","body":"## ✅ APPROVE — round 3 (at 70a8cfb4)","authorAssociation":"OWNER"}],"comments":[{"createdAt":"2026-09-19T00:08:23Z","body":"%s","authorAssociation":"OWNER"}],"body":"Refs #1","commits":[{"committedDate":"2026-09-19T00:07:27Z","oid":"89e05b78aaaaaaaa","messageHeadline":"fix: round-3 findings"}]}' "$1"
+}
+GH_STUB_PR_JSON="$(delta458 'Round-3 delta — head is now `89e05b78`. The round-3 APPROVE covered `70a8cfb4`; two things moved since, so it needs a delta-confirm rather than standing.')" \
+  run "an author's delta REQUEST is not a verdict (the #458 shape)" deny "gh pr merge 284 --squash"
+GH_STUB_PR_JSON="$(delta458 'Round-3 delta — head is now `89e05b78`. The round-3 APPROVE covered `70a8cfb4`; two things moved since, so it needs a delta-confirm rather than standing.')" \
+  run_reason "…and the deny is the STALE-APPROVAL one, so the remedy named is the delta-confirm" \
+    "does not cover the head" "gh pr merge 284 --squash"
+# The other two shapes the sweep found, both of which used to ALLOW a merge the
+# reviewer's own verdict did not cover.
+GH_STUB_PR_JSON="$(delta458 'Approved-with-findings applied before merge:')" \
+  run "a hyphen-glued marker is not a verdict (the #181 shape)" deny "gh pr merge 284 --squash"
+GH_STUB_PR_JSON="$(delta458 'Round-1 APPROVE findings applied on `1abb0fe` (wording only)')" \
+  run "an author fix report naming the round is not a verdict (the #281 shape)" deny "gh pr merge 284 --squash"
+# The OVER-tightening direction, which is what kept this residual open: the two
+# prose-before-the-marker forms this repo has really posted must still count.
+GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## Round 3 — ✅ APPROVED')" \
+  run "the '## Round N — ✅ APPROVED' heading still counts (#255)" allow "gh pr merge 284 --squash"
+GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z 'PR-REVIEWER VERDICT: APPROVE')" \
+  run "the 'PR-REVIEWER VERDICT: APPROVE' heading still counts (#171)" allow "gh pr merge 284 --squash"
+
 # 5. Quoted prose is DATA (#204/#237) — the false-positive direction.
 GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
   run "phrase quoted in a comment body" allow "gh pr comment 284 --body 'do not gh pr merge 284 yet'"
@@ -493,7 +531,7 @@ GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
 # --- #353: the decision must not depend on the CWD ---------------------------
 # Reported 2026-09-10: `--mutations` from a foreign cwd (the wiki checkout) died
 # with "HARNESS BROKEN: identity should survive but died". It does NOT reproduce
-# today — measured 23 killed / 0 survived / 0 invalid from BOTH the repo root and
+# today — measured 24 killed / 0 survived / 0 invalid from BOTH the repo root and
 # a foreign cwd.
 #
 # WHY it stopped reproducing is NOT known, and the guess that was committed here
@@ -682,8 +720,14 @@ PY
   # case for it could not fail. Documented in the hook instead - the #240 answer.
   mutate die "newest-verdict selection reversed" \
     'replace::sort_by(.at) | (last=>sort_by(.at) | (first'
-  mutate die "verdict selection falls back to marker-anywhere-in-body" \
-    'replace::(heading | test("APPROVE|APPROVED|REQUEST CHANGES"; "i"))=>((.body // "") | test("APPROVE|APPROVED|REQUEST CHANGES"; "i"))'
+  mutate die "verdict selection falls back to marker-anywhere-in-BODY" \
+    'replace::(vh_heading | vh_is_verdict)=>((.body // "") | test("APPROVE|APPROVED|REQUEST CHANGES"; "i"))'
+  # v1.16.0: the FILTER THIS GATE SHIPPED UNTIL NOW, as a mutant — a marker
+  # anywhere in the first line. It is killed by the #458/#181/#281 cases above,
+  # which is the whole point: the old filter read an author's request for a
+  # delta-confirm as the delta-confirm.
+  mutate die "verdict selection falls back to marker-anywhere-in-the-first-LINE" \
+    'replace::(vh_heading | vh_is_verdict)=>(vh_heading | test("APPROVE|APPROVED|REQUEST CHANGES"; "i"))'
   # NOT a mutation: reading FIRST_MARKER from $VERDICT instead of $HEADING is
   # behaviourally EQUIVALENT once the selection filter above requires a marker in
   # the heading — the heading IS the body's first line, so the first marker in the

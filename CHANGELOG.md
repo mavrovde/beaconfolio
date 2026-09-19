@@ -7,6 +7,54 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Placeholder for next release.
 
+### Changed
+- **The v1.16.0 release retrospective, and the one verdict-heading grammar it had to build first.**
+  Rule 8 makes the retrospective a release step. Writing it found a live false-ALLOW in the rule-13
+  merge gate: all three verdict readers — `pre-merge-gate.sh`, `audit_no_verdict_merges.sh` and
+  `scripts/retro_metrics.sh` — carried their own copy of a filter that tested for `APPROVE` /
+  `REQUEST CHANGES` **anywhere in the first line**, so #458's author note *“Round-3 delta — head is
+  now …; the round-3 APPROVE covered …”* read as the newest verdict, post-dated the head, and
+  satisfied both the rule-13 check and the approval-covers-head check for the fourteen minutes
+  before the real round-4 APPROVE arrived. The old code documented the residual and argued that no
+  lexical rule could separate the two shapes; measured over **229 merged PRs / 361 marker-bearing
+  first lines**, one can — require the marker to OPEN the line after at most a whitelisted
+  `Round N —` / `PR-REVIEWER VERDICT:` prefix, with a non-hyphen boundary — and it accepts 354 and
+  rejects 7. **Six** of those rejections are author notes and are correct; the seventh, #83's July
+  blockquote verdict, is a REAL reviewer APPROVE the grammar rejects — the over-strict failure mode
+  at 1 in 229, named rather than folded into an "all correct" figure because it is the only
+  empirical evidence for the risk the next window is asked to watch.
+  `scripts/verdict-heading-lib.sh` is now the single
+  source all three readers source, with a 19-case self-test and a 9/0/0 mutation contract; the
+  gate's contract goes 23 → 24 and the audit's 18 → 19, with the new cases verified failing against
+  the old code first. Replayed at the instant each of the six real author notes landed, **three
+  merges flip ALLOW → DENY** (#181, #281, #458) — two distinct shapes, which #465's review
+  separated: anchored at `mergedAt`, #458 is **ALLOW → ALLOW** (its real round-4 APPROVE landed
+  before the merge, so it was correctly gated), while #181 and #281 still flip, because today's
+  approval-covers-head check (`5982b16d`, 2026-09-09) post-dates both merges. None of the three is
+  a rule-13 violation and the acknowledged ledger stays at **7** — it is meant to shrink, and a
+  stricter regex is not a way to grow it. Comparability is measured, not assumed: the three
+  windows published under the anchored filter reproduce every cell with `non-verdict bodies
+  skipped: 0`, the rule-13 audit returns an identical PR-by-PR classification before and after, and
+  exactly one historical classification changes (#83, July, outside every window the audit runs).
+- **One portability trap is pinned by a mutant, because it shipped once.** The boundary was first
+  written `(?![A-Za-z0-9-])`, which passes every self-test under `jq` (Oniguruma) and dies at
+  runtime under `gh … -q`, which is gojq on Go's RE2 and has no lookahead. The suite cannot reach
+  gojq offline, so it pins the input instead: the grammar must contain no lookahead, lookbehind or
+  backreference.
+- **Charters: a verdict must STATE its marker and its provenance, in both directions.**
+  `pr-reviewer.md` and `.claude/PLAYBOOK.md` gain the heading grammar and a requirement that every
+  verdict says whether it is independent. Rule 13 obliges only a *non-independent* verdict to
+  disclose, which makes silence ambiguous — 3 of this window's 26 verdicts state nothing either
+  way, so the trend table's `Non-independent verdicts` cell is measured over 23. `release-manager`
+  step 11 gains board reconciliation from git (4 of 8 closed issues were absent from Project 3, two
+  more sat in the previous release's bucket), and the `release-retro` skill counts with the shared
+  grammar and quotes the instrument's `non-verdict bodies skipped` line.
+- **Corrections to two surfaces this window's review threads left inconsistent**, fixed in place
+  rather than deferred: `lessons-learned` §81 carried a superseded round-1 framing (“the cost is a
+  deferral, which is cheap”) that the body above it already contradicts, and the `[1.16.0]` entry
+  described the lcov guard as checking “per-project resolvability” when what it asserts is prefix
+  conformance — 46/46 `SF:` lines prefixed, 0 doubly prefixed, 46/46 resolving on disk.
+
 ## [1.16.0] - 2026-09-19
 
 ### Security
@@ -337,26 +385,20 @@ All notable changes to this project will be documented in this file.
   `coverage/` hands SonarCloud the same 0% and its only signal was an absent `✓`. The guard is
   named for what it checks rather than the stronger "resolves from the repo root" it implies: a
   doubly-prefixed path would pass it, which is unreachable while the rewrite's `sed` stays anchored
-  at `^SF:src/`, but a check must not claim a guarantee it does not make. The guard is per-project resolvability rather than cross-project uniqueness
+  at `^SF:src/`, but a check must not claim a guarantee it does not make (measured: 46/46 `SF:`
+  lines prefixed, 0 doubly prefixed, 46/46 resolving on disk). The guard is per-project **prefix
+  conformance** rather than cross-project uniqueness
   (what review round 1 shipped): once each path carries its own project's prefix a collision is
   impossible by construction, and uniqueness is blind in the per-project CI jobs, which is where
   the reports SonarCloud actually consumes are produced. That distinction is not academic — round
   2 measured the rewrite being skipped on the tolerated-flake retry path, on the one project that
   is *both* the collider and the one the teardown race is measured on (1 in 25), so roughly 4% of
   coverage runs re-shipped the defect with `✓` printed beside it; uniqueness could not see it and
-  resolvability fails it. `verify_all.sh` and `scripts/sonar_local.sh` were still invoking
+  the prefix assertion fails it. `verify_all.sh` and `scripts/sonar_local.sh` were still invoking
   `npm run test:coverage` directly, bypassing the wrapper entirely, and now go through it.
   The wrapper's mutation contract goes **7 → 11 killed / 0 survived / 0 invalid** and 21 → 29
   cases (one mutant per new arm, including the retry-path rewrite that round 1 omitted). Setting Vitest's `coverage.root`
   was tried first and measured: it does not move the emitted paths.
-  **Correction, appended rather than edited in place:** two sentences above call the guard
-  "per-project resolvability" and say "resolvability fails it". That overstates what it asserts —
-  it checks that each `SF:` path carries its own project's **prefix**, and a doubly-prefixed path
-  would pass it. The two properties coincide on real input (46/46 `SF:` lines prefixed, 0 doubly
-  prefixed, 46/46 resolving on disk), which is why naming the check honestly was preferred over
-  strengthening it into a new failure mode. The original wording is left standing because
-  `check_changelog_merge.sh` check 4 reads an in-place edit of a line already on `main` as content
-  loss; appending is the construction that lands with all four checks green. See lessons §81.
 - **Blog tag chips are keyboard-operable — they are buttons now, and they sit outside the row.**
   Each tag rendered as a `<span (click)=…>` nested inside the post row's `role="button"`, carrying
   two `eslint-disable-next-line` directives in place of a keyboard path: the chip took no focus and

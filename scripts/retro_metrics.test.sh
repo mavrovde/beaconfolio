@@ -21,6 +21,11 @@
 set -u
 
 SCRIPT="$(cd "$(dirname "$0")" && pwd)/retro_metrics.sh"
+# The shared verdict-heading grammar is resolved relative to the SCRIPT, and the
+# mutation harness runs mutant copies from a temp dir. Point them at the real
+# library, or a mutant exits 2 ("cannot measure") for a reason that has nothing
+# to do with the mutation — a kill for the wrong reason.
+export VERDICT_HEADING_LIB="$(cd "$(dirname "$0")" && pwd)/verdict-heading-lib.sh"
 PASS=0; FAIL=0
 ok()  { PASS=$((PASS+1)); }
 bad() { FAIL=$((FAIL+1)); echo "  ✗ $1"; [ $# -gt 1 ] && echo "      $2"; }

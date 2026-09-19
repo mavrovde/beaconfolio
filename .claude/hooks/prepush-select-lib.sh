@@ -55,6 +55,7 @@
 #   dedup       scripts/dedup_changelog_unreleased.test.sh (the history-rewriter's own test)
 #   changelog   scripts/check_changelog_merge.sh (+ self-test) — the MERGED result vs origin/main (#391)
 #   vaudit      scripts/audit_no_verdict_merges.test.sh (the no-verdict detector's own test, #392)
+#               + scripts/verdict-heading-lib.test.sh (the grammar both verdict readers share)
 #   setup       setup.test.sh
 #   edge        infra/edge/apply.test.sh (the shared-edge apply contract, #338)
 #   hook:NAME   .claude/hooks/NAME.test.sh
@@ -152,6 +153,7 @@ prepush_legs_for_path() {
   scripts/dedup_changelog_unreleased.py|scripts/dedup_changelog_unreleased.test.sh) printf 'dedup\naiconfig\n' ;;
   scripts/check_changelog_merge.sh|scripts/check_changelog_merge.test.sh) printf 'changelog\naiconfig\n' ;;
   scripts/audit_no_verdict_merges.sh|scripts/audit_no_verdict_merges.test.sh) printf 'vaudit\naiconfig\n' ;;
+  scripts/verdict-heading-lib.sh|scripts/verdict-heading-lib.test.sh) printf 'vaudit\naiconfig\n' ;;
   scripts/run_frontend_suites.sh|scripts/run_frontend_suites.test.sh) printf 'fe:runner\naiconfig\n'; prepush_fe_all_legs ;;
   scripts/check_e2e_hydration_barrier.sh|scripts/check_e2e_hydration_barrier.test.sh) printf 'e2ebarrier\naiconfig\n' ;;
 

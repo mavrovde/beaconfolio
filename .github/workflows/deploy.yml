@@ -434,6 +434,15 @@ jobs:
       # throwaway git repos, no network.
       - name: Self-test the retrospective metrics instrument
         run: bash scripts/retro_metrics.test.sh --mutations
+      # The ONE verdict-heading grammar the merge gate, the no-verdict audit and
+      # the retro instrument all read (v1.16.0 retrospective). Its cases are real
+      # first lines from merged PRs; its mutants delete one clause each. It is
+      # CI-unconditional because the grammar decides whether a merge may proceed,
+      # and because it is evaluated by TWO regex engines — jq (Oniguruma) in the
+      # hook and gojq/RE2 through `gh -q` in retro_metrics.sh, where a lookahead
+      # that passed every jq case died at runtime.
+      - name: Self-test the shared verdict-heading grammar
+        run: bash scripts/verdict-heading-lib.test.sh --mutations
       # SSR hydration-barrier contract: an e2e test that types into a
       # server-rendered page before Angular attaches has its input wiped by
       # setUpControl's writeValue, and fails 120s later at a disabled button.
