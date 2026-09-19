@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Placeholder for next release.
+
+## [1.16.0] - 2026-09-19
+
 ### Security
 - **JSON-LD can no longer break out of its own `<script>` element.** The structured-data block is
   built by string concatenation and handed to `bypassSecurityTrustHtml`, and `JSON.stringify` does
@@ -283,9 +288,13 @@ All notable changes to this project will be documented in this file.
   content loss the check exists to catch. Hit live while correcting #458's round-4 wording
   residual. Neither a fresh branch nor rotating first escapes it (a rotated *edited* line is a
   different string, so the rotation exemption does not match), and the check reads `HEAD` rather
-  than the working tree, so an uncommitted revert looks like the lint misfiring. The entry records
-  the remedy — fix every other surface now, defer the CHANGELOG half until the text rotates into
-  its released section — and argues against loosening the lint, whose polarity is right.
+  than the working tree, so an uncommitted revert looks like the lint misfiring. The constraint is
+  sharper than it first appears, and this release cut is where that surfaced: the rotation
+  exemption matches base lines **verbatim**, so rotating an *edited* line still reads as loss and
+  the correction can only land in a PR opened AFTER the release merges. Lines added in the same PR
+  stay freely editable, since check 4 guards only what is on the base. The entry records the
+  remedy — fix every other surface now, defer the CHANGELOG half — and argues against loosening the
+  lint, whose polarity is right.
 - **`lessons-learned` §80 — a `Closes #NN` in a BRANCH commit closes the issue even when the PR
   body says `Refs`.** Deciding not to auto-close is not done by editing the PR body: GitHub honours
   a closing keyword anywhere in the pushed commit message, and a squash merge concatenates every

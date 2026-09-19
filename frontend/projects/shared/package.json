@@ -1,6 +1,6 @@
 {
   "name": "@beaconfolio/shared",
-  "version": "1.15.2",
+  "version": "1.16.0",
   "peerDependencies": {
     "@angular/common": "^21.2.18",
     "@angular/core": "^21.2.18",

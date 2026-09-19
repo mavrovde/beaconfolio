@@ -2359,9 +2359,17 @@ exact accident the check exists to catch. The consequences people get wrong:
   revert, which reads as the lint being broken when it is doing exactly what it says.
 
 **How to apply.** An `[Unreleased]` entry already on `main` is **append-only until it ships**.
-- To correct one, wait until the release PR rotates it under `## [X.Y.Z]`, then fix it there: check
-  4 guards `[Unreleased]` only, and check 3 guards released *headings*, not bodies (its stated
-  limit), so a correction to a released section passes.
+- To correct one, the fix goes in a PR opened **AFTER the release PR has MERGED** — not in the
+  release PR itself. This is sharper than it first looks, and the release cut for v1.16.0 is where
+  the distinction was found: the rotation exemption counts a base line as present only if it turns
+  up **verbatim** under the new released heading. Rotating an *edited* line moves a different
+  string, so the base's original is still missing and check 4 still fails. Only once `## [X.Y.Z]`
+  is on `main` does that text leave the base's `[Unreleased]`, and the correction becomes invisible
+  to check 4 — which guards `[Unreleased]` only, while check 3 guards released *headings*, not
+  bodies (its stated limit).
+- **Lines YOU added in the same PR are free to edit.** Check 4 only guards lines present on the
+  BASE, so a new entry can be reworded freely right up to merge. Only text already on `main` is
+  frozen.
 - Correct every OTHER surface immediately — the source comment, the test label, the docs — and say
   in the PR that the CHANGELOG half is deferred and why. A correction that lands in three of four
   places is §79 all over again.
