@@ -1032,7 +1032,10 @@ reviewer's verdict*:
 | **#458** (2026-09-19) | ``Round-3 delta — head is now `89e05b78`. The round-3 APPROVE covered `70a8cfb4`; … it needs a delta-confirm rather than standing.`` | `## ✅ APPROVE — round 3` |
 
 Replaying `pre-merge-gate.sh` at the instant each landed, **three flip the decision** — #181, #281
-and #458 turn a DENY into an ALLOW. #458 is the sharp one: it post-dated the head, so it satisfied
+and #458 turn an ALLOW into a DENY: the OLD filter read the author note as the newest verdict and
+allowed the merge; the grammar rejects it and the gate falls back to the real state. (This sentence
+read "a DENY into an ALLOW" until #465's review caught it inverted against every other surface.)
+#458 is the sharp one: it post-dated the head, so it satisfied
 check 1 (its first marker reads APPROVE) *and* check 1b (approval-covers-head). For the 14 minutes
 between it and the real round-4 APPROVE, the gate would have merged on a sentence **asking it not
 to**.

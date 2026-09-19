@@ -26,7 +26,7 @@
 # gate's decision from ALLOW to DENY once this grammar is applied:
 #
 #   #181  the author's "Approved-with-findings applied before merge:" covers a
-#         head the reviewer's APPROVE (90 seconds earlier) had not seen;
+#         head the reviewer's APPROVE (100 seconds earlier) had not seen;
 #   #281  same shape, "Round-1 APPROVE findings applied on `1abb0fe`";
 #   #458  (v1.16.0) "…the round-3 APPROVE covered `70a8cfb4`; two things moved
 #         since, so it needs a delta-confirm rather than standing" — a sentence

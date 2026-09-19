@@ -18,12 +18,21 @@ All notable changes to this project will be documented in this file.
   before the real round-4 APPROVE arrived. The old code documented the residual and argued that no
   lexical rule could separate the two shapes; measured over **229 merged PRs / 361 marker-bearing
   first lines**, one can — require the marker to OPEN the line after at most a whitelisted
-  `Round N —` / `PR-REVIEWER VERDICT:` prefix, with a non-hyphen boundary — and it accepts 354,
-  rejects 7, and all 7 rejections are correct. `scripts/verdict-heading-lib.sh` is now the single
+  `Round N —` / `PR-REVIEWER VERDICT:` prefix, with a non-hyphen boundary — and it accepts 354 and
+  rejects 7. **Six** of those rejections are author notes and are correct; the seventh, #83's July
+  blockquote verdict, is a REAL reviewer APPROVE the grammar rejects — the over-strict failure mode
+  at 1 in 229, named rather than folded into an "all correct" figure because it is the only
+  empirical evidence for the risk the next window is asked to watch.
+  `scripts/verdict-heading-lib.sh` is now the single
   source all three readers source, with a 19-case self-test and a 9/0/0 mutation contract; the
   gate's contract goes 23 → 24 and the audit's 18 → 19, with the new cases verified failing against
   the old code first. Replayed at the instant each of the six real author notes landed, **three
-  merges flip ALLOW → DENY** (#181, #281, #458). Comparability is measured, not assumed: the three
+  merges flip ALLOW → DENY** (#181, #281, #458) — two distinct shapes, which #465's review
+  separated: anchored at `mergedAt`, #458 is **ALLOW → ALLOW** (its real round-4 APPROVE landed
+  before the merge, so it was correctly gated), while #181 and #281 still flip, because today's
+  approval-covers-head check (`5982b16d`, 2026-09-09) post-dates both merges. None of the three is
+  a rule-13 violation and the acknowledged ledger stays at **7** — it is meant to shrink, and a
+  stricter regex is not a way to grow it. Comparability is measured, not assumed: the three
   windows published under the anchored filter reproduce every cell with `non-verdict bodies
   skipped: 0`, the rule-13 audit returns an identical PR-by-PR classification before and after, and
   exactly one historical classification changes (#83, July, outside every window the audit runs).
