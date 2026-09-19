@@ -289,7 +289,7 @@ PY
     [ "$RC" -eq 1 ]; }
   mutate "no-report arm removed (--coverage emitting nothing passes in silence)" \
     '  if [ "$_seen" -eq 0 ]; then' '  if false; then' assert_no_report_fails
-  mutate "resolvability guard removed (a wrong coverage number ships green)" \
+  mutate "prefix-conformance guard removed (a wrong coverage number ships green)" \
     '    if [ -n "$_stray" ]; then' '    if false; then' assert_unresolvable_fails
 
   echo "run_frontend_suites mutations: $KILLED killed, $SURVIVED survived, $INVALID invalid"
