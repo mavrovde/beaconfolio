@@ -19,9 +19,15 @@
 # selected as the newest verdict and read as an APPROVE.
 #
 # MEASURED, v1.16.0 retrospective — 229 merged PRs, 361 marker-bearing first
-# lines from trusted associations. Seven do not state a verdict; six of those
-# seven are the AUTHOR's own notes (#181, #281, #373, #400, #421, #458) and the
-# seventh is #83's July blockquote verdict, which predates every audit window.
+# lines from trusted associations. 354 state a verdict, 7 do not. Six of those
+# seven are the AUTHOR's own notes (#181, #281, #373, #400, #421, #458) and are
+# correct rejections. The SEVENTH is not: #83's July blockquote verdict is a
+# REAL reviewer APPROVE that this grammar rejects, and that is the OVER-STRICT
+# failure mode — measured at 1 in 229, it blocks a legitimate merge, which is
+# worse than the permissiveness it replaces. It predates every audit window, so
+# nothing is red today. Watch for it: if a reviewer's real APPROVE is ever
+# refused here, this is why — report the heading verbatim, because the prefix
+# whitelist is derived from 361 real headings and a miss means it needs a 362nd.
 # Replaying `pre-merge-gate.sh` at the instant each was posted, THREE flip the
 # gate's decision from ALLOW to DENY once this grammar is applied:
 #

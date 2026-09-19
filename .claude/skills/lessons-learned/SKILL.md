@@ -2302,6 +2302,15 @@ asserting the sweep happened.
   `TS5051` before type-checking anything; the criterion was amended in place with the real
   invocation — and the *same issue's* "How to verify" step 5 kept the broken one. (Repeat offender:
   v1.15.0 recorded this shape three times in one window.)
+- **A PARTIAL correction, which is worse than none — the sharpest instance of this class yet,
+  because it happened inside the change that closes it, under review, with the author aware of the
+  class.** #465 corrected "all 7 rejections are correct" (false: #83's is a real APPROVE) on the
+  retrospective and the CHANGELOG, and left it standing in `pre-merge-gate.sh` and lessons §43.
+  Before the correction all four copies **agreed** — wrong in the same way, and a reader got one
+  consistent story. Afterwards two said #83 was a success while the retro said it must not be, so
+  the tree read as self-contradicting and a maintainer had no way to tell which surface was
+  current. **A claim on N surfaces is corrected on N or on none.** Rounds 2 and 3 of that PR exist
+  only because of this.
 
 **How to apply — three greps, before you request review.**
 
@@ -2312,10 +2321,15 @@ asserting the sweep happened.
    your window does not contain (a two-digit number beside a three-digit one; a nested `});`; an
    empty list) and run it. A control that is right for the wrong reason is a control that will be
    wrong later, silently.
-3. **The second-surface grep.** When you correct a claim, grep the *string you corrected* across the
-   repo and the linked issue before you call it fixed. A fact lives on more surfaces than you
-   remember writing it on — the PR body, the CHANGELOG, a docstring, an acceptance criterion, a
-   "how to verify" block.
+3. **The second-surface grep — and grep the CLAIM, not the string.** When you correct a claim,
+   grep the *string you corrected* across the repo and the linked issue before you call it fixed.
+   A fact lives on more surfaces than you remember writing it on — the PR body, the CHANGELOG, a
+   docstring, an acceptance criterion, a "how to verify" block. **But the string is a proxy for
+   the claim, and a bad one**: #465's own tree-wide grep for `all 7` returned clean while two more
+   surfaces carried the same false claim in other words ("354 are verdicts, **7 are not**"; a
+   comment block that simply omitted the exception). Its reviewer found both by enumerating every
+   file that *states the fact* and reading each. So: list the surfaces first, from what the fact
+   IS, then grep to confirm you missed none — never the other way round.
 
 **And the limit that belongs beside the fix.** #439's `--limit` was raised to 400, but the durable
 half is that the *real* ceiling was written where the next reader meets it: the loop spends one
