@@ -25,25 +25,29 @@ Facts about THIS repo's environments that keep costing cycles. Check here before
   the PATH `grep` is ugrep (accepts `-P` and `\b`) while `/usr/bin/grep` is BSD grep (rejects
   both) — a `-P` pattern that passes interactively breaks in scripts/hooks/CI that resolve the
   system grep. `**` globs need bash `globstar` (off by default) — prefer `find`.
-- **`awk '{print length}'` counts BYTES, not characters — and the locale does not save you**
-  (#465). Every non-ASCII character inflates the count: an em-dash `—` is **3 bytes**, so a
-  prose line with four of them reads 8 columns wider than it is. Measured on this machine against
-  `a—b` (3 characters, 5 bytes):
+- **`awk '{print length}'` counts BYTES, not characters — and NO awk you will meet here counts
+  characters** (#465). An em-dash `—` is **3 bytes**, so a single one makes a 99-character line
+  measure 101. Measured against `a—b` (3 characters, 5 bytes):
 
-  | command | result |
-  |---|---|
-  | `awk '{print length($0)}'` | **5** — bytes |
-  | `LC_ALL=en_US.UTF-8 awk '{print length($0)}'` | **5** — macOS awk ignores it |
-  | `wc -m` | 4 (3 + the newline) |
-  | `python3 -c "len(line.rstrip())"` | **3** — correct |
+  | awk | where | default | under a UTF-8 locale |
+  |---|---|---|---|
+  | BSD awk 20200816 | macOS, this machine | **5** | **5** — `LC_ALL`/`LANG` ignored |
+  | mawk 1.3.4 | `ubuntu:24.04`, the CI runner's `awk` | **5** | **5** — not multibyte-aware |
+  | GNU awk 5.2.1 | only after `apt-get install gawk` | 5 (`LC_ALL=C`) | **3** — obeys |
 
-  The locale row is the trap: the usual advice is "set `LC_ALL` to a UTF-8 locale", and on
-  macOS's BSD awk that changes **nothing** (GNU awk on the CI runner *does* honour it, so the same
-  command disagrees across the two userlands — the `#400` shape again). Use `python3` for any width
-  check that must be right, or `wc -m` remembering it counts the newline. This shipped a false
-  claim into a PR round: `#465` re-flowed a paragraph to "fix" lines reported at 101 and 109
-  columns whose real widths were 99, because four em-dashes bought 8 phantom columns.
+  `wc -m` gives 4 (3 + the newline), `wc -c` 6, and `python3 len(line.rstrip())` **3**.
 
+  **This is NOT the `#400` shape below.** There, macOS and CI genuinely disagree. Here they
+  **agree** — both report bytes — and the reflex fix, "set `LC_ALL` to a UTF-8 locale", works on
+  **neither**: BSD awk ignores it and mawk cannot do multibyte at all. Only gawk honours it, and
+  gawk is not installed on the `ubuntu-24.04` runner (its `awk` is mawk). So the machine that
+  disagrees with both is a **developer box with gawk on it** — the opposite of the usual
+  macOS-vs-CI split. Use `python3` for any width check that must be right; never build a
+  column-width lint on `awk length`, because on CI it would false-fail on every em-dash.
+
+  It has already cost a round: in #465 I reported a paragraph over the 100-column limit and
+  re-flowed it. Measured, the lines were **98 characters before and 99 after** — never over the
+  limit. One em-dash on the widest line made awk report **101**.
 - **`` \` `` inside a single-quoted ERE is a GNU ANCHOR, and a literal to BSD** (#400). In shell
   single quotes `` '\`' `` is backslash+backtick; BSD grep reads it as a literal backtick, GNU grep
   reads `` \` `` as its **start-of-buffer anchor**, so a pattern like ``grep -oE '\`[a-z-]+\`'``
