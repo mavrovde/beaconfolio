@@ -776,6 +776,15 @@ run_checks() {
         echo "  ✗ audit_no_verdict_merges.test.sh failed — the no-verdict detector itself is broken"
         return 1
       }
+      # …and the grammar BOTH of them read a verdict with (v1.16.0 retro). It is
+      # the same leg because it is the same question: does this body gate a
+      # merge? Sub-second, hermetic.
+      if [ -f "$ROOT/scripts/verdict-heading-lib.test.sh" ]; then
+        ( cd "$ROOT" && bash scripts/verdict-heading-lib.test.sh >/dev/null ) || {
+          echo "  ✗ verdict-heading-lib.test.sh failed — the shared verdict-heading grammar is broken"
+          return 1
+        }
+      fi
     fi
     # Merged-CHANGELOG contract (v1.14.1 retrospective change A, #391). The
     # [Unreleased] collision NEVER exists in the branch and NEVER in main —

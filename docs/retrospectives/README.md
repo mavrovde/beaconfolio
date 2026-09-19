@@ -51,6 +51,7 @@ measured them; **`n-a` means not measured, never estimated.**
 | [v1.15.0](v1.15.0.md) | **6**²² | 11 / **11**²³ | **1.83** | **50% (3/6)**²⁴ | 45%²³ | **7**⁵ (5 on doc surfaces) | **0**²⁵ | **0**³⁰ | **3 of 11 (27%)**²⁷ | 7 | retired²¹ | retired²¹ | retired²¹ · 71.6h tag→tag²⁶ |
 | [v1.15.1](v1.15.1.md) | **6**²⁸ | 6 / **6** | **1.00**²⁹ | **100% (6/6)**²⁹ | **0%**²⁹ | **0**²⁹ | **0** in review²⁹ | **0** | **6 of 6 (100%)**²⁷ | **9** | retired²¹ | retired²¹ | retired²¹ · 4.03h tag→tag²⁸ |
 | [v1.15.2](v1.15.2.md) | **3**²⁸ | 3 / **3** | **1.00**²⁹ | **100% (3/3)**²⁹ | **0%**²⁹ | **0**²⁹ | **0**²⁹ | **0** | **3 of 3 (100%)**²⁷ | 6 | retired²¹ | retired²¹ | retired²¹ · 1.60h tag→tag²⁸ |
+| [v1.16.0](v1.16.0.md) | **10** | 27 / **26**³¹ | **2.60** | **30% (3/10)**³² | **62%** | **9**⁵ (4 on doc surfaces) | **8** | **0** | **2 of 26 (8%)**³³ | **14** | retired²¹ | retired²¹ | retired²¹ · **8.57h tag→tag** |
 
 ¹ v1.12.0's verdict headings predate the mandated form, so a canonical-heading re-count undercounts
 that window (15). From v1.13.0 the heading is charter-mandated **and** gate-enforced, so this column
@@ -375,6 +376,38 @@ background subshell with all output and failures discarded — filed as **#453**
 is still positive evidence; an absent bypass **comment** is not, and this convention should not be
 read as if it were.
 
+³¹ **The instrument changed IN this window, and both numbers are published.** v1.16.0's change A
+replaced three drifted copies of the verdict filter with one executable grammar,
+`scripts/verdict-heading-lib.sh` — the marker must OPEN the first non-empty line, after at most a
+whitelisted `Round N —` / `PR-REVIEWER VERDICT:` prefix, with a non-hyphen boundary after it. The
+cell reads **26 canonical / 27 loose**: the 27th body is #458's author note
+*“Round-3 delta — head is now …; the round-3 APPROVE covered …”*, which the pre-v1.16.0 filter
+counted as the newest verdict and which the merge gate would have merged on ([v1.16.0
+§6 A](v1.16.0.md)). **Comparability was measured, not assumed:** re-running the instrument on the
+three windows published under the anchored filter reproduces every cell with
+`non-verdict bodies skipped: 0` — v1.15.0 (`v1.14.3 436`), v1.15.1 (`436 441`), v1.15.2
+(`441 446`). Over all 229 merged PRs / 361 marker-bearing first lines the grammar accepts 354 and
+rejects 7, and exactly **one** historical classification moves: **#83** (2026-07-26, a blockquoted
+verdict), outside every window the audit runs on — re-measured against the pre-change script on
+`--since 2026-08-15`, which returns an identical PR-by-PR classification. Rows above v1.16.0 keep
+the filter they were published under; each row's footnote says which.
+
+³² **`Approved r1` counts PRs whose FIRST verdict was an APPROVE — not PRs that merged after one
+round**, and v1.16.0 is the window where the two diverge visibly: **#449** is one of the three and
+then took **four** verdicts, because its round-1 APPROVE was superseded by a delta-confirm that
+found a blocker. The definition is unchanged since v1.12.0 and was deliberately NOT redefined —
+silently changing it would break every row above — so read this column beside `Mean rounds`, never
+alone. [v1.16.0 §8](v1.16.0.md) carries the clause that fixes the instrument rather than the
+column.
+
+³³ **8% is measured over 23 of 26 verdicts, because 3 state nothing either way.** Rule 13 obliges
+only a *non-independent* verdict to disclose, so silence is ambiguous: an independent review that
+did not bother looks exactly like an undisclosed solo one. Both of this window's solo verdicts
+(#448 r1, #449 r1) disclose — the disclosure clause is 11 of 11 across three releases — but the
+column's denominator is the number of verdicts that said *something*. v1.16.0's change C makes
+provenance a statement in **both** directions in `pr-reviewer.md` and the playbook; from the next
+release this cell is measured over all canonical verdicts or not at all.
+
 **v1.15.0's prediction: 4 pass, 1 n/a, 1 partial — scored at v1.15.1.** Merged with no valid
 APPROVE **0 of 6** and stale approvals **0 of 6** ✅ (checked against the bypass log, which is empty
 for that window — note 30). Disclosure **6 of 6 = 100%** ✅, and its falsifier (b) did not apply:
@@ -388,7 +421,38 @@ letter and is reported as unmeasured on the intent**: with the author as reviewe
 unmeasured claims reached review" is unanswerable, and the one checkable claim from the previous
 record was false (note 30). See [v1.15.1 §7](v1.15.1.md) and [v1.15.2 §7](v1.15.2.md).
 
-**Standing prediction (set by v1.15.1, checked at the next release):** see
+**v1.15.1's + v1.15.2's standing prediction: 5 clauses PASS, 3 FAIL — scored at v1.16.0**, the
+first window since v1.14.3 with a corpus large enough to test any of them (10 PRs / 26 verdicts,
+against 6/6 and 3/3). Passes: ≥1 independent verdict with the solo share **100% → 8%** ✅ —
+falsifier (b) respected, since the window's largest PR (#455, 97 files) carries an independent
+verdict; **0** merged without a valid APPROVE and **0** stale approvals ✅, the first large-corpus
+window for which that means anything; 100% disclosure on the non-independent verdicts ✅ (11 of 11
+across three releases — with the gap note 33 describes); the cut made with an empty release queue
+and the previous retrospective present, both quoted at cut time ✅; class T **0** ✅ with the files
+grepped named, which is what falsifier (d) asked for. ❌ **Class F 9, 4 of them on doc surfaces**,
+against ≤4/≤2 — top or joint-top for the **sixth consecutive retrospective**; its re-measurement
+control PASSED while the class scored 9, so the control is what [v1.16.0 §8](v1.16.0.md) replaces,
+not the target. ❌ **The release-time security check was posted after the release PR merged** — run
+and clean, on the thread too late, which is the back-filled-verdict shape. ❌ **4 of 8 closed
+issues on Project 3**, two of those four in the previous release's bucket. The two behavioural
+failures are one sentence: *the evidence exists, but not where the rule requires it at the time it
+requires it.* See [v1.16.0 §7](v1.16.0.md).
+
+**Standing prediction (set by v1.16.0, checked at the next release):** see
+[v1.16.0 §8](v1.16.0.md). It **keeps clauses 1, 3, 5 and 6 of [v1.15.1 §8](v1.15.1.md) as written**
+(independent verdict; zero invalid-APPROVE and zero stale merges; empty release queue + previous
+retro, evidenced at cut time; class T ≤1) and revises the four that failed or passed too easily:
+class F stays at **≤4 / ≤2 on doc surfaces** but its control becomes *re-measure the load-bearing
+sentence of the previous retro's LARGEST change*; the disclosure clause becomes **100% of verdicts
+state provenance in EITHER direction**, denominator = all canonical verdicts; the security-check
+clause is scored from the thread's timestamps against `mergedAt`, never from alert counts; and the
+board clause narrows to *in that release's bucket*, exempting an issue opened and closed inside a
+single PR (the rule-11 shape, #461). Two new clauses: the tightened merge-gate grammar either
+**denies at least one merge or is never noticed**, with a FALSE deny reported verbatim; and **mean
+rounds ≥2.0 while classes F and G fall**, the test of whether rounds are spent on material
+difficulty rather than on unmeasured claims.
+
+**Superseded — the v1.15.1/v1.15.2 standing prediction** (kept for the record): see
 [v1.15.1 §8](v1.15.1.md) for the six clauses and [v1.15.2 §8](v1.15.2.md) for the two it adds.
 In brief — **at least one INDEPENDENT `pr-reviewer` verdict in the window** (scored against its
 largest PR, `n/a` if the solo directive still stands); class-F blocker+major **≤4 and ≤2 on
@@ -537,6 +601,16 @@ So the series stays comparable, count the same way every time:
   standing verdict is the REQUEST CHANGES above.)"* — which is fn 10's #373 hole one level
   deeper. When re-counting a pre-v1.14.3 window, use the filter its row was published under
   (each row's footnote says which).
+
+  **From v1.16.0 the grammar is ONE executable artifact, `scripts/verdict-heading-lib.sh` — source
+  it, do not re-type it.** The anchored `test(...)` above is the *shape*; the library adds what
+  measurement over 361 real headings showed was needed (a whitelisted `Round N —` /
+  `PR-REVIEWER VERDICT:` prefix, and a non-hyphen boundary so `APPROVE-ADJACENT` is not a verdict)
+  and is shared by all three readers — `pre-merge-gate.sh`, `audit_no_verdict_merges.sh` and
+  `retro_metrics.sh`. Three drifted copies is how #458's author note became "the newest verdict" in
+  the merge gate (note 31). Two portability traps it pins with mutants: **`gh … -q` is gojq on Go
+  RE2 and has no lookahead** (a `(?!…)` boundary passes every `jq` self-test and dies at runtime),
+  and a mutation needle must target the grammar, not the comment above it.
 
   **…and it also UNDER-counts, which is the half that actually changed a headline number.** Always
   run the widened sweep once — print every first line that matched NEITHER marker and read them:

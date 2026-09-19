@@ -1015,33 +1015,51 @@ immediately"* (line 108). The old filter matched case-insensitively **anywhere i
 sentence became the verdict and the gate allowed the merge. Two independent false-allows from one
 matcher is the tell that the defect was the *rule*, not the wording of any one review.
 
-**KNOWN RESIDUAL — say it out loud, because a gate whose limit is unwritten gets trusted past it.**
-The heading rule cannot tell a verdict from a fix report whose **first line itself** contains a
-marker. **This shape IS posted here — it is the repo's own habit, not a hypothetical.** Sweeping all
-**145 merged PRs** (179 marker-bearing headings across 92 of them) finds two author fix reports that
-the gate selects *over the reviewer's verdict*:
+**THE RESIDUAL THIS RULE CARRIED IS NOW CLOSED (v1.16.0) — and how it closed is the transferable
+part.** The heading rule could not tell a verdict from a fix report whose **first line itself**
+mentions a marker, because it tested `APPROVE|REQUEST CHANGES` *anywhere in that line*. The shape is
+the repo's own habit, not a hypothetical. A fresh sweep of all **229 merged PRs** (361 marker-bearing
+first lines from trusted associations) finds **six** author notes the old filter selects *over the
+reviewer's verdict*:
 
-| PR | The author's first line | Posted after |
+| PR | The author's first line | Standing verdict when it landed |
 |---|---|---|
-| **#281** (2026-09-06) | ``Round-1 APPROVE findings applied on `1abb0fe` (wording only…)`` | the reviewer's `## ✅ APPROVED`, 6 min earlier |
-| **#181** (2026-08-30) | `Approved-with-findings applied before merge:` | the reviewer's `**✅ APPROVED** — …`, 2 min earlier |
+| **#181** (2026-08-30) | `Approved-with-findings applied before merge:` | `**✅ APPROVED**`, 2 min earlier |
+| **#281** (2026-09-06) | ``Round-1 APPROVE findings applied on `1abb0fe` …`` | `## ✅ APPROVED`, 6 min earlier |
+| **#373** (2026-09-13) | `## Round-2 APPROVE noted — and the head moved, so this needs a round 3` | `## ✅ APPROVE — round 2` |
+| **#400** (2026-09-14) | ``Round-2 findings fixed at `d5314ef`. Author's fix report — not a verdict. …`` | `## ✅ APPROVE — round 2` |
+| **#421** (2026-09-15) | `Finding 4, demonstrated live rather than argued: …` | `## ⛔ REQUEST CHANGES — round 1` |
+| **#458** (2026-09-19) | ``Round-3 delta — head is now `89e05b78`. The round-3 APPROVE covered `70a8cfb4`; … it needs a delta-confirm rather than standing.`` | `## ✅ APPROVE — round 3` |
 
-Both were **decision-neutral** — the standing verdict was itself APPROVE — so no false-allow has
-happened. Flip the standing verdict and the same sentence allows a merge against REQUEST CHANGES:
-the #291 hole, one line up.
+Replaying `pre-merge-gate.sh` at the instant each landed, **three flip the decision** — #181, #281
+and #458 turn a DENY into an ALLOW. #458 is the sharp one: it post-dated the head, so it satisfied
+check 1 (its first marker reads APPROVE) *and* check 1b (approval-covers-head). For the 14 minutes
+between it and the real round-4 APPROVE, the gate would have merged on a sentence **asking it not
+to**.
 
-**It stays unpinned anyway, and the reason is measurable:** no lexical rule separates it from a REAL
-reviewer heading that also puts prose **before** the marker — `## Round 3 — ✅ APPROVED` and
-`## Round 2 — ⛔ REJECTED (…)` (#255), `PR-REVIEWER VERDICT: APPROVE` (#171). The first is already
-pinned as a case in `pre-merge-gate.test.sh`. Tightening buys the residual at the price of rejecting
-those three. So the **guard is the convention** — `pr-reviewer.md` and the playbook both require a
-fix report to open `## Round N — what changed`, never with a marker — and the residual is documented
-rather than tested, because a case asserting it could never fail (the #240 answer).
+**Why the old note said this could not be fixed, and why that was wrong.** It argued that no lexical
+rule separates the shape from a real heading that puts prose *before* the marker —
+`## Round 3 — ✅ APPROVED`, `## Round 2 — ⛔ REJECTED (…)` (#255), `PR-REVIEWER VERDICT: APPROVE`
+(#171). That was an assertion, not a measurement. Measured: whitelist those two prefixes, require
+the line to BEGIN with the marker, and require a non-hyphen boundary after it, and **354 of the 361
+are accepted and all 7 rejections are correct** (the seventh is #83's July blockquote verdict, whose
+classification changes nowhere any audit window reaches). The grammar lives in ONE place —
+`scripts/verdict-heading-lib.sh` — read by the merge gate, the no-verdict audit and the retro
+instrument, which had three separately-drifting copies of this sentence.
 
-**Revisit trigger — deliberately NOT "an actual bad merge".** The shape exists, so waiting for the
-incident is the posture this repo argues against. Revisit on **the first fix report with a leading
-marker posted while the standing verdict is NEGATIVE**: that instance is decision-*changing*, and it
-is the cheap signal that arrives before the damage.
+**The meta-lesson, which is the reason this entry is worth re-reading: a revisit trigger written for
+one check does not migrate when a second check joins the same selection.** The old trigger was
+"revisit on the first fix report with a leading marker posted while the standing verdict is
+NEGATIVE" — check 1's failure mode. Check 1b (approval-covers-head) was added to the *same
+selection* one release later, and against check 1b the dangerous standing verdict is a POSITIVE one
+that no longer covers the head. The trigger therefore could not fire on the case that mattered, and
+the hole went live silently. **Prefer a case that fails to a condition somebody has to remember**;
+if you must leave a residual, re-derive its trigger every time the code that consumes it changes.
+
+**Still true, and now mechanically enforced:** a fix report must not OPEN with a marker — title it
+`## Round N — what changed`. It is no longer merely a convention: a first line that mentions a
+marker without stating one is not a verdict at all, so it neither gates a merge nor counts as a
+review round.
 
 ## 44. On a SHARED host, the host is not yours — and three defaults assume it is (#310)
 
@@ -2396,5 +2414,8 @@ constructions, three of which pass **now**:
 This is the fourth first-contact failure of this lint (see the three in
 `scripts/check_changelog_merge.sh`'s own header). The polarity is right and the check should NOT be
 loosened — "someone's entry vanished in a rebase" is a far more common and far more expensive event
-than "someone wants to reword a shipped-but-unreleased entry". The cost is a deferral, which is
-cheap; the cure would be a hole in the one lint that catches silent content loss.
+than "someone wants to reword a shipped-but-unreleased entry". The cost is one errata line under
+construction C — the correction lands immediately, it just reads as an appended correction rather
+than a clean edit — where the cure would be a hole in the one lint that catches silent content
+loss. (An earlier draft of this paragraph called the cost "a deferral, which is cheap". That was
+the round-1 framing, and the body above supersedes it: nothing is deferred.)

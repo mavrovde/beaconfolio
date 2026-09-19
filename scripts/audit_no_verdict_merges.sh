@@ -40,16 +40,15 @@
 # violation of its own: back-filling is the right thing to do once the merge has
 # already happened.
 #
-# THE VERDICT DEFINITION MIRRORS pre-merge-gate.sh EXACTLY (#399 review,
-# major 5 — the first draft claimed to inherit it and silently dropped two
-# clauses): a posted body whose FIRST NON-EMPTY LINE matches
-# APPROVE|APPROVED|REQUEST CHANGES case-insensitively, AND whose author
-# carries a trusted association (OWNER/MEMBER/COLLABORATOR — the #316 rule;
-# without it a drive-by NONE commenter's "## APPROVE" silences the alarm).
-# Reviews AND issue comments count (same-identity repos post comment
-# verdicts). Known hole, footnoted in docs/retrospectives/README.md: position
-# is not authorship. One jq expression; change it beside the gate's or not at
-# all. Since #409 the gate's `.at != null` clause is inherited too — this
+# THE VERDICT DEFINITION IS NOW LITERALLY SHARED WITH pre-merge-gate.sh (#399
+# review, major 5 — the first draft claimed to inherit it and silently dropped
+# two clauses; the v1.16.0 retro found the three copies had drifted anyway):
+# a posted body whose FIRST NON-EMPTY LINE **states** a verdict per
+# scripts/verdict-heading-lib.sh, AND whose author carries a trusted
+# association (OWNER/MEMBER/COLLABORATOR — the #316 rule; without it a drive-by
+# NONE commenter's "## APPROVE" silences the alarm). Reviews AND issue comments
+# count (same-identity repos post comment verdicts). Known limit, footnoted in
+# docs/retrospectives/README.md: position is not authorship. Since #409 the gate's `.at != null` clause is inherited too — this
 # detector now orders by time, so an undated body cannot be placed relative to
 # the merge and must not be counted.
 #
@@ -73,6 +72,20 @@ SINCE=""
 LIMIT=40
 FIXTURE=""
 ACK_FILE="$(cd "$(dirname "$0")" && pwd)/verdict-audit-acknowledged.txt"
+# The verdict-heading grammar is SHARED with .claude/hooks/pre-merge-gate.sh and
+# scripts/retro_metrics.sh — see scripts/verdict-heading-lib.sh for the sweep
+# that produced it (v1.16.0 retrospective). This detector used the loose form
+# too, so an author's note whose first line merely MENTIONS a marker could be
+# the "newest pre-merge verdict" that silences the alarm. Measured over all 229
+# merged PRs, tightening changes exactly ONE classification: #83 (2026-07-26,
+# a blockquoted verdict) goes APPROVED -> NONE, which is outside every window
+# this runs on. $VERDICT_HEADING_LIB lets the mutation harness point a mutant
+# copy at the real library instead of dying for the wrong reason.
+VERDICT_HEADING_LIB="${VERDICT_HEADING_LIB:-$(cd "$(dirname "$0")" && pwd)/verdict-heading-lib.sh}"
+# shellcheck disable=SC1090
+[ -r "$VERDICT_HEADING_LIB" ] && . "$VERDICT_HEADING_LIB"
+[ -n "${VERDICT_HEADING_JQ_DEFS:-}" ] || {
+  echo "audit: cannot read the verdict-heading grammar ($VERDICT_HEADING_LIB) — cannot measure" >&2; exit 2; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --since)   [ $# -ge 2 ] || { echo "audit: --since needs a value — cannot measure" >&2; exit 2; }
@@ -148,19 +161,18 @@ summarise() {
 # "posted just after". An inclusive bound is honest about that limit; it does
 # not admit the 15-45-minutes-later back-fills this script exists to catch.
 classify() {
-  jq -er '
-    def heading: (.body // "") | split("\n") | map(select(test("\\S"))) | (.[0] // "");
+  jq -er "$VERDICT_HEADING_JQ_DEFS"'
     . as $pr
     | ($pr.mergedAt) as $m
     | [ (($pr.reviews  // [])[] | {at: .submittedAt, body: (.body // ""), assoc: (.authorAssociation // "NONE")}),
         (($pr.comments // [])[] | {at: .createdAt,   body: (.body // ""), assoc: (.authorAssociation // "NONE")}) ]
     | map(select(.at != null
         and (.assoc == "OWNER" or .assoc == "MEMBER" or .assoc == "COLLABORATOR")
-        and (heading | test("APPROVE|APPROVED|REQUEST CHANGES"; "i"))))
+        and (vh_heading | vh_is_verdict)))
     | { pre: map(select(.at <= $m)), post: map(select(.at > $m)) }
     | ((.pre | sort_by(.at) | last) // null) as $newest
     | (if $newest == null then "NONE"
-       else ($newest | heading | [match("REQUEST CHANGES|APPROVED?"; "gi")] | (.[0].string // ""))
+       else ($newest | vh_heading | [match("REQUEST CHANGES|APPROVED?"; "gi")] | (.[0].string // ""))
             | (if test("APPROVE"; "i") then "APPROVED" else "UNAPPROVED" end)
        end) as $status
     | "\($status)\t\(.post | length)\t\($newest.at // "")"

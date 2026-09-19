@@ -89,8 +89,14 @@ printf '%s' "$PRS" \
   | jq -r '.[] | [.number, .changedFiles, (((.mergedAt|fromdate)-(.createdAt|fromdate))/60|floor)] | @tsv'
 ```
 
-**Count verdicts with the heading-anchored filter** (this directory's README carries the command and
-the reason): a marker anywhere in a body also matches the AUTHOR's fix reports — 11 vs 8 on #291.
+**Count verdicts with the shared grammar, not a regex you write here.** `scripts/retro_metrics.sh`
+reads `scripts/verdict-heading-lib.sh`, the same definition the merge gate and the no-verdict audit
+use. Two shapes it exists to exclude, both measured: a marker anywhere in the BODY matches the
+author's fix reports (11 vs 8 on #291), and a marker anywhere in the FIRST LINE matches the author's
+delta requests (#458 counted as a 5th round until v1.16.0). The instrument prints
+`non-verdict bodies skipped: N` — quote it, because a round count that silently drops is the same
+defect wearing the other polarity. Rounds published before v1.16.0 were measured with the loose
+first-line filter; say so rather than re-deriving old rows.
 
 **…and replay the thread at `mergedAt` before counting anything.** A countable verdict must
 satisfy **both** halves: the marker opens the body (position is not authorship) **and** it was

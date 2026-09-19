@@ -50,6 +50,23 @@ if [ -z "${BASH_SOURCE[0]:-}" ]; then
     exit 1
 fi
 
+# The verdict-heading grammar is SHARED with .claude/hooks/pre-merge-gate.sh and
+# scripts/audit_no_verdict_merges.sh (scripts/verdict-heading-lib.sh, v1.16.0
+# retrospective). This script's copy was the loosest of the three — a marker
+# anywhere in the first line, and no trusted-association filter at all — and it
+# counted #458's author note as a fifth review round. Rounds published before
+# v1.16.0 were measured with the loose filter; the "non-verdict bodies skipped"
+# line below makes the difference visible instead of silently restating a
+# smaller number. The association filter is measured as a no-op on this repo's
+# history: across 229 merged PRs no untrusted body has a conforming heading.
+VERDICT_HEADING_LIB="${VERDICT_HEADING_LIB:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/verdict-heading-lib.sh}"
+# shellcheck disable=SC1090
+[ -r "$VERDICT_HEADING_LIB" ] && . "$VERDICT_HEADING_LIB"
+[ -n "${VERDICT_HEADING_JQ_DEFS:-}" ] || {
+    echo "FATAL: cannot read the verdict-heading grammar ($VERDICT_HEADING_LIB) — cannot measure" >&2
+    exit 2
+}
+
 PREV="${1:-}"
 RELPR="${2:-}"
 if [ -z "$PREV" ] || [ -z "$RELPR" ]; then
@@ -180,21 +197,28 @@ echo "=== verdicts (heading-anchored, replayed at mergedAt) ==="
 TOTAL_PRE=0
 R1_APPROVE=0
 REVIEWED=0
+SKIPPED=0
 for n in $(echo "$CORPUS" | jq -r '.[].number' | sort -n); do
-    row="$(gh pr view "$n" --repo "$REPO" --json mergedAt,reviews,comments -q '
+    row="$(gh pr view "$n" --repo "$REPO" --json mergedAt,reviews,comments -q "$VERDICT_HEADING_JQ_DEFS"'
       .mergedAt as $m
-      | [ (.reviews[]? | {t: .submittedAt, b: .body}), (.comments[]? | {t: .createdAt, b: .body}) ]
-      | map(select(.b != null and .b != ""))
-      | map(. + {first: ((.b | split("\n") | map(select(test("\\S"))) | .[0]) // "")})
+      | [ (.reviews[]?  | {t: .submittedAt, body: .body, assoc: .authorAssociation}),
+          (.comments[]? | {t: .createdAt,   body: .body, assoc: .authorAssociation}) ]
+      | map(select(.body != null and .body != "" and .t != null and .t < $m))
+      | map(select(.assoc == "OWNER" or .assoc == "MEMBER" or .assoc == "COLLABORATOR"))
+      | map(. + {first: vh_heading})
       | map(select(.first | test("APPROVE|APPROVED|REQUEST CHANGES|REJECT"; "i")))
-      | map(select(.t < $m))
+      | length as $marker_bearing
+      | map(select(.first | vh_is_verdict))
       | sort_by(.t)
       | [ (length | tostring),
           (if (length > 0) and ((.[0].first | test("REQUEST CHANGES|REJECT"; "i")) | not)
-             then "r1-approve" else "-" end) ]
+             then "r1-approve" else "-" end),
+          (($marker_bearing - length) | tostring) ]
       | join(" ")')"
-    cnt="${row%% *}"
-    r1="${row##* }"
+    # Three fields, read positionally: a ${row##* } that used to mean "the r1
+    # flag" silently becomes "the skipped count" the moment a field is appended.
+    read -r cnt r1 skipped <<<"$row"
+    SKIPPED=$((SKIPPED + skipped))
     TOTAL_PRE=$((TOTAL_PRE + cnt))
     if [ "$cnt" -gt 0 ]; then REVIEWED=$((REVIEWED + 1)); fi
     if [ "$r1" = "r1-approve" ]; then R1_APPROVE=$((R1_APPROVE + 1)); fi
@@ -204,6 +228,10 @@ echo
 echo "canonical verdicts (pre-merge): $TOTAL_PRE"
 echo "PRs with >=1 pre-merge verdict:  $REVIEWED of $N"
 echo "merged with NO valid verdict:    $((N - REVIEWED))"
+# Reported, not hidden: bodies whose first line MENTIONS a marker without
+# stating one — author fix reports and delta requests. Figures published before
+# v1.16.0 counted these as rounds (scripts/verdict-heading-lib.sh).
+echo "non-verdict bodies skipped:      $SKIPPED  (marker mentioned, not stated)"
 
 if [ "$N" -gt 0 ]; then
     python3 - "$TOTAL_PRE" "$N" "$R1_APPROVE" "$REVIEWED" <<'PY'

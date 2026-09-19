@@ -159,6 +159,21 @@ and `backend/docker-entrypoint.sh` (`set -e`, `db_probe.py`) crash-loops — a f
     Record the measured effort (agent, model, tokens, wall time, review rounds) on the issue
     and mirror it to GitHub Project 3 — the retrospective in step 12 depends on it, and the
     numbers come from agent telemetry that is NOT retrievable later.
+    **Then reconcile the board against the issues this tag actually closed**, which is the
+    half that keeps failing: at v1.16.0 only **4 of 8** closed issues were Project 3 items,
+    **2 of those 4** sat in the PREVIOUS release's bucket while carrying `release:v1.16.0`,
+    and one (#461) carried no release label at all. The label queue cannot see any of that —
+    it reports `empty (checked)` for an issue that was never labelled — so query the closed
+    set from git, not from the label:
+
+    ```bash
+    # every issue closed since the previous tag, with its labels; then check each
+    # against `gh project item-list 3 --owner mavrovde` for membership AND bucket.
+    gh issue list --state closed --limit 100 --search "closed:>=$(git log -1 --format=%cd       --date=format-local:%Y-%m-%d "$(git tag --sort=-v:refname | sed -n '2p')")"       --json number,title,labels
+    ```
+
+    An issue opened and closed inside a single PR (the rule-11 shape, #461) needs neither a
+    board item nor a release label — say so explicitly rather than leaving it to read as drift.
 11b. **Flip the ship-state labels — and note they are a CACHE, not the truth.**
     Every PR in this tag moves `awaiting-release` → `shipped`:
 
