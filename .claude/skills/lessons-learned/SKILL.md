@@ -2312,10 +2312,12 @@ asserting the sweep happened.
   current. **A claim on N surfaces is corrected on N or on none.** Measured round history: round 1
   APPROVE-with-findings (03:39Z), round 2 REQUEST CHANGES (03:45Z — both blockers this, plus a nit
   and a minor), round 3 APPROVE (04:09Z, finding the claim on two FURTHER surfaces), round 4 the
-  delta-confirm for those. **Three of four rounds, not two.** That correction is itself the fourth
-  instance: this bullet first read "rounds 2 and 3 … exist only because of this", a count nobody
-  had run, inside the entry about counts nobody has run — caught by the round-4 reviewer. The
-  entry has now failed on its own PR four times, which remains the best evidence it has.
+  delta-confirm for those. **Three of the FIRST four rounds, not two** — "of four" would rot on the
+  next round, and a count that rots is the defect this bullet is about. That correction is itself
+  the fourth instance: this bullet first read "rounds 2 and 3 … exist only because of this", a
+  count nobody had run, inside the entry about counts nobody has run — caught by the round-4
+  reviewer. The entry has now failed on its own PR four times, which remains the best evidence
+  it has.
 
 **How to apply — three greps, before you request review.**
 
