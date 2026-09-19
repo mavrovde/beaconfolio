@@ -38,6 +38,23 @@ name: PR E2E Evidence
 # (e.g. `workflow_dispatch`, or a repository_dispatch relay). Not worth that
 # complexity for an on-demand tier whose normal state is `skipped`.
 #
+# The residual is WORSE THAN THE SENTENCE ABOVE ADMITS, and #463's round-2
+# review is the measurement (its reviewer flagged this comment by name). The
+# argument reads "potentially over a passing browser run" — but the skipped
+# check-run lands over whatever the browser tier last reported, and masking a
+# FAILING run is the case that costs something. Masking a pass costs a re-run;
+# masking a failure means a merger reads `skipped`, finds no red, and ships the
+# bug the tier was summoned to catch. #463 is the live example of why this is
+# not theoretical: AC 4's row-navigation half had NO passing browser evidence
+# at any head until run 35408292114, and the only thing standing between a
+# reader and that fact was which check-run happened to be newest. The
+# cost/benefit of the topology change is unchanged — it is still not worth a
+# `workflow_dispatch` relay for an on-demand tier — but the reason is "this
+# tier is opt-in and its absence is visible", NOT "the failure mode is benign".
+# Read the RUN, not the check-run, before trusting this tier: `gh run view
+# <id> --json headSha,conclusion` ties a result to the commit it actually ran
+# on, which is what the #463 review did instead of reading the badge.
+#
 # Everything else about this tier is unchanged from #380: expensive (4 image
 # builds + full prod topology + Playwright), so it is SUMMONED with the
 # `run-e2e` label rather than run on every PR; a measured local run remains

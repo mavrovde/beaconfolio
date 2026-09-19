@@ -2296,3 +2296,105 @@ half is that the *real* ceiling was written where the next reader meets it: the 
 `gh pr view` per in-window PR against roughly 1000 GraphQL calls/hour, so past ~900 the answer is a
 **bounded window**, not a bigger number. A magic number with its ceiling documented is a decision;
 one without is the next instance of this lesson.
+
+---
+
+## 80. `Closes #NN` in a BRANCH commit closes the issue even when the PR body says `Refs` (#67/#455)
+
+**Trap.** Deciding not to auto-close an issue is not done by editing the PR body. GitHub honours a
+closing keyword **anywhere in the pushed commit message**, and a squash merge concatenates every
+branch commit's body into the merge commit — so a `Closes #67` written in the *first* commit on the
+branch still closes the issue, two seconds after merge, no matter what the PR description says by
+the time it lands.
+
+**Measured (#67 / PR #455, 2026-09-18).** AC4 ("the OG image renders in a link-preview validator")
+had a half that could not be checked before the change was live. The PR body was deliberately
+changed from `Closes #67` to `Refs #67`, with a paragraph explaining that the issue must stay open
+until the card was verified on the rolled host. The issue closed at `22:09:17Z`, two seconds after
+the `22:09:15Z` merge, because commit `92bd4cdb` — the branch's first commit, written before that
+decision — carried `Closes #67` in its body and the squash inherited it.
+
+No harm resulted: the rollout completed and the criterion was then verified against production
+(`og:image` absolute, HTTP 200, `PNG 1200 x 630`), so the closed state became correct. But it
+arrived there mechanically rather than by verification, which is exactly what issue-tracking rule 7
+forbids — "never close on assumption".
+
+**How to apply.**
+- Decide the closing keyword **when you write the first commit**, not at merge time. If there is any
+  chance a criterion will be unverifiable before the change is live, write `Refs #NN` in the commit
+  body from the start.
+- To reverse the decision later, the PR body is not enough: the branch commit message is the thing
+  to change (`git rebase -i` / `git commit --amend` on the offending commit, then force-push), or
+  accept the auto-close and post the verification afterwards.
+- Before merging a PR whose issue must stay open, grep the actual commit bodies, not the PR body:
+  `git log origin/main..HEAD --format=%B | grep -niE '\b(closes|fixes|resolves) #'`
+- The same applies to the merge-gate check: `pre-merge-gate.sh` reads the PR body for `Closes #NN`,
+  so a branch-commit keyword the body does not mention is invisible to it in both directions.
+
+---
+
+## 81. You cannot EDIT an `[Unreleased]` entry that is already on `main` — `check_changelog_merge.sh` reads it as loss (#458/v1.16.0)
+
+**Trap.** `#458`'s round-4 review left a wording residual: the CHANGELOG entry called the lcov
+guard "per-project resolvability" when it checks prefix conformance. The obvious fix — edit those
+two lines on the release branch — fails the push gate:
+
+```
+FAIL check 4: [Unreleased] line on base is LOST in the merge: `at `^SF:src/`, but a check must …`
+FAIL check 4: [Unreleased] line on base is LOST in the merge: `resolvability fails it. `verify_al…`
+```
+
+**Why it bites.** Check 4 is **set semantics over lines**: every non-empty `[Unreleased]` line on
+`origin/main` must appear somewhere in the merged result. An edit deletes the old string and adds a
+new one, which is byte-for-byte indistinguishable from a rebase dropping somebody's entry — the
+exact accident the check exists to catch. The consequences people get wrong:
+
+- **No branch can do it.** Branching fresh from `main` does not help; the base is still `main`, and
+  the base still has the old line. This is not a staleness problem.
+- **Rotating first does not help either.** A release PR's rotation is exempted only because the
+  moved lines are found again under a heading that is NEW in the merge. Rotating an **edited** line
+  moves a *different string*, so it is still absent from the rotated set and still fails.
+- **The check reads `HEAD`, not the working tree** (deliberate — the push pushes HEAD). Reverting
+  the edit in the working tree and re-running the check still fails until you actually commit the
+  revert, which reads as the lint being broken when it is doing exactly what it says.
+
+**How to apply.** An `[Unreleased]` entry already on `main` is **append-only until it ships** —
+and "append-only" is the whole rule. The first draft of this entry said the fix had to wait for a
+PR opened AFTER the release merged; #464's review measured that this is broader than the
+constraint, by driving `check_changelog_merge.sh` through its `--merged/--base` seam. Four
+constructions, three of which pass **now**:
+
+| construction | result |
+|---|---|
+| **A** — rotate, then EDIT the offending lines in place | `FAIL check 4 … is LOST` ×2, exit 1 |
+| **B** — edit, but also retain the originals verbatim elsewhere under the new heading | `ok: all 4 checks` |
+| **C** — leave the wording, APPEND a correction bullet | `ok: all 4 checks` |
+| **D** — edit a line THIS PR itself added | `ok: all 4 checks` |
+
+- **A is the trap**, and it is worth knowing precisely why rotating first does not rescue it: the
+  rotation exemption counts a base line as present only if it appears **verbatim** under the new
+  released heading, so a rotated *edited* line is a different string and is still missing.
+- **C is usually the right answer** and is what v1.16.0 shipped: the wrong sentence stays, a
+  correction is appended beneath it, and the reader gets the truth immediately instead of a release
+  later. Errata read slightly worse than a clean edit and are enormously better than a claim left
+  standing for a cycle.
+- **D matters more than it looks.** Only lines on the BASE are frozen; anything this PR authored
+  stays editable right up to merge. So the freeze applies to a much smaller set than "the
+  CHANGELOG".
+- **B exists, but prefer C.** Keeping a duplicate of the original solely to satisfy a lint is
+  satisfying the instrument rather than the reader.
+- The in-place tidy-up (deleting the superseded sentence) is still available in any PR after the
+  rotation has merged, when that text has left the base's `[Unreleased]`. Treat it as optional
+  housekeeping, never as the mechanism that delivers the correction.
+- And correct every OTHER surface immediately — the source comment, the test label, the docs. A
+  correction that lands in three of four places is §79 all over again.
+- Relabelling a mutant is safe; renaming around its needle is not (§ the rotted needles in #458).
+  `mutate` greps the NEEDLE, so changing the human-readable label cannot turn a mutant INVALID —
+  but re-run the contract anyway and read `0 invalid`, because that is the only thing that proves
+  it.
+
+This is the fourth first-contact failure of this lint (see the three in
+`scripts/check_changelog_merge.sh`'s own header). The polarity is right and the check should NOT be
+loosened — "someone's entry vanished in a rebase" is a far more common and far more expensive event
+than "someone wants to reword a shipped-but-unreleased entry". The cost is a deferral, which is
+cheap; the cure would be a hole in the one lint that catches silent content loss.

@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Placeholder for next release.
+
+## [1.16.0] - 2026-09-19
+
 ### Security
 - **JSON-LD can no longer break out of its own `<script>` element.** The structured-data block is
   built by string concatenation and handed to `bypassSecurityTrustHtml`, and `JSON.stringify` does
@@ -268,6 +273,36 @@ All notable changes to this project will be documented in this file.
   argued that a permanently red alarm is a disabled alarm while adding a `--limit 100` truncation
   that the measured 39-PR-per-fortnight rate would have tripped within one, and #425's correction
   landed on one of two surfaces. The entry gives the three greps that find the second instance.
+- **The E2E tier's accepted residual is restated honestly: it can mask a FAILING run.** The
+  `KNOWN RESIDUAL` argument in `.github/workflows/pr-evidence-e2e.yml` read "potentially over a
+  passing browser run", which is the cheap half of the failure mode — a masked pass costs a re-run,
+  while a masked failure means a merger reads `skipped`, finds no red, and ships the bug the tier
+  was summoned to catch. #463's review flagged the comment by name, and that PR is the live case:
+  one acceptance criterion had no passing browser evidence at any head until a specific run, with
+  nothing but check-run ordering between a reader and that fact. The decision not to re-topologise
+  an on-demand tier is unchanged; only its stated reason is, plus the `gh run view <id> --json
+  headSha,conclusion` check that ties a result to the commit it ran on.
+- **`lessons-learned` §81 — an `[Unreleased]` entry already on `main` is append-only until it
+  ships.** `check_changelog_merge.sh`'s check 4 is set semantics over lines, so EDITING an entry
+  that exists on the base deletes one string and adds another — indistinguishable from the rebase
+  content loss the check exists to catch. Hit live while correcting #458's round-4 wording
+  residual, then sharpened by #464's review, which drove the lint through its `--merged/--base`
+  seam and measured four constructions rather than accepting the first conclusion: editing in
+  place FAILS (and rotating first does not rescue it, because the rotation exemption matches base
+  lines **verbatim**), while appending a correction, editing a line the same PR authored, and
+  edit-plus-verbatim-retention all pass. The entry now prescribes the append, which is what this
+  release does for the #458 residual — the reader gets the correction immediately instead of a
+  cycle later — and argues against loosening the lint, whose polarity is right: silent content
+  loss is both commoner and dearer than an errata line.
+- **`lessons-learned` §80 — a `Closes #NN` in a BRANCH commit closes the issue even when the PR
+  body says `Refs`.** Deciding not to auto-close is not done by editing the PR body: GitHub honours
+  a closing keyword anywhere in the pushed commit message, and a squash merge concatenates every
+  branch commit into the merge commit. Measured on #67/PR #455 — the body was deliberately changed
+  to `Refs #67` with a paragraph saying the issue must stay open until the link-preview criterion
+  was verified live, and the issue closed **two seconds** after the merge because the branch's
+  first commit still carried `Closes #67`. No harm resulted (the criterion then verified against
+  production), but it arrived there mechanically rather than by verification — which is what
+  issue-tracking rule 7 forbids. The entry gives the grep over commit BODIES that catches it.
 
 ### Fixed
 - **A blog post's structured data could publish the placeholder identity instead of the site's.**
@@ -314,6 +349,14 @@ All notable changes to this project will be documented in this file.
   The wrapper's mutation contract goes **7 → 11 killed / 0 survived / 0 invalid** and 21 → 29
   cases (one mutant per new arm, including the retry-path rewrite that round 1 omitted). Setting Vitest's `coverage.root`
   was tried first and measured: it does not move the emitted paths.
+  **Correction, appended rather than edited in place:** two sentences above call the guard
+  "per-project resolvability" and say "resolvability fails it". That overstates what it asserts —
+  it checks that each `SF:` path carries its own project's **prefix**, and a doubly-prefixed path
+  would pass it. The two properties coincide on real input (46/46 `SF:` lines prefixed, 0 doubly
+  prefixed, 46/46 resolving on disk), which is why naming the check honestly was preferred over
+  strengthening it into a new failure mode. The original wording is left standing because
+  `check_changelog_merge.sh` check 4 reads an in-place edit of a line already on `main` as content
+  loss; appending is the construction that lands with all four checks green. See lessons §81.
 - **Blog tag chips are keyboard-operable — they are buttons now, and they sit outside the row.**
   Each tag rendered as a `<span (click)=…>` nested inside the post row's `role="button"`, carrying
   two `eslint-disable-next-line` directives in place of a keyboard path: the chip took no focus and
