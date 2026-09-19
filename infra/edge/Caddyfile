@@ -36,9 +36,33 @@ admin.beaconfolio.com {
 # viafrei.de/www serve a static landing page; mcp.viafrei.de is an MCP
 # Streamable HTTP server (long-lived SSE responses — no buffering).
 
+# The OWNER PREVIEW of the landing page (viafrei repo issue #94). Two document
+# roots behind one tenant: :18181 serves the real page, :18180 serves the "im
+# Aufbau" notice. This site stays PUBLIC — the restriction is not on the site,
+# it is on WHICH ROOT a visitor reaches, and the default is the public one.
+#
+# The gate has to be here and cannot be in the tenant. viafrei's nginx sits
+# behind a published loopback port, so every peer it sees is docker's bridge
+# gateway; an `allow`/`deny` inside that container would judge the bridge, not
+# the visitor — and would look like protection to the next reader. The edge is
+# the only layer that sees a client address at all.
+#
+# The address list is the same file the status block imports and is likewise
+# not in any repository. The failure modes are all the safe one: the file
+# missing makes `caddy validate` fail and apply.sh refuse, so the running edge
+# keeps serving; the matcher not matching sends the visitor to :18180. There is
+# no configuration of this block in which a stranger reaches the preview.
 viafrei.de, www.viafrei.de {
-	reverse_proxy 127.0.0.1:18180 {
-		header_up Host {host}
+	import /etc/caddy/viafrei-status-allow.conf
+	handle @allowed {
+		reverse_proxy 127.0.0.1:18181 {
+			header_up Host {host}
+		}
+	}
+	handle {
+		reverse_proxy 127.0.0.1:18180 {
+			header_up Host {host}
+		}
 	}
 }
 
