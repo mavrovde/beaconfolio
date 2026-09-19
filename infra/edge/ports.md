@@ -9,7 +9,7 @@ tenant binds only `127.0.0.1:<port>` inside its allocated block, and the edge
 | Range         | Tenant        | In use today                                                                 |
 |---------------|---------------|------------------------------------------------------------------------------|
 | 18000–18099   | beaconfolio   | 18080 (proxy HTTP, redirect-only), 18443* (proxy HTTPS, the edge upstream)   |
-| 18100–18199   | viafrei       | 18180 (landing HTTP), 18187 (MCP Streamable HTTP), 18132 (Postgres, tooling) |
+| 18100–18199   | viafrei       | 18180 (landing HTTP), 18187 (MCP Streamable HTTP), 18190 (status dashboard)***, 18132 (Postgres, tooling) |
 | 18200–18999   | *unallocated* | — claim the next free 100-block per tenant via PR against this file          |
 | 5433**        | beaconfolio   | Postgres (`127.0.0.1:5433`, compose `db` publish — local pytest + tooling)   |
 
@@ -17,6 +17,15 @@ tenant binds only `127.0.0.1:<port>` inside its allocated block, and the edge
 cutover bound HTTPS before the block convention settled). It is beaconfolio's
 and is listed here so no future tenant claims it; new tenants keep all bindings
 inside their block.
+
+\*** 18190 is the viafrei status dashboard (viafrei repo issue #94). It is the
+one route on this host whose site block carries an IP restriction: the
+`status.viafrei.com` block matches `remote_ip` against an address list imported
+from `/etc/caddy/viafrei-status-allow.conf` — a file outside every repository,
+because the addresses are personal data — and answers a bare `403` to everything
+else. `viafrei.de` and `mcp.viafrei.de` are unaffected and stay public. Like
+every tenant port it is bound `127.0.0.1` only; the container behind it enforces
+the same list a second time (empty = deny all).
 
 \** 5433 predates the block convention entirely (it is what `TEST_DATABASE_URL`
 and every doc in the repo point at). Registered so no tenant binds it; like all

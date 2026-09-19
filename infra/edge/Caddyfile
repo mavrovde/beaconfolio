@@ -49,6 +49,51 @@ mcp.viafrei.de {
 	}
 }
 
+# The viafrei tenant's STATUS DASHBOARD (viafrei repo issue #94) — the only site
+# block on this host with an IP restriction, and deliberately so: the two blocks
+# above serve the product and stay PUBLIC (viafrei owner, 2026-09-19), this one
+# serves the operational surface — every worker's effective configuration, every
+# feed's errors, the schema head, what is deployed.
+#
+# THE ADDRESSES ARE NOT IN THIS FILE, and must never be. They are personal data,
+# they change when a network does, and changing them must not require a code
+# review. `import` reads one line from a file the owner writes on the host,
+# outside every repository:
+#
+#     /etc/caddy/viafrei-status-allow.conf      (root:root, 0644), one line:
+#         @allowed remote_ip <cidr> [<cidr> …]
+#
+# That file is NOT part of apply.sh's byte-identical diff (apply.sh compares
+# THIS file with /etc/caddy/Caddyfile), so editing the address list is one edit
+# plus a reload — no PR, no deploy. When it is missing or empty, `caddy
+# validate` fails, `apply.sh` refuses and the running edge keeps serving: the
+# failure mode is "the change does not happen", never "the page became public".
+#
+# Layer two is the app itself: viafrei's `status` container enforces the same
+# list from STATUS_ALLOW_CIDR (empty = deny all), and the header below is what
+# tells it who is asking. It is OVERWRITTEN and not appended: Caddy appends by
+# default, and an appended header would let a client choose its own source
+# address for that second layer.
+#
+# The container is behind a published loopback port, so the peer address it
+# sees is docker's bridge gateway and never this proxy's loopback address —
+# which is why it believes the header from that RFC 1918 range
+# (STATUS_TRUSTED_PROXY_CIDR, viafrei's deploy/docker-compose.prod.yml) and
+# reads the LAST hop, the one written here. Nothing on that path is configured
+# in this repository; the only contract is: overwrite, never append.
+status.viafrei.com {
+	import /etc/caddy/viafrei-status-allow.conf
+	handle @allowed {
+		reverse_proxy 127.0.0.1:18190 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle {
+		respond 403
+	}
+}
+
 # --- Second-tenant template (#338 AC: the dry-run example) -------------------
 # Onboarding a tenant is a PR against THIS file + ports.md, then one apply:
 #   1. Claim a port range in ports.md (next free 100-block).

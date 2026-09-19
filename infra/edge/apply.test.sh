@@ -157,5 +157,68 @@ check "in-sync apply is green" 0 "$rc"
     || bad "in-sync apply reloaded caddy"
 
 echo
+echo "== the committed Caddyfile's shape (viafrei #94) =="
+# The edge config is code, and its riskiest property cannot be seen by running
+# apply.sh: WHICH site blocks carry an IP restriction. viafrei's status
+# dashboard must be behind one; viafrei.de and mcp.viafrei.de must not be (that
+# tenant's owner, 2026-09-19: the product stays public, the operational surface
+# does not). Files only — no caddy, no host, no network.
+
+# 12. the status route exists and points at the registered tenant port
+grep -q '^status\.viafrei\.com {$' "$SRC" \
+    && ok "the status.viafrei.com site block exists" || bad "no status.viafrei.com site block"
+awk '/^status\.viafrei\.com \{$/{f=1} f&&/reverse_proxy 127\.0\.0\.1:18190/{a=1} /^\}$/{f=0} END{exit !a}' "$SRC" \
+    && ok "it proxies the viafrei tenant's registered 18190" || bad "the status block does not proxy 127.0.0.1:18190"
+grep -q '18190' "$HERE/ports.md" \
+    && ok "18190 is registered in ports.md" || bad "18190 is not in the port registry"
+
+# 13. the matcher is IMPORTED, never written here: the addresses are personal
+# data, they change when a network does, and changing them must not be a PR.
+grep -q 'import /etc/caddy/viafrei-status-allow.conf' "$SRC" \
+    && ok "the allow-list is imported from a file outside this repository" \
+    || bad "the status block does not import its address list"
+grep -qE '^[^#]*remote_ip[[:space:]]+[0-9]' "$SRC" \
+    && bad "an address literal follows remote_ip in the committed file" \
+    || ok "no address literal follows remote_ip in the committed file"
+# Any routable-looking IPv4 on a non-comment line, other than the loopback
+# upstreams this whole file is built on.
+grep -vE '^[[:space:]]*#' "$SRC" | grep -oE '[0-9]{1,3}(\.[0-9]{1,3}){3}' | grep -qv '^127\.0\.0\.1$' \
+    && bad "a non-loopback address literal is committed in the Caddyfile" \
+    || ok "the only address literals in the file are loopback upstreams"
+
+# 14. the restriction is SCOPED: present in the status block, absent everywhere
+# else. `scoped_count` counts matches OUTSIDE that block only.
+scoped_count() { # scoped_count <pattern>
+    awk -v pat="$1" '
+        /^status\.viafrei\.com \{$/ {inblk=1}
+        inblk && /^\}$/ {inblk=0; next}
+        !inblk && $0 !~ /^[[:space:]]*#/ && $0 ~ pat {n++}
+        END {print n+0}' "$SRC"
+}
+[ "$(scoped_count 'remote_ip')" = 0 ] \
+    && ok "remote_ip appears in NO site block but the status one" \
+    || bad "remote_ip appears outside the status site block"
+[ "$(scoped_count '@allowed')" = 0 ] \
+    && ok "and neither does the @allowed matcher it defines" \
+    || bad "@allowed appears outside the status site block"
+[ "$(scoped_count 'respond 403')" = 0 ] \
+    && ok "and neither does the bare 403" || bad "a respond 403 appears outside the status site block"
+# The public routes, asserted POSITIVELY: "no matcher anywhere else" would also
+# be true of a file that had lost them.
+awk '/^viafrei\.de, www\.viafrei\.de \{$/{f=1} f&&/reverse_proxy 127\.0\.0\.1:18180/{a=1} f&&/^\}$/{f=0} END{exit !a}' "$SRC" \
+    && ok "viafrei.de still reverse-proxies 18180, unrestricted" || bad "the viafrei.de block changed"
+awk '/^mcp\.viafrei\.de \{$/{f=1} f&&/reverse_proxy 127\.0\.0\.1:18187/{a=1} f&&/flush_interval -1/{b=1} f&&/^\}$/{f=0} END{exit !(a&&b)}' "$SRC" \
+    && ok "mcp.viafrei.de still reverse-proxies 18187 unbuffered, unrestricted" || bad "the mcp.viafrei.de block changed"
+awk '/^beaconfolio\.com, www\.beaconfolio\.com \{$/{f=1} f&&/reverse_proxy https:\/\/127\.0\.0\.1:18443/{a=1} f&&/^\}$/{f=0} END{exit !a}' "$SRC" \
+    && ok "and beaconfolio.com is untouched" || bad "the beaconfolio.com block changed"
+
+# 15. X-Forwarded-For is OVERWRITTEN, not appended. Caddy appends by default;
+# the tenant's app trusts the LAST hop when the peer is loopback, so an appended
+# header would let a client choose its own source address for the second layer.
+awk '/^status\.viafrei\.com \{$/{f=1} f&&/header_up X-Forwarded-For \{remote_host\}/{a=1} /^\}$/{f=0} END{exit !a}' "$SRC" \
+    && ok "the status block pins header_up X-Forwarded-For {remote_host}" \
+    || bad "the status block does not overwrite X-Forwarded-For"
+
+echo
 echo "== apply.sh contract: $PASS passed, $FAIL failed =="
 [ "$FAIL" = "0" ]
