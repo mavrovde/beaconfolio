@@ -476,7 +476,12 @@ past_deadline && deny "could not finish within ${DEADLINE_SECONDS}s — an unana
 # argued no lexical rule separates it from a real heading that puts prose before
 # the marker (`## Round 3 — ✅ APPROVED`, `PR-REVIEWER VERDICT: APPROVE`);
 # measurement refuted that — 361 marker-bearing first lines across 229 merged
-# PRs, 354 accepted, 7 rejected, all 7 correctly. The selection below now uses
+# PRs, 354 accepted and 7 rejected — six of them author notes (correct), and one
+# a REAL reviewer APPROVE the grammar rejects (#83's July blockquote verdict).
+# That seventh is the over-strict failure mode, measured at 1 in 229: rejecting
+# a genuine verdict BLOCKS a legitimate merge, which is worse than the
+# permissiveness this replaces. It is named rather than averaged away because it
+# is the only evidence we have for it. The selection below now uses
 # the SHARED grammar in scripts/verdict-heading-lib.sh, which requires the first
 # line to BEGIN with the marker; that file carries the measurement.
 #

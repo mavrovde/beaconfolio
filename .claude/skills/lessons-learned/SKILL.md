@@ -1045,8 +1045,13 @@ rule separates the shape from a real heading that puts prose *before* the marker
 `## Round 3 — ✅ APPROVED`, `## Round 2 — ⛔ REJECTED (…)` (#255), `PR-REVIEWER VERDICT: APPROVE`
 (#171). That was an assertion, not a measurement. Measured: whitelist those two prefixes, require
 the line to BEGIN with the marker, and require a non-hyphen boundary after it, and **354 of the 361
-are accepted and all 7 rejections are correct** (the seventh is #83's July blockquote verdict, whose
-classification changes nowhere any audit window reaches). The grammar lives in ONE place —
+are accepted and 7 rejected — six correctly**. The seventh is NOT a correct rejection, and it is the
+part to remember: #83's July blockquote verdict is a **real reviewer APPROVE that the grammar
+rejects**. That is the over-strict failure mode, measured at **1 in 229** — and rejecting a genuine
+verdict blocks a legitimate merge, which is a worse outcome than the permissiveness being replaced.
+Its classification changes nowhere any audit window reaches, so it cost nothing here; the point is
+that the tightened grammar has a known false-negative shape and this is its only measured instance.
+Watch for it: if a reviewer's real APPROVE is ever refused by the gate, this is why. The grammar lives in ONE place —
 `scripts/verdict-heading-lib.sh` — read by the merge gate, the no-verdict audit and the retro
 instrument, which had three separately-drifting copies of this sentence.
 
