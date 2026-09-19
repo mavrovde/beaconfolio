@@ -2309,8 +2309,13 @@ asserting the sweep happened.
   Before the correction all four copies **agreed** — wrong in the same way, and a reader got one
   consistent story. Afterwards two said #83 was a success while the retro said it must not be, so
   the tree read as self-contradicting and a maintainer had no way to tell which surface was
-  current. **A claim on N surfaces is corrected on N or on none.** Rounds 2 and 3 of that PR exist
-  only because of this.
+  current. **A claim on N surfaces is corrected on N or on none.** Measured round history: round 1
+  APPROVE-with-findings (03:39Z), round 2 REQUEST CHANGES (03:45Z — both blockers this, plus a nit
+  and a minor), round 3 APPROVE (04:09Z, finding the claim on two FURTHER surfaces), round 4 the
+  delta-confirm for those. **Three of four rounds, not two.** That correction is itself the fourth
+  instance: this bullet first read "rounds 2 and 3 … exist only because of this", a count nobody
+  had run, inside the entry about counts nobody has run — caught by the round-4 reviewer. The
+  entry has now failed on its own PR four times, which remains the best evidence it has.
 
 **How to apply — three greps, before you request review.**
 
