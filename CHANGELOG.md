@@ -8,6 +8,13 @@ All notable changes to this project will be documented in this file.
 - Placeholder for next release.
 
 ### Changed
+- **`env-gotchas`: `awk '{print length}'` counts BYTES, and the locale does not save you.** An
+  em-dash is 3 bytes, so a prose line with four of them measures 8 columns wider than it is — and
+  on macOS's BSD awk, setting `LC_ALL` to a UTF-8 locale changes nothing, while GNU awk on the CI
+  runner honours it, so the same command disagrees across the two userlands. Measured against
+  `a—b` (3 characters, 5 bytes): `awk length` → 5 with or without the locale, `wc -m` → 4, Python
+  → 3. Recorded because it shipped a false claim into a #465 review round — a paragraph re-flowed
+  to "fix" lines reported at 101 and 109 columns whose real widths were 99.
 - **The v1.16.0 release retrospective, and the one verdict-heading grammar it had to build first.**
   Rule 8 makes the retrospective a release step. Writing it found a live false-ALLOW in the rule-13
   merge gate: all three verdict readers — `pre-merge-gate.sh`, `audit_no_verdict_merges.sh` and

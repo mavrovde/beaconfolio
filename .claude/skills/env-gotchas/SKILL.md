@@ -25,6 +25,25 @@ Facts about THIS repo's environments that keep costing cycles. Check here before
   the PATH `grep` is ugrep (accepts `-P` and `\b`) while `/usr/bin/grep` is BSD grep (rejects
   both) — a `-P` pattern that passes interactively breaks in scripts/hooks/CI that resolve the
   system grep. `**` globs need bash `globstar` (off by default) — prefer `find`.
+- **`awk '{print length}'` counts BYTES, not characters — and the locale does not save you**
+  (#465). Every non-ASCII character inflates the count: an em-dash `—` is **3 bytes**, so a
+  prose line with four of them reads 8 columns wider than it is. Measured on this machine against
+  `a—b` (3 characters, 5 bytes):
+
+  | command | result |
+  |---|---|
+  | `awk '{print length($0)}'` | **5** — bytes |
+  | `LC_ALL=en_US.UTF-8 awk '{print length($0)}'` | **5** — macOS awk ignores it |
+  | `wc -m` | 4 (3 + the newline) |
+  | `python3 -c "len(line.rstrip())"` | **3** — correct |
+
+  The locale row is the trap: the usual advice is "set `LC_ALL` to a UTF-8 locale", and on
+  macOS's BSD awk that changes **nothing** (GNU awk on the CI runner *does* honour it, so the same
+  command disagrees across the two userlands — the `#400` shape again). Use `python3` for any width
+  check that must be right, or `wc -m` remembering it counts the newline. This shipped a false
+  claim into a PR round: `#465` re-flowed a paragraph to "fix" lines reported at 101 and 109
+  columns whose real widths were 99, because four em-dashes bought 8 phantom columns.
+
 - **`` \` `` inside a single-quoted ERE is a GNU ANCHOR, and a literal to BSD** (#400). In shell
   single quotes `` '\`' `` is backslash+backtick; BSD grep reads it as a literal backtick, GNU grep
   reads `` \` `` as its **start-of-buffer anchor**, so a pattern like ``grep -oE '\`[a-z-]+\`'``
