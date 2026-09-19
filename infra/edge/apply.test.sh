@@ -186,6 +186,26 @@ grep -vE '^[[:space:]]*#' "$SRC" | grep -oE '[0-9]{1,3}(\.[0-9]{1,3}){3}' | grep
     && bad "a non-loopback address literal is committed in the Caddyfile" \
     || ok "the only address literals in the file are loopback upstreams"
 
+# 13b. the three things the owner has to get right on the HOST, stated where
+# the change is made. They are comments, and that is the point: nothing in this
+# repository can enforce the mode of a file it must never contain, so the file
+# that sends somebody to create it is the file that has to say how.
+grep -q 'root:caddy, 0640' "$SRC" \
+    && ok "the allow file's documented mode is 0640 root:caddy (the addresses are personal data)" \
+    || bad "the allow file's documented mode is not 0640 root:caddy"
+# In the PATH LINE, not in the prose: the sentence under it explains why the
+# mode is 0640 "and not 0644", and a check that reads its own rationale as
+# configuration is a check that fails for the wrong reason.
+grep -qE '^#.*viafrei-status-allow\.conf.*0644' "$SRC" \
+    && bad "a world-readable mode is still documented for the allow file" \
+    || ok "no world-readable mode is documented for the allow file"
+grep -qi 'plain A/AAAA' "$SRC" \
+    && ok "the block says its DNS record must be a plain A/AAAA, never proxied (remote_ip sees the peer)" \
+    || bad "the block does not say the record must be a plain A/AAAA"
+grep -q 'must exist BEFORE the first apply' "$SRC" \
+    && ok "and that the file must exist before the first apply (validate fails on an import that matches nothing)" \
+    || bad "the first-run order is not stated as a step"
+
 # 14. the restriction is SCOPED: present in the status block, absent everywhere
 # else. `scoped_count` counts matches OUTSIDE that block only.
 scoped_count() { # scoped_count <pattern>

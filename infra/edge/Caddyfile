@@ -60,8 +60,25 @@ mcp.viafrei.de {
 # review. `import` reads one line from a file the owner writes on the host,
 # outside every repository:
 #
-#     /etc/caddy/viafrei-status-allow.conf      (root:root, 0644), one line:
+#     /etc/caddy/viafrei-status-allow.conf   (root:caddy, 0640), one line:
 #         @allowed remote_ip <cidr> [<cidr> …]
+#
+# 0640 root:caddy, not 0644: the contents are the owner's home and office
+# addresses — personal data — and this box runs a second tenant's processes.
+# Caddy reads the file as its own group; nothing else on the host needs to.
+#
+# FIRST RUN, in this order (the file must exist BEFORE the first apply, because
+# `caddy validate` fails on an import that matches no file — which looks like a
+# broken config and is only a missing step):
+#   1. create /etc/caddy/viafrei-status-allow.conf with the `@allowed remote_ip
+#      …` line, then `chown root:caddy` + `chmod 0640` it;
+#   2. `bash infra/edge/apply.sh`          (read-only check + diff)
+#   3. `bash infra/edge/apply.sh --apply`  (validate, then reload)
+#
+# DNS: `status.viafrei.com` must be a plain A/AAAA record, NEVER a
+# CDN-proxied one. `remote_ip` matches the DIRECT peer, so behind a proxy this
+# block would see the proxy's address and the restriction would silently become
+# "nobody" — or, if that range were ever listed, "everybody".
 #
 # That file is NOT part of apply.sh's byte-identical diff (apply.sh compares
 # THIS file with /etc/caddy/Caddyfile), so editing the address list is one edit

@@ -21,9 +21,11 @@ inside their block.
 \*** 18190 is the viafrei status dashboard (viafrei repo issue #94). It is the
 one route on this host whose site block carries an IP restriction: the
 `status.viafrei.com` block matches `remote_ip` against an address list imported
-from `/etc/caddy/viafrei-status-allow.conf` — a file outside every repository,
-because the addresses are personal data — and answers a bare `403` to everything
-else. `viafrei.de` and `mcp.viafrei.de` are unaffected and stay public. Like
+from `/etc/caddy/viafrei-status-allow.conf` (root:caddy, 0640 — the addresses
+are personal data and this is a shared host) — a file outside every repository —
+and answers a bare `403` to everything else. Its DNS record must be a plain
+A/AAAA: `remote_ip` matches the direct peer, so a proxied record would make the
+matcher see the proxy and the restriction mean nothing. `viafrei.de` and `mcp.viafrei.de` are unaffected and stay public. Like
 every tenant port it is bound `127.0.0.1` only; the container behind it enforces
 the same list a second time (empty = deny all).
 
