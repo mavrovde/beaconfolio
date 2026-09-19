@@ -82,8 +82,8 @@ rewrite_lcov_paths() {
 # prefix — measured: 100/100 `SF:` lines start with `src/`, so prefixing makes a
 # collision impossible by construction — and it is blind in the per-project CI
 # jobs, which is where the reports SonarCloud actually consumes are produced.
-# Prefix conformance bites in both, and it is what catches a rewrite that was skipped
-# on one of the two success paths.
+# Prefix conformance bites in both, and it is what catches a rewrite that was
+# skipped on one of the two success paths.
 #
 # A project whose suite FAILED can trip this on a stale report from an earlier
 # run. That is acceptable: the run is already failing, and the alternative —

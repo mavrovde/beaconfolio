@@ -2358,21 +2358,36 @@ exact accident the check exists to catch. The consequences people get wrong:
   the edit in the working tree and re-running the check still fails until you actually commit the
   revert, which reads as the lint being broken when it is doing exactly what it says.
 
-**How to apply.** An `[Unreleased]` entry already on `main` is **append-only until it ships**.
-- To correct one, the fix goes in a PR opened **AFTER the release PR has MERGED** — not in the
-  release PR itself. This is sharper than it first looks, and the release cut for v1.16.0 is where
-  the distinction was found: the rotation exemption counts a base line as present only if it turns
-  up **verbatim** under the new released heading. Rotating an *edited* line moves a different
-  string, so the base's original is still missing and check 4 still fails. Only once `## [X.Y.Z]`
-  is on `main` does that text leave the base's `[Unreleased]`, and the correction becomes invisible
-  to check 4 — which guards `[Unreleased]` only, while check 3 guards released *headings*, not
-  bodies (its stated limit).
-- **Lines YOU added in the same PR are free to edit.** Check 4 only guards lines present on the
-  BASE, so a new entry can be reworded freely right up to merge. Only text already on `main` is
-  frozen.
-- Correct every OTHER surface immediately — the source comment, the test label, the docs — and say
-  in the PR that the CHANGELOG half is deferred and why. A correction that lands in three of four
-  places is §79 all over again.
+**How to apply.** An `[Unreleased]` entry already on `main` is **append-only until it ships** —
+and "append-only" is the whole rule. The first draft of this entry said the fix had to wait for a
+PR opened AFTER the release merged; #464's review measured that this is broader than the
+constraint, by driving `check_changelog_merge.sh` through its `--merged/--base` seam. Four
+constructions, three of which pass **now**:
+
+| construction | result |
+|---|---|
+| **A** — rotate, then EDIT the offending lines in place | `FAIL check 4 … is LOST` ×2, exit 1 |
+| **B** — edit, but also retain the originals verbatim elsewhere under the new heading | `ok: all 4 checks` |
+| **C** — leave the wording, APPEND a correction bullet | `ok: all 4 checks` |
+| **D** — edit a line THIS PR itself added | `ok: all 4 checks` |
+
+- **A is the trap**, and it is worth knowing precisely why rotating first does not rescue it: the
+  rotation exemption counts a base line as present only if it appears **verbatim** under the new
+  released heading, so a rotated *edited* line is a different string and is still missing.
+- **C is usually the right answer** and is what v1.16.0 shipped: the wrong sentence stays, a
+  correction is appended beneath it, and the reader gets the truth immediately instead of a release
+  later. Errata read slightly worse than a clean edit and are enormously better than a claim left
+  standing for a cycle.
+- **D matters more than it looks.** Only lines on the BASE are frozen; anything this PR authored
+  stays editable right up to merge. So the freeze applies to a much smaller set than "the
+  CHANGELOG".
+- **B exists, but prefer C.** Keeping a duplicate of the original solely to satisfy a lint is
+  satisfying the instrument rather than the reader.
+- The in-place tidy-up (deleting the superseded sentence) is still available in any PR after the
+  rotation has merged, when that text has left the base's `[Unreleased]`. Treat it as optional
+  housekeeping, never as the mechanism that delivers the correction.
+- And correct every OTHER surface immediately — the source comment, the test label, the docs. A
+  correction that lands in three of four places is §79 all over again.
 - Relabelling a mutant is safe; renaming around its needle is not (§ the rotted needles in #458).
   `mutate` greps the NEEDLE, so changing the human-readable label cannot turn a mutant INVALID —
   but re-run the contract anyway and read `0 invalid`, because that is the only thing that proves

@@ -286,15 +286,14 @@ All notable changes to this project will be documented in this file.
   ships.** `check_changelog_merge.sh`'s check 4 is set semantics over lines, so EDITING an entry
   that exists on the base deletes one string and adds another — indistinguishable from the rebase
   content loss the check exists to catch. Hit live while correcting #458's round-4 wording
-  residual. Neither a fresh branch nor rotating first escapes it (a rotated *edited* line is a
-  different string, so the rotation exemption does not match), and the check reads `HEAD` rather
-  than the working tree, so an uncommitted revert looks like the lint misfiring. The constraint is
-  sharper than it first appears, and this release cut is where that surfaced: the rotation
-  exemption matches base lines **verbatim**, so rotating an *edited* line still reads as loss and
-  the correction can only land in a PR opened AFTER the release merges. Lines added in the same PR
-  stay freely editable, since check 4 guards only what is on the base. The entry records the
-  remedy — fix every other surface now, defer the CHANGELOG half — and argues against loosening the
-  lint, whose polarity is right.
+  residual, then sharpened by #464's review, which drove the lint through its `--merged/--base`
+  seam and measured four constructions rather than accepting the first conclusion: editing in
+  place FAILS (and rotating first does not rescue it, because the rotation exemption matches base
+  lines **verbatim**), while appending a correction, editing a line the same PR authored, and
+  edit-plus-verbatim-retention all pass. The entry now prescribes the append, which is what this
+  release does for the #458 residual — the reader gets the correction immediately instead of a
+  cycle later — and argues against loosening the lint, whose polarity is right: silent content
+  loss is both commoner and dearer than an errata line.
 - **`lessons-learned` §80 — a `Closes #NN` in a BRANCH commit closes the issue even when the PR
   body says `Refs`.** Deciding not to auto-close is not done by editing the PR body: GitHub honours
   a closing keyword anywhere in the pushed commit message, and a squash merge concatenates every
@@ -350,6 +349,14 @@ All notable changes to this project will be documented in this file.
   The wrapper's mutation contract goes **7 → 11 killed / 0 survived / 0 invalid** and 21 → 29
   cases (one mutant per new arm, including the retry-path rewrite that round 1 omitted). Setting Vitest's `coverage.root`
   was tried first and measured: it does not move the emitted paths.
+  **Correction, appended rather than edited in place:** two sentences above call the guard
+  "per-project resolvability" and say "resolvability fails it". That overstates what it asserts —
+  it checks that each `SF:` path carries its own project's **prefix**, and a doubly-prefixed path
+  would pass it. The two properties coincide on real input (46/46 `SF:` lines prefixed, 0 doubly
+  prefixed, 46/46 resolving on disk), which is why naming the check honestly was preferred over
+  strengthening it into a new failure mode. The original wording is left standing because
+  `check_changelog_merge.sh` check 4 reads an in-place edit of a line already on `main` as content
+  loss; appending is the construction that lands with all four checks green. See lessons §81.
 - **Blog tag chips are keyboard-operable — they are buttons now, and they sit outside the row.**
   Each tag rendered as a `<span (click)=…>` nested inside the post row's `role="button"`, carrying
   two `eslint-disable-next-line` directives in place of a keyboard path: the chip took no focus and
