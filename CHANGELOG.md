@@ -4,6 +4,33 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- **JSON-LD can no longer break out of its own `<script>` element.** The structured-data block is
+  built by string concatenation and handed to `bypassSecurityTrustHtml`, and `JSON.stringify` does
+  not escape `<` — it has no reason to, since `<` is an ordinary character in a JSON string. Inside
+  a `<script>` element it is not ordinary: the HTML parser ends the element at the first
+  `</script>` it sees, quoted string included. Measured on the real serializer before the fix, a
+  post headline reading `</script><img src=x onerror=…>` closed the JSON-LD block early and the
+  remainder was parsed as markup. Serialization now routes through an exported
+  `jsonForScriptBlock()` that escapes `<` as `\u003c` — a valid JSON escape, so `JSON.parse`
+  returns a byte-identical object and the structured data Google reads is unchanged; a spec pins
+  that round trip, because an escape that corrupts the payload would trade one defect for another.
+  **Nothing here was exploitable by an untrusted party**: every writer on this path is
+  authenticated (the admin console, or the token-gated LinkedIn importer), which is exactly why it
+  was worth fixing while it was still one line rather than after some future unauthenticated text
+  reaches post content. The guard is pinned at the WIRING as well as at the helper — reverting the
+  component to a bare `JSON.stringify` turns a spec red — since a helper the component never calls
+  is decoration. Flagged as `typescript:S6268` by the v1.16.0 release security triage; the rule
+  fires on every `bypassSecurityTrust*` call and here it was right.
+  **Every `<` is escaped, not only the ones that open a closing tag.** The HTML tokenizer leaves
+  script-data state by two doors: `</` ends the element, and `<!--` opens a comment-escape state
+  in which a following `<script` swallows the markup after it. A fix narrowed to the literal
+  closing tag passed every test written for this change and still lost the rest of the document
+  to a headline reading `<!--<script>` — that narrowed version is now a killed mutant, and the
+  guard is asserted on the character rather than on the tag. The block is also parsed as real
+  HTML in the test tier rather than counted as a substring, so the claim that it cannot break
+  out is made by the tokenizer and not by a proxy for it.
+
 ### Added
 - **A projects showcase, driven entirely by the profile JSON.** The template rendered experience,
   skills, education and a blog but had no way to present *work* — the single most recruiter-facing
@@ -259,6 +286,34 @@ All notable changes to this project will be documented in this file.
   `blog-post.component.config-ordering.spec.ts`, which drives the two streams by hand: it asserts
   both orderings produce the identical schema with an absolute `@id`, and three of its four cases
   fail against the field-latched code.
+- **SonarCloud reported 0% coverage for half the frontend, and the number was simply attributed to
+  the wrong file.** Every Vitest project sets `root: __dirname`, so each `lcov.info` carried `SF:`
+  paths relative to its own project — and `public` and `admin` therefore both claimed
+  `src/app/app.component.ts`, `src/app/app.config.ts` and every other shared filename. SonarCloud
+  resolves each path once against `sonar.sources`, awards the file to one project and reads
+  **0.0%** for the other, while both sat at 100% locally and in CI the entire time. `shared` never
+  collided, because its sources live under `src/lib/` — which is why two of three projects looked
+  correct and this stayed invisible. It is not cosmetic: `new_coverage` is a quality-gate
+  condition, so a PR touching a losing file failed the gate for a reason that had nothing to do
+  with the PR. `scripts/run_frontend_suites.sh` — the one wrapper both CI and the pre-push gate
+  already run — now rewrites each report's paths to be repo-root-relative, on **both** of its
+  success paths, and **asserts that every `SF:` path carries its own project's prefix** before the
+  run is allowed to pass — plus that a `--coverage` run produced a report at all, since an empty
+  `coverage/` hands SonarCloud the same 0% and its only signal was an absent `✓`. The guard is
+  named for what it checks rather than the stronger "resolves from the repo root" it implies: a
+  doubly-prefixed path would pass it, which is unreachable while the rewrite's `sed` stays anchored
+  at `^SF:src/`, but a check must not claim a guarantee it does not make. The guard is per-project resolvability rather than cross-project uniqueness
+  (what review round 1 shipped): once each path carries its own project's prefix a collision is
+  impossible by construction, and uniqueness is blind in the per-project CI jobs, which is where
+  the reports SonarCloud actually consumes are produced. That distinction is not academic — round
+  2 measured the rewrite being skipped on the tolerated-flake retry path, on the one project that
+  is *both* the collider and the one the teardown race is measured on (1 in 25), so roughly 4% of
+  coverage runs re-shipped the defect with `✓` printed beside it; uniqueness could not see it and
+  resolvability fails it. `verify_all.sh` and `scripts/sonar_local.sh` were still invoking
+  `npm run test:coverage` directly, bypassing the wrapper entirely, and now go through it.
+  The wrapper's mutation contract goes **7 → 11 killed / 0 survived / 0 invalid** and 21 → 29
+  cases (one mutant per new arm, including the retry-path rewrite that round 1 omitted). Setting Vitest's `coverage.root`
+  was tried first and measured: it does not move the emitted paths.
 
 ## [1.15.2] - 2026-09-18
 

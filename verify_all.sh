@@ -74,7 +74,12 @@ cd frontend
 echo "Running Lint..."
 npm run lint --if-present
 echo "Running Tests (shared + public + admin, 100% coverage each)..."
-npm run test:coverage
+# Through the wrapper, NOT `npm run test:coverage` (#458 review round 2): the
+# bare script chains the three projects with `&&` (a flake in `public` means
+# `admin` never runs, #319) and, since #458, leaves every `SF:` path relative to
+# its own project, which is the collision SonarCloud reads as 0%. The wrapper is
+# what CI and the pre-push gate run; this is the third consumer.
+bash ../scripts/run_frontend_suites.sh --coverage
 echo "Building Production (shared + public + admin)..."
 npm run build
 cd ..
