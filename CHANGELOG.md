@@ -8,6 +8,16 @@ All notable changes to this project will be documented in this file.
 - Placeholder for next release.
 
 ### Changed
+- **`env-gotchas`: `awk '{print length}'` counts BYTES, and no awk on either userland counts
+  characters.** An em-dash is 3 bytes, so one of them makes a 99-character line measure 101.
+  Measured against `a—b` (3 characters, 5 bytes): macOS BSD awk reports 5 and ignores `LC_ALL`;
+  `ubuntu:24.04`'s mawk — which is what `awk` resolves to on the CI runner — also reports 5 and
+  cannot do multibyte at all; only GNU awk under a UTF-8 locale reports 3, and gawk is not
+  installed on the runner. So this is the inverse of the usual macOS-vs-CI split: the two agree,
+  the reflex `LC_ALL` fix works on neither, and a developer box with gawk is the odd one out.
+  Recorded because it cost a #465 review round: a paragraph was re-flowed to "fix" a 100-column
+  overrun that never happened — the lines measured 98 characters before and 99 after, and a single
+  em-dash made awk report 101.
 - **The v1.16.0 release retrospective, and the one verdict-heading grammar it had to build first.**
   Rule 8 makes the retrospective a release step. Writing it found a live false-ALLOW in the rule-13
   merge gate: all three verdict readers — `pre-merge-gate.sh`, `audit_no_verdict_merges.sh` and
