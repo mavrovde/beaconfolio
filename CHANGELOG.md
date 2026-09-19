@@ -297,8 +297,12 @@ All notable changes to this project will be documented in this file.
   condition, so a PR touching a losing file failed the gate for a reason that had nothing to do
   with the PR. `scripts/run_frontend_suites.sh` — the one wrapper both CI and the pre-push gate
   already run — now rewrites each report's paths to be repo-root-relative, on **both** of its
-  success paths, and **asserts that every `SF:` path resolves from the repo root** before the run
-  is allowed to pass. The guard is per-project resolvability rather than cross-project uniqueness
+  success paths, and **asserts that every `SF:` path carries its own project's prefix** before the
+  run is allowed to pass — plus that a `--coverage` run produced a report at all, since an empty
+  `coverage/` hands SonarCloud the same 0% and its only signal was an absent `✓`. The guard is
+  named for what it checks rather than the stronger "resolves from the repo root" it implies: a
+  doubly-prefixed path would pass it, which is unreachable while the rewrite's `sed` stays anchored
+  at `^SF:src/`, but a check must not claim a guarantee it does not make. The guard is per-project resolvability rather than cross-project uniqueness
   (what review round 1 shipped): once each path carries its own project's prefix a collision is
   impossible by construction, and uniqueness is blind in the per-project CI jobs, which is where
   the reports SonarCloud actually consumes are produced. That distinction is not academic — round
@@ -307,8 +311,8 @@ All notable changes to this project will be documented in this file.
   coverage runs re-shipped the defect with `✓` printed beside it; uniqueness could not see it and
   resolvability fails it. `verify_all.sh` and `scripts/sonar_local.sh` were still invoking
   `npm run test:coverage` directly, bypassing the wrapper entirely, and now go through it.
-  The wrapper's mutation contract goes **7 → 10 killed / 0 survived / 0 invalid** (one mutant per
-  new arm, including the retry-path rewrite that round 1 omitted). Setting Vitest's `coverage.root`
+  The wrapper's mutation contract goes **7 → 11 killed / 0 survived / 0 invalid** and 21 → 29
+  cases (one mutant per new arm, including the retry-path rewrite that round 1 omitted). Setting Vitest's `coverage.root`
   was tried first and measured: it does not move the emitted paths.
 
 ## [1.15.2] - 2026-09-18

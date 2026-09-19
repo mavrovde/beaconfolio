@@ -65,10 +65,17 @@ rewrite_lcov_paths() {
 # The failure mode this guards is a silently WRONG number, not an error, so it
 # has to be asserted rather than trusted.
 #
-# The invariant is that every `SF:` path RESOLVES FROM THE REPO ROOT, which is
-# what SonarCloud does with `sonar.sources`. A path still relative to its
-# project (`SF:src/...`) is the defect itself: two projects then emit the same
-# string, the scanner awards the file to one of them and reads 0% for the other.
+# The invariant is that every `SF:` path CARRIES ITS OWN PROJECT'S PREFIX, which
+# is what makes it resolvable from the repo root the way SonarCloud resolves it
+# against `sonar.sources`. A path still relative to its project (`SF:src/...`)
+# is the defect itself: two projects then emit the same string, the scanner
+# awards the file to one of them and reads 0% for the other.
+#
+# Named for what it CHECKS, not for the stronger property it implies (#458
+# review round 3): this is prefix conformance, and a doubly-prefixed path would
+# pass it. That shape is unreachable — the rewrite's `sed` is anchored at
+# `^SF:src/`, so it prefixes each path at most once — but the check must not
+# claim a guarantee it does not make.
 #
 # It is deliberately NOT a cross-project uniqueness check (what round 1 of #458
 # shipped). Uniqueness cannot fail once each path carries its own project's
@@ -82,7 +89,7 @@ rewrite_lcov_paths() {
 # run. That is acceptable: the run is already failing, and the alternative —
 # only checking projects we believe we rewrote — is blind to exactly the bug
 # this exists to catch.
-assert_lcov_paths_resolvable() {
+assert_lcov_paths_prefixed() {
   [ -n "$SUFFIX" ] || return 0
   _bad=0
   _seen=0
@@ -98,7 +105,15 @@ assert_lcov_paths_resolvable() {
     fi
   done
   [ "$_bad" -eq 0 ] || return 1
-  [ "$_seen" -eq 1 ] && printf '  ✓ lcov paths resolve from the repo root\n'
+  # No report at all is NOT a pass. `--coverage` was asked for, so an empty
+  # coverage/ directory hands SonarCloud the same 0% this guard exists to
+  # prevent — and the only signal would have been an ABSENT ✓ line (#458 review
+  # round 3, measured: the run exited 0 in silence).
+  if [ "$_seen" -eq 0 ]; then
+    printf '  ✗ --coverage produced no lcov report for any of: %s — SonarCloud would read 0%%\n' "$PROJECTS"
+    return 1
+  fi
+  printf '  ✓ lcov paths carry their project prefix\n'
   return 0
 }
 
@@ -137,7 +152,7 @@ for p in $PROJECTS; do
   overall=1
 done
 
-assert_lcov_paths_resolvable || overall=1
+assert_lcov_paths_prefixed || overall=1
 
 [ "$flakes" -gt 0 ] && printf '\n⚠ %d project(s) needed the teardown retry this run.\n' "$flakes"
 [ "$overall" -eq 0 ] && printf '\n✓ all frontend projects passed: %s\n' "$PROJECTS"

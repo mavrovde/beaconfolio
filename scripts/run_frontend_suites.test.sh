@@ -23,6 +23,13 @@ mk_npm() {
     echo 'state="$FAKE_STATE_DIR/$target"'
     echo 'n=$(( $(cat "$state" 2>/dev/null || echo 0) + 1 ))'
     echo 'echo "$n" > "$state"'
+    # A real `test:coverage:<p>` run emits a report; the fake must too, or every
+    # coverage case trips the "no report at all" arm. Written BEFORE the case
+    # body, so a body that writes its own lcov overrides this one.
+    echo 'if [ -z "${FAKE_NO_LCOV:-}" ]; then case "$target" in test:coverage:*)'
+    echo '  _p="${target#test:coverage:}"; mkdir -p "$FAKE_STATE_DIR/coverage/$_p"'
+    echo '  printf "SF:src/default.ts\\nDA:1,1\\nend_of_record\\n" > "$FAKE_STATE_DIR/coverage/$_p/lcov.info"'
+    echo ';; esac; fi'
     printf '%s\n' "$2"
   } > "$d/bin/npm"
   chmod +x "$d/bin/npm"
@@ -97,7 +104,7 @@ rm -rf "$LAST_DIR"
 run_one() { # run_one <project> <npm-body>
   LAST_DIR="$(mktemp -d)"; mk_npm "$LAST_DIR" "$2"
   OUT="$(FAKE_STATE_DIR="$LAST_DIR" NPM_BIN="$LAST_DIR/bin/npm" FRONTEND_DIR="$LAST_DIR" \
-    FRONTEND_PROJECTS="$1" bash "$SCRIPT" --coverage 2>&1)"
+    FAKE_NO_LCOV="${FAKE_NO_LCOV:-}" FRONTEND_PROJECTS="$1" bash "$SCRIPT" --coverage 2>&1)"
   RC=$?
 }
 run_one public 'echo "$target: 10 passed"; exit 0'
@@ -166,6 +173,16 @@ printf '%s' "$OUT" | grep -q 'do not resolve from the repo root' \
   && ok "…and says so, naming the project" || bad "unresolvable message" "$OUT"
 rm -rf "$LAST_DIR"
 
+# --- 12. A --coverage run that produced NO report at all must NOT pass -------
+#     Measured in review round 3: it exited 0 in silence. SonarCloud then reads
+#     0% — the same outcome as the collision this guard exists to prevent — and
+#     the only signal was an ABSENT ✓ line.
+FAKE_NO_LCOV=1 run_one public 'echo "$target: 10 passed"; exit 0'
+[ "$RC" -eq 1 ] && ok "--coverage with no lcov produced fails the run" || bad "silent no-report" "rc=$RC out=$OUT"
+printf '%s' "$OUT" | grep -q 'produced no lcov report' \
+  && ok "…and says so, rather than an absent ✓" || bad "no-report message" "$OUT"
+rm -rf "$LAST_DIR"
+
 # ---------------------------------------------------------------------------
 # Mutation contract (#393): neuter ONE arm of the wrapper at a time in a COPY
 # and require the pinned case to go red. Every assert runs against the FAKE
@@ -179,7 +196,7 @@ if [ "${1:-}" = "--mutations" ]; then
   runm() { # script npm-body [env: MPROJ, MCOV]
     local d; d="$(mktemp -d "$MT/f.XXXXXX")"; mk_npm "$d" "$2"
     OUT="$(FAKE_STATE_DIR="$d" NPM_BIN="$d/bin/npm" FRONTEND_DIR="$d" \
-      FRONTEND_PROJECTS="${MPROJ:-shared public admin}" bash "$1" ${MCOV:-} 2>&1)"
+      FAKE_NO_LCOV="${FAKE_NO_LCOV:-}" FRONTEND_PROJECTS="${MPROJ:-shared public admin}" bash "$1" ${MCOV:-} 2>&1)"
     RC=$?; LAST_DIR="$d"
   }
   mutate() { # name needle replacement assert-fn
@@ -268,6 +285,10 @@ PY
     '      rewrite_lcov_paths "$p"
       printf '"'"'  ⚠ FLAKE SURVIVED' \
     '      printf '"'"'  ⚠ FLAKE SURVIVED' assert_rewrite_retry_path
+  assert_no_report_fails() { FAKE_NO_LCOV=1 MPROJ=public MCOV=--coverage runm "$1" 'echo ok; exit 0'
+    [ "$RC" -eq 1 ]; }
+  mutate "no-report arm removed (--coverage emitting nothing passes in silence)" \
+    '  if [ "$_seen" -eq 0 ]; then' '  if false; then' assert_no_report_fails
   mutate "resolvability guard removed (a wrong coverage number ships green)" \
     '    if [ -n "$_stray" ]; then' '    if false; then' assert_unresolvable_fails
 
