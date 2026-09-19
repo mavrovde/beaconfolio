@@ -92,7 +92,7 @@
     @if (!searchResults$) {
       <div class="space-y-6">
         @for (post of posts; track post.id) {
-          <div class="group">
+          <div class="group" data-testid="post-item">
             <!-- Terminal File Line -->
             <div (click)="toggleOrNavigate(post)" (keyup.enter)="toggleOrNavigate(post)"
               tabindex="0" role="button"
@@ -108,20 +108,6 @@
                     {{ post.language }}
                   </span>
                   {{ post.title }}
-                  <!-- Tags Display. These chips sit INSIDE the row's role="button", whose
-                  children ARIA treats as presentational — a nested role/tabindex would be
-                  announced as plain text yet add N+1 tab stops per post (#423 round 1,
-                  finding 5). So the chips are a pointer-only refinement: keyboard users
-                  keep the row control and lose only this filter shortcut — a real
-                  keyboard path needs the chips re-homed OUTSIDE the row control, which
-                  is the larger restructure the review deferred. -->
-                  @for (tag of post.tags; track tag) {
-                    <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -->
-                    <span (click)="$event.stopPropagation(); filterByTag(tag)"
-                      class="text-xs border border-terminal-dim text-secondary px-1 rounded hover:text-primary hover:border-primary transition-colors ml-1">
-                      #{{ tag }}
-                    </span>
-                  }
                 </span>
               </div>
               <!-- Image Preview in List -->
@@ -132,6 +118,25 @@
                 </div>
               }
             </div>
+            <!-- Tags Display. A SIBLING of the row control above, never a child of it (#460):
+            nesting an interactive element inside the row's role="button" is invalid HTML and
+            breaks the row's own activation, which is why these chips used to be pointer-only
+            spans. Out here each chip is a real <button type="button"> — natively focusable and
+            activated by Enter and Space — so it needs no tabindex, no role and no (keydown),
+            and no stopPropagation, since the row's click handler is no longer an ancestor. -->
+            <!-- `post.tags &&` is not redundant despite the non-null BlogPost.tags type: the
+            browser load path (`loadMoreWithFetch`) hands the raw API JSON to the template
+            without the `tags: p.tags || []` normalisation the service applies elsewhere. -->
+            @if (post.tags && post.tags.length) {
+              <div class="flex flex-wrap items-center gap-1 mt-1 px-2">
+                @for (tag of post.tags; track tag) {
+                  <button type="button" (click)="filterByTag(tag)" data-testid="post-tag"
+                    class="text-xs border border-terminal-dim text-secondary px-1 rounded hover:text-primary hover:border-primary focus-visible:text-primary focus-visible:border-primary transition-colors">
+                    #{{ tag }}
+                  </button>
+                }
+              </div>
+            }
             <!-- Summary Area -->
             @if (isExpanded(post.id)) {
               <div

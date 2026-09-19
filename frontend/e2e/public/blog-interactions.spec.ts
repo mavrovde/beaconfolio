@@ -59,30 +59,9 @@ test.describe('Blog Interactions', () => {
 
         await expect(postTitle).toBeVisible();
 
-        // Get title text for verification later
-        // The previous selector includes badges and tags. 
-        // We want the text content of the direct text node or filter out children.
-        // Easier approach: Get the whole text and clean it up or expect substring.
-        // Or better: Use the title property from the data if possible, but we are testing UI.
-
-        // The structure is: 
-        // <span class="text-primary font-bold ...">
-        //   <span class="badge">EN</span>
-        //   Title Text
-        //   <span class="tag">#tag</span>
-        // </span>
-
-        // Let's grab the full text and split/clean it. 
-        // "EN Title #tag" -> we want "Title"
-        // Since we know the structure, we can verify the H1 contains the title part.
-        // But since the title length varies, let's just make sure the H1 text is IN the list item text (minus badges/tags).
-        // Actually, reverse: The list item text contains the title. The H1 IS the title.
-        // So H1 should be a substring of the List Item? No, List Item has extra text.
-        // List Item: "EN My Title #tag"
-        // H1: "My Title".
-        // So List Item contains H1.
-
-        const listItemText = await postTitle.innerText();
+        // The title span reads "EN My Title": a language badge plus the title. The tag chips
+        // used to live in here too; since #460 they are buttons OUTSIDE the row control, so
+        // this selector no longer picks them up (`blog-tag-filter.spec.ts` drives them).
 
         // 1. Expand Summary
         // Click the title

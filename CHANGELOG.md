@@ -314,6 +314,20 @@ All notable changes to this project will be documented in this file.
   The wrapper's mutation contract goes **7 → 11 killed / 0 survived / 0 invalid** and 21 → 29
   cases (one mutant per new arm, including the retry-path rewrite that round 1 omitted). Setting Vitest's `coverage.root`
   was tried first and measured: it does not move the emitted paths.
+- **Blog tag chips are keyboard-operable — they are buttons now, and they sit outside the row.**
+  Each tag rendered as a `<span (click)=…>` nested inside the post row's `role="button"`, carrying
+  two `eslint-disable-next-line` directives in place of a keyboard path: the chip took no focus and
+  answered no key, so a keyboard or screen-reader visitor had no way to filter the blog by tag at
+  all. Bolting a `(keydown)` onto the span would have silenced the lint and SonarCloud while
+  leaving the control unreachable, and a `<button>` could not go where the span stood — an
+  interactive element inside another interactive element is invalid and breaks the row's own
+  activation. The fix is therefore structural: the tag row moved OUT of the row control into a
+  sibling below it, and each chip became a real `<button type="button">`, focusable and activated
+  by Enter and Space natively — no `tabindex`, no `role`, no key handler, and no
+  `stopPropagation()`, which was only ever there to stop the chip's click reaching the row it was
+  nested in. Both suppressions are deleted rather than re-justified. This also removes one of the
+  two findings behind SonarCloud's `Reliability Rating on New Code`; the companion at
+  `llm.component.html:28` is a genuine false positive and is resolved in SonarCloud, not in code.
 
 ## [1.15.2] - 2026-09-18
 
