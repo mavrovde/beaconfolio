@@ -218,19 +218,30 @@ scoped_count() { # scoped_count <pattern>
 [ "$(scoped_count 'remote_ip')" = 0 ] \
     && ok "remote_ip appears in NO site block but the status one" \
     || bad "remote_ip appears outside the status site block"
-# `@allowed` itself is NOT scoped to the status block, and deliberately so: the
-# landing block uses the same address list to ROUTE — the owner sees the
-# preview, everybody else sees the public page — and nobody is refused. What
-# must stay scoped is REFUSAL. So the rule is: any other block that matches on
-# the list must also carry a bare `handle {` fallback, which is what makes it a
-# fork in the road rather than a door. `respond 403` below is the other half.
+# `@allowed` need not be scoped to the status block: a block MAY use the same
+# address list to ROUTE rather than to refuse — a fork in the road, not a door
+# — provided it also carries a bare `handle {` fallback so nobody is turned
+# away. What must stay scoped is REFUSAL. `respond 403` below is the other half.
+#
+# PRECONDITION, and it is the point of the next four lines: as of 2026-09-20 no
+# block outside `status.` uses @allowed at all — viafrei.de's owner/public fork
+# was removed when the landing went public. A rule with nothing to judge passes
+# for free, and a gate that reports success about what it never read is exactly
+# the class this repository keeps finding. So COUNT the blocks first and say
+# the number out loud; "0 forks, nothing to check" is an honest pass and a
+# jump from 0 to 1 is a routing change someone must have intended.
+forks=$(awk '
+    /^[a-z0-9.,& -]+\{$/ {blk=$0; seen=0}
+    /@allowed/ && blk !~ /^status\./ {seen=1}
+    /^\}$/ {if (seen) n++; blk=""}
+    END {print n+0}' "$SRC")
 awk '
     /^[a-z0-9.,& -]+\{$/ {blk=$0; seen=0; fallback=0}
     /@allowed/ && blk !~ /^status\./ {seen=1}
     /^\thandle \{$/ {fallback=1}
     /^\}$/ {if (seen && !fallback) bad++; blk=""}
     END {exit !!bad}' "$SRC" \
-    && ok "@allowed outside the status block only routes — every such block has an open fallback" \
+    && ok "@allowed outside the status block only routes ($forks such block(s); each has an open fallback)" \
     || bad "a block matches @allowed with no open fallback: it refuses visitors outside the status block"
 [ "$(scoped_count 'respond 403')" = 0 ] \
     && ok "and neither does the bare 403" || bad "a respond 403 appears outside the status site block"

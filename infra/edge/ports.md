@@ -9,7 +9,7 @@ tenant binds only `127.0.0.1:<port>` inside its allocated block, and the edge
 | Range         | Tenant        | In use today                                                                 |
 |---------------|---------------|------------------------------------------------------------------------------|
 | 18000–18099   | beaconfolio   | 18080 (proxy HTTP, redirect-only), 18443* (proxy HTTPS, the edge upstream)   |
-| 18100–18199   | viafrei       | 18180 (landing HTTP), 18181 (landing owner preview)****, 18187 (MCP Streamable HTTP), 18190 (status dashboard)***, 18132 (Postgres, tooling) |
+| 18100–18199   | viafrei       | 18180 (landing HTTP, PUBLIC), 18181 (retired preview root, nothing routes to it)****, 18187 (MCP Streamable HTTP, PUBLIC), 18190 (status dashboard)***, 18132 (Postgres, tooling) |
 | 18200–18999   | *unallocated* | — claim the next free 100-block per tenant via PR against this file          |
 | 5433**        | beaconfolio   | Postgres (`127.0.0.1:5433`, compose `db` publish — local pytest + tooling)   |
 
@@ -46,10 +46,19 @@ tenant ports it is loopback-only and never reachable through the edge.
    reload; an invalid config never replaces the running one, and a diff that
    removes running-only lines refuses without `EDGE_APPLY_CONFIRM=1`.
 
-\**** 18181 is the owner preview of the same landing page, served by the same
-nginx container from a SECOND document root (viafrei repo issue #94). It is
-loopback-only like every other port in this block; the edge sends the owner's
-address to it and everybody else to 18180, so the port existing is not the
-page being public. The two roots are never the same directory and the preview
-root is never inside the public one — a preview root under the public root
-would be an ordinary public URL.
+\**** 18181 WAS the owner preview of the landing page, served by the same
+nginx container from a second document root (viafrei repo issue #94). **The
+edge no longer routes to it** (owner 2026-09-20): viafrei.de serves the live
+national digest on 18180 to everybody, owner included.
+
+The preview was worth retiring rather than repointing, and the reason is worth
+keeping. The fork was written when 18180 was an "im Aufbau" notice and 18181
+held the real page. viafrei repo issue #176 then put the live digest on 18180
+and the fork inverted in place, without anyone editing it: measured from two
+addresses on 2026-09-20, off-host got 23 840 bytes of "live in Deutschland"
+and the owner's address got 2 160 bytes of "Vorschau". A fork named after what
+its two sides used to be will not tell you when one of them changes.
+
+The port is still published by the tenant's compose and still serves the old
+notice to nobody. Retiring it is a viafrei-repo change and belongs with the
+v0.1.0 landing work.

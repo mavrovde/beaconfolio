@@ -36,33 +36,27 @@ admin.beaconfolio.com {
 # viafrei.de/www serve a static landing page; mcp.viafrei.de is an MCP
 # Streamable HTTP server (long-lived SSE responses — no buffering).
 
-# The OWNER PREVIEW of the landing page (viafrei repo issue #94). Two document
-# roots behind one tenant: :18181 serves the real page, :18180 serves the "im
-# Aufbau" notice. This site stays PUBLIC — the restriction is not on the site,
-# it is on WHICH ROOT a visitor reaches, and the default is the public one.
+# viafrei.de is PUBLIC and serves ONE page to everybody: the live national
+# digest on :18180 (viafrei repo issue #176, owner 2026-09-20).
 #
-# The gate has to be here and cannot be in the tenant. viafrei's nginx sits
-# behind a published loopback port, so every peer it sees is docker's bridge
-# gateway; an `allow`/`deny` inside that container would judge the bridge, not
-# the visitor — and would look like protection to the next reader. The edge is
-# the only layer that sees a client address at all.
+# It used to fork on the owner's address — :18181 for the owner, :18180 for
+# everybody else — from the days when :18180 was the "im Aufbau" notice and
+# :18181 was the private preview of the real page. #176 put the live digest on
+# :18180, and the fork inverted without anyone editing it: a stranger got the
+# product and the owner got the building site. Measured before removing it,
+# from two addresses: 23 840 bytes and "live in Deutschland" from off-host,
+# 2 160 bytes and "Vorschau" from the owner's.
 #
-# The address list is the same file the status block imports and is likewise
-# not in any repository. The failure modes are all the safe one: the file
-# missing makes `caddy validate` fail and apply.sh refuse, so the running edge
-# keeps serving; the matcher not matching sends the visitor to :18180. There is
-# no configuration of this block in which a stranger reaches the preview.
+# That is the failure a routing fork invites — its two sides are named by
+# what they were, and one of them changed underneath the name. There is
+# nothing left to preview privately, so the fork is gone rather than swapped.
+#
+# :18181 still exists in the tenant's compose and still serves the old notice;
+# nothing routes to it. Retiring the port is a viafrei-repo change and belongs
+# with the v0.1.0 landing work.
 viafrei.de, www.viafrei.de {
-	import /etc/caddy/viafrei-status-allow.conf
-	handle @allowed {
-		reverse_proxy 127.0.0.1:18181 {
-			header_up Host {host}
-		}
-	}
-	handle {
-		reverse_proxy 127.0.0.1:18180 {
-			header_up Host {host}
-		}
+	reverse_proxy 127.0.0.1:18180 {
+		header_up Host {host}
 	}
 }
 
