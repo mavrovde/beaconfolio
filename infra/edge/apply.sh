@@ -82,8 +82,16 @@ if [ -f "$DST" ] && diff -q "$DST" "$SRC" >/dev/null; then
     exit 0
 fi
 
+# Under $SUDO, and that is not decoration: the status block imports
+# /etc/caddy/viafrei-status-allow.conf, which is documented (and is, measured
+# on the host 2026-09-21) 0640 root:caddy. An UNPRIVILEGED validate cannot read
+# it and dies with "Could not import ...: permission denied" — so every --apply
+# by the ordinary user this script otherwise assumes (it wraps cp/install/
+# systemctl in $SUDO precisely because it is not run as root) failed at the
+# first step. Fail-closed, so nothing was ever wrongly applied; it simply
+# meant the sanctioned path could not complete.
 echo "== validating committed Caddyfile =="
-if ! "$CADDY" validate --config "$SRC" --adapter caddyfile; then
+if ! $SUDO "$CADDY" validate --config "$SRC" --adapter caddyfile; then
     echo "✗ validation FAILED — the running edge was NOT touched" >&2
     exit 1
 fi

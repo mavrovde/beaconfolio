@@ -34,7 +34,14 @@ case "$1" in
     *) echo "stub systemctl: unexpected args: $*" >&2; exit 99 ;;
 esac
 EOF
-chmod +x "$STUB/caddy" "$STUB/systemctl"
+cat > "$STUB/sudo" <<'EOF'
+#!/usr/bin/env bash
+# records what was asked for, then runs it — so a case can assert WHICH steps
+# the script wraps in the privilege wrapper, not merely that it has one
+echo "sudo $*" >> "$SUDO_LOG"
+exec "$@"
+EOF
+chmod +x "$STUB/caddy" "$STUB/systemctl" "$STUB/sudo"
 
 run_apply() { # run_apply <mode-args...>; env seams pre-exported per case
     env EDGE_DST="$DST" EDGE_SUDO= EDGE_CADDY="$STUB/caddy" \
@@ -121,6 +128,25 @@ check "validation failure is red" 1 "$rc"
 [ "$(cat "$DST")" = "old config" ] && ok "validation failure touched nothing" \
     || bad "validation failure MODIFIED the target"
 [ ! -s "$LOG" ] && ok "validation failure never reloaded" || bad "reloaded after failed validation"
+
+# 7b. validate runs UNDER the privilege wrapper. Not a style point: the status
+# block imports /etc/caddy/viafrei-status-allow.conf, whose documented and
+# actual mode is 0640 root:caddy. Run as the ordinary user this script assumes
+# everywhere else (it $SUDOs cp, install and systemctl), `caddy validate` could
+# not read that import and exited with
+#     Could not import /etc/caddy/viafrei-status-allow.conf: permission denied
+# — measured on the edge host, 2026-09-21, where the same command under sudo
+# answers "Valid configuration". Fail-closed, so nothing was ever wrongly
+# installed; it meant the sanctioned apply path stopped at its first step.
+fresh_case "old config"; EDGE_APPLY_CONFIRM=1
+SUDO_LOG="$TMP/sudo.log"; : > "$SUDO_LOG"
+rc=0; env EDGE_DST="$DST" EDGE_SUDO="$STUB/sudo" EDGE_CADDY="$STUB/caddy" \
+    EDGE_SYSTEMCTL="$STUB/systemctl" STUB_LOG="$LOG" SUDO_LOG="$SUDO_LOG" \
+    EDGE_APPLY_CONFIRM=1 bash "$APPLY" --apply >/dev/null 2>&1 || rc=$?
+check "apply with a recording sudo wrapper succeeds" 0 "$rc"
+grep -q "sudo .*validate" "$SUDO_LOG" \
+    && ok "caddy validate runs under the privilege wrapper (the 0640 root:caddy import is unreadable without it)" \
+    || bad "caddy validate is NOT wrapped in \$SUDO: on the real host it cannot read the allow-list import and every apply dies there"
 
 # 8. reload failure restores the backup and reloads the old config
 fresh_case "old config"; STUB_RELOAD_RC=1 EDGE_APPLY_CONFIRM=1
