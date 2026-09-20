@@ -245,6 +245,28 @@ awk '
     || bad "a block matches @allowed with no open fallback: it refuses visitors outside the status block"
 [ "$(scoped_count 'respond 403')" = 0 ] \
     && ok "and neither does the bare 403" || bad "a respond 403 appears outside the status site block"
+# THE OTHER DIRECTION, and it was missing until 2026-09-20. Everything above
+# says where a refusal may NOT appear. Nothing said that the status block
+# actually HAS one. Both rules were satisfied by a status block reduced to a
+# bare `reverse_proxy 127.0.0.1:18190` -- the operational dashboard open to the
+# internet -- and the suite reported 44 passed, 0 failed. A restriction proved
+# only by the absence of restrictions elsewhere is not proved at all.
+#
+# So assert the door positively, as a triple inside that one block: the address
+# list is imported, the allowed path is a `handle @allowed`, and the fallback
+# is `handle { respond 403 }`. Reading the fallback's BODY matters: a `handle {`
+# containing a reverse_proxy would pass a shape check and serve the dashboard
+# to everyone.
+awk '
+    /^status\.viafrei\.de \{$/ {f=1; next}
+    f && /^\timport \/etc\/caddy\/viafrei-status-allow\.conf$/ {imp=1}
+    f && /^\thandle @allowed \{$/ {gate=1}
+    f && /^\thandle \{$/ {fb=1; next}
+    f && fb && /^\t\trespond 403$/ {deny=1}
+    f && /^\}$/ {f=0}
+    END {exit !(imp && gate && deny)}' "$SRC" \
+    && ok "the status block imports the list, gates on @allowed, and its fallback is respond 403" \
+    || bad "the status block does not positively refuse: import + handle @allowed + handle { respond 403 } is not all present"
 # The public routes, asserted POSITIVELY: "no matcher anywhere else" would also
 # be true of a file that had lost them.
 awk '/^viafrei\.de, www\.viafrei\.de \{$/{f=1} f&&/reverse_proxy 127\.0\.0\.1:18180/{a=1} f&&/^\}$/{f=0} END{exit !a}' "$SRC" \
