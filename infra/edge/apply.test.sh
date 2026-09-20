@@ -245,8 +245,9 @@ awk '
     || bad "a block matches @allowed with no open fallback: it refuses visitors outside the status block"
 # Every spelling of a door, not one: 401, 404, 503 refuse a visitor exactly as
 # 403 does, and a rule naming a single code is a rule a typo walks past.
-[ "$(scoped_count 'respond [45][0-9][0-9]')" = 0 ] \
-    && ok "and neither does a bare 4xx/5xx refusal" || bad "a respond 4xx/5xx appears outside the status site block"
+[ "$(scoped_count 'respond ("[^"]*" )?[45][0-9][0-9]')" = 0 ] \
+    && ok "and neither does a 4xx/5xx refusal, quoted body or not" \
+    || bad "a respond 4xx/5xx appears outside the status site block"
 # THE OTHER DIRECTION, and it was missing until 2026-09-20. Everything above
 # says where a refusal may NOT appear. Nothing said that the status block
 # actually HAS one. Both rules were satisfied by a status block reduced to a
@@ -286,6 +287,36 @@ awk '
     END {exit !(imp && gate && deny)}' "$SRC" \
     && ok "the status block imports the list, gates on @allowed, and its fallback is respond 403" \
     || bad "the status block does not positively refuse: import + handle @allowed + handle { respond 403 } is not all present"
+
+# NECESSARY IS NOT SUFFICIENT. The triple above is satisfied by a file that
+# ALSO carries a third block -- `handle /healthz { reverse_proxy 18190 }` for an
+# uptime monitor is the shape this will really arrive in -- with the gate and
+# the 403 fallback both intact. Nothing lies in that case, which is what makes
+# it harder than the last one: every sentence the suite prints is true about
+# the file, and the dashboard is still open to the internet.
+#
+# So assert CONTAINMENT, not presence: every route to 18190 inside this block
+# must sit inside `handle @allowed`. Counted rather than pattern-matched,
+# because the count is also the precondition -- zero routes to 18190 means the
+# block no longer proxies the dashboard at all, which is a change nobody should
+# make silently, and a rule that passes on zero is the class this file keeps
+# rediscovering.
+# NOT written as `awk ... | { read tot inside; ok/bad }`: a pipeline runs its
+# last stage in a SUBSHELL, so ok/bad would print their line and lose the
+# counter increment -- the suite would show a red tick and still exit 0. That
+# is this file's own subject matter, arrived at from the shell side.
+gate_counts=$(awk '
+    /^status\.viafrei\.de \{$/ {f=1; next}
+    f && /^\thandle @allowed \{$/ {ga=1}
+    f && ga && /^\t\}$/ {ga=0}
+    f && /reverse_proxy 127\.0\.0\.1:18190/ {tot++; if (ga) inside++}
+    f && /^\}$/ {f=0}
+    END {print (tot+0) " " (inside+0)}' "$SRC")
+gate_tot=${gate_counts% *}
+gate_inside=${gate_counts#* }
+[ "$gate_tot" -ge 1 ] && [ "$gate_tot" = "$gate_inside" ] \
+    && ok "every route to 18190 is inside handle @allowed ($gate_inside of $gate_tot)" \
+    || bad "18190 is reachable outside the gate: $gate_inside of $gate_tot route(s) are inside handle @allowed"
 # The public routes, asserted POSITIVELY: "no matcher anywhere else" would also
 # be true of a file that had lost them.
 awk '/^viafrei\.de, www\.viafrei\.de \{$/{f=1} f&&/reverse_proxy 127\.0\.0\.1:18180/{a=1} f&&/^\}$/{f=0} END{exit !a}' "$SRC" \
