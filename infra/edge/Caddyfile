@@ -99,7 +99,7 @@ mcp.viafrei.de {
 #   2. `bash infra/edge/apply.sh`          (read-only check + diff)
 #   3. `bash infra/edge/apply.sh --apply`  (validate, then reload)
 #
-# DNS: `status.viafrei.com` must be a plain A/AAAA record, NEVER a
+# DNS: `status.viafrei.de` must be a plain A/AAAA record, NEVER a
 # CDN-proxied one. `remote_ip` matches the DIRECT peer, so behind a proxy this
 # block would see the proxy's address and the restriction would silently become
 # "nobody" — or, if that range were ever listed, "everybody".
@@ -122,7 +122,7 @@ mcp.viafrei.de {
 # (STATUS_TRUSTED_PROXY_CIDR, viafrei's deploy/docker-compose.prod.yml) and
 # reads the LAST hop, the one written here. Nothing on that path is configured
 # in this repository; the only contract is: overwrite, never append.
-status.viafrei.com {
+status.viafrei.de {
 	import /etc/caddy/viafrei-status-allow.conf
 	handle @allowed {
 		reverse_proxy 127.0.0.1:18190 {

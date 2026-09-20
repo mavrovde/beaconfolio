@@ -20,7 +20,7 @@ inside their block.
 
 \*** 18190 is the viafrei status dashboard (viafrei repo issue #94). It is the
 one route on this host whose site block carries an IP restriction: the
-`status.viafrei.com` block matches `remote_ip` against an address list imported
+`status.viafrei.de` block matches `remote_ip` against an address list imported
 from `/etc/caddy/viafrei-status-allow.conf` (root:caddy, 0640 — the addresses
 are personal data and this is a shared host) — a file outside every repository —
 and answers a bare `403` to everything else. Its DNS record must be a plain

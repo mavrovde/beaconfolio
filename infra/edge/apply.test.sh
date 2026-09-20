@@ -165,9 +165,9 @@ echo "== the committed Caddyfile's shape (viafrei #94) =="
 # does not). Files only — no caddy, no host, no network.
 
 # 12. the status route exists and points at the registered tenant port
-grep -q '^status\.viafrei\.com {$' "$SRC" \
-    && ok "the status.viafrei.com site block exists" || bad "no status.viafrei.com site block"
-awk '/^status\.viafrei\.com \{$/{f=1} f&&/reverse_proxy 127\.0\.0\.1:18190/{a=1} /^\}$/{f=0} END{exit !a}' "$SRC" \
+grep -q '^status\.viafrei\.de {$' "$SRC" \
+    && ok "the status.viafrei.de site block exists" || bad "no status.viafrei.de site block"
+awk '/^status\.viafrei\.de \{$/{f=1} f&&/reverse_proxy 127\.0\.0\.1:18190/{a=1} /^\}$/{f=0} END{exit !a}' "$SRC" \
     && ok "it proxies the viafrei tenant's registered 18190" || bad "the status block does not proxy 127.0.0.1:18190"
 grep -q '18190' "$HERE/ports.md" \
     && ok "18190 is registered in ports.md" || bad "18190 is not in the port registry"
@@ -210,7 +210,7 @@ grep -q 'must exist BEFORE the first apply' "$SRC" \
 # else. `scoped_count` counts matches OUTSIDE that block only.
 scoped_count() { # scoped_count <pattern>
     awk -v pat="$1" '
-        /^status\.viafrei\.com \{$/ {inblk=1}
+        /^status\.viafrei\.de \{$/ {inblk=1}
         inblk && /^\}$/ {inblk=0; next}
         !inblk && $0 !~ /^[[:space:]]*#/ && $0 ~ pat {n++}
         END {print n+0}' "$SRC"
@@ -218,9 +218,20 @@ scoped_count() { # scoped_count <pattern>
 [ "$(scoped_count 'remote_ip')" = 0 ] \
     && ok "remote_ip appears in NO site block but the status one" \
     || bad "remote_ip appears outside the status site block"
-[ "$(scoped_count '@allowed')" = 0 ] \
-    && ok "and neither does the @allowed matcher it defines" \
-    || bad "@allowed appears outside the status site block"
+# `@allowed` itself is NOT scoped to the status block, and deliberately so: the
+# landing block uses the same address list to ROUTE — the owner sees the
+# preview, everybody else sees the public page — and nobody is refused. What
+# must stay scoped is REFUSAL. So the rule is: any other block that matches on
+# the list must also carry a bare `handle {` fallback, which is what makes it a
+# fork in the road rather than a door. `respond 403` below is the other half.
+awk '
+    /^[a-z0-9.,& -]+\{$/ {blk=$0; seen=0; fallback=0}
+    /@allowed/ && blk !~ /^status\./ {seen=1}
+    /^\thandle \{$/ {fallback=1}
+    /^\}$/ {if (seen && !fallback) bad++; blk=""}
+    END {exit !!bad}' "$SRC" \
+    && ok "@allowed outside the status block only routes — every such block has an open fallback" \
+    || bad "a block matches @allowed with no open fallback: it refuses visitors outside the status block"
 [ "$(scoped_count 'respond 403')" = 0 ] \
     && ok "and neither does the bare 403" || bad "a respond 403 appears outside the status site block"
 # The public routes, asserted POSITIVELY: "no matcher anywhere else" would also
@@ -235,7 +246,7 @@ awk '/^beaconfolio\.com, www\.beaconfolio\.com \{$/{f=1} f&&/reverse_proxy https
 # 15. X-Forwarded-For is OVERWRITTEN, not appended. Caddy appends by default;
 # the tenant's app trusts the LAST hop when the peer is loopback, so an appended
 # header would let a client choose its own source address for the second layer.
-awk '/^status\.viafrei\.com \{$/{f=1} f&&/header_up X-Forwarded-For \{remote_host\}/{a=1} /^\}$/{f=0} END{exit !a}' "$SRC" \
+awk '/^status\.viafrei\.de \{$/{f=1} f&&/header_up X-Forwarded-For \{remote_host\}/{a=1} /^\}$/{f=0} END{exit !a}' "$SRC" \
     && ok "the status block pins header_up X-Forwarded-For {remote_host}" \
     || bad "the status block does not overwrite X-Forwarded-For"
 
