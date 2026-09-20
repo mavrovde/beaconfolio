@@ -301,22 +301,46 @@ awk '
 # block no longer proxies the dashboard at all, which is a change nobody should
 # make silently, and a rule that passes on zero is the class this file keeps
 # rediscovering.
+# Round 3. Round 2 asserted containment but counted only the ONE spelling
+# `reverse_proxy 127.0.0.1:18190`, and counted it only INSIDE the status
+# block. The reviewer walked through four doors, each validating on the
+# host's caddy and each leaving the suite at 46/0 with the dashboard public:
+#
+#     reverse_proxy localhost:18190
+#     reverse_proxy http://127.0.0.1:18190
+#     reverse_proxy { to 127.0.0.1:18190 }
+#     dash.viafrei.de { reverse_proxy 127.0.0.1:18190 }
+#
+# Three are just the ordinary ways a person writes the same upstream. The
+# fourth never touches the status block at all, so a rule scoped to that
+# block cannot see it by construction.
+#
+# So the subject of the rule is now THE PORT, over the WHOLE file: every
+# non-comment line mentioning 18190 must sit inside status.viafrei.de's
+# `handle @allowed`. That has no free variables left -- a route to the
+# dashboard must name the port somewhere, whatever words surround it.
+#
+# Comment lines are skipped because this file's own prose names the port,
+# including the block you are reading. That skip is the one hole left, and
+# it is bounded: a comment cannot route traffic.
+#
 # NOT written as `awk ... | { read tot inside; ok/bad }`: a pipeline runs its
 # last stage in a SUBSHELL, so ok/bad would print their line and lose the
 # counter increment -- the suite would show a red tick and still exit 0. That
 # is this file's own subject matter, arrived at from the shell side.
 gate_counts=$(awk '
-    /^status\.viafrei\.de \{$/ {f=1; next}
-    f && /^\thandle @allowed \{$/ {ga=1}
-    f && ga && /^\t\}$/ {ga=0}
-    f && /reverse_proxy 127\.0\.0\.1:18190/ {tot++; if (ga) inside++}
-    f && /^\}$/ {f=0}
+    /^[[:space:]]*#/ {next}
+    /^[^[:space:]].*\{$/ {site = ($0 ~ /^status\.viafrei\.de \{$/) ? 1 : 0; ga=0; next}
+    site && /^\thandle @allowed \{$/ {ga=1}
+    site && ga && /^\t\}$/ {ga=0}
+    /18190/ {tot++; if (site && ga) inside++}
+    /^\}$/ {site=0; ga=0}
     END {print (tot+0) " " (inside+0)}' "$SRC")
 gate_tot=${gate_counts% *}
 gate_inside=${gate_counts#* }
 [ "$gate_tot" -ge 1 ] && [ "$gate_tot" = "$gate_inside" ] \
-    && ok "every route to 18190 is inside handle @allowed ($gate_inside of $gate_tot)" \
-    || bad "18190 is reachable outside the gate: $gate_inside of $gate_tot route(s) are inside handle @allowed"
+    && ok "every mention of 18190 in the whole file is inside status.viafrei.de's handle @allowed ($gate_inside of $gate_tot)" \
+    || bad "18190 is reachable outside the gate: $gate_inside of $gate_tot mention(s) are inside handle @allowed"
 # The public routes, asserted POSITIVELY: "no matcher anywhere else" would also
 # be true of a file that had lost them.
 awk '/^viafrei\.de, www\.viafrei\.de \{$/{f=1} f&&/reverse_proxy 127\.0\.0\.1:18180/{a=1} f&&/^\}$/{f=0} END{exit !a}' "$SRC" \
