@@ -8,6 +8,40 @@ All notable changes to this project will be documented in this file.
 - Placeholder for next release.
 
 ### Changed
+- **The edge guard reads brace depth, not indentation columns, and a non-literal upstream is
+  refused rather than analysed.** `infra/edge/apply.test.sh` asserts that one tenant's status
+  dashboard can only be reached through the IP-gated `handle @allowed` block of its own site.
+  Three review rounds in a row it certified a Caddyfile that served that dashboard to the public
+  internet while printing a reassuring count and passing every case. Two root causes, both now
+  gone. **Columns:** four hand-rolled awk scanners each decided where a block ENDED by matching a
+  closing brace in a fixed column (`/^\t\}$/`), and Caddy ignores indentation entirely — measured
+  against caddy v2.11.4 on the edge host, a closing brace with one extra tab is "Valid
+  configuration". One extra tab therefore left the gate latch stuck and a route appended after it
+  counted as *inside* the gate; the same trick on a site block's own brace blinded every
+  "outside this block" rule to the whole rest of the file. There is now ONE depth model
+  (`caddy_scan`) that every assertion in the section reads, because four copies is how three of
+  them stayed wrong for three rounds. **Literals:** the rule hinged on the upstream port appearing
+  as digits, so `127.0.0.1:{http.request.header.X-Up}` (the port chosen by the caller, per
+  request), `{$ENV}`, `dynamic srv` and a port RANGE each routed to the dashboard without ever
+  writing them — all four "Valid configuration" on v2.11.4. Every `reverse_proxy`/`to` upstream
+  must now be a literal `[scheme://]host[:port]`; anything else, plus a heredoc and any `import`
+  other than the one allow-list file, is declined on sight with a message saying the guard cannot
+  reason about it. Also corrected: the old rationale asserted Caddy accepts a single-line
+  `handle /x { … }` block — it does not (`Unexpected next token after '{' on same line`), so the
+  exploit an earlier round narrated was never installable. The suite goes 46 → 69 cases, and the
+  new section 16 is the part that keeps it honest: nine fixtures the scan must call out, one it
+  must NOT (so the scan cannot pass by calling everything a leak), and six that feed the verdict
+  functions losing tuples — because until the comparisons were named functions, neutering one to
+  `[ 1 = 1 ]` left the whole suite green. A gate with no input reports success; both halves are
+  now excluded by construction rather than by a transcript.
+- **`apply.sh` validates under the privilege wrapper.** It `$SUDO`s cp, install and systemctl — it
+  assumes it is not run as root — but ran `caddy validate` bare, and the status site imports an
+  allow-list file whose documented and actual mode is `0640 root:caddy`. An unprivileged validate
+  could not read it (`Could not import …: permission denied`), so the only sanctioned way to
+  change the running edge stopped at its first step for anyone but root; under sudo the same
+  command on the same host answers "Valid configuration". Fail-closed, so nothing was ever wrongly
+  installed. A new case pins which steps are wrapped, using a recording sudo stub rather than
+  asserting that a wrapper exists.
 - **`env-gotchas`: `awk '{print length}'` counts BYTES, and no awk on either userland counts
   characters.** An em-dash is 3 bytes, so one of them makes a 99-character line measure 101.
   Measured against `a—b` (3 characters, 5 bytes): macOS BSD awk reports 5 and ignores `LC_ALL`;
