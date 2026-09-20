@@ -8,32 +8,41 @@ All notable changes to this project will be documented in this file.
 - Placeholder for next release.
 
 ### Changed
-- **The edge guard reads brace depth, not indentation columns, and a non-literal upstream is
-  refused rather than analysed.** `infra/edge/apply.test.sh` asserts that one tenant's status
-  dashboard can only be reached through the IP-gated `handle @allowed` block of its own site.
-  Three review rounds in a row it certified a Caddyfile that served that dashboard to the public
-  internet while printing a reassuring count and passing every case. Two root causes, both now
-  gone. **Columns:** four hand-rolled awk scanners each decided where a block ENDED by matching a
-  closing brace in a fixed column (`/^\t\}$/`), and Caddy ignores indentation entirely — measured
-  against caddy v2.11.4 on the edge host, a closing brace with one extra tab is "Valid
-  configuration". One extra tab therefore left the gate latch stuck and a route appended after it
-  counted as *inside* the gate; the same trick on a site block's own brace blinded every
-  "outside this block" rule to the whole rest of the file. There is now ONE depth model
-  (`caddy_scan`) that every assertion in the section reads, because four copies is how three of
-  them stayed wrong for three rounds. **Literals:** the rule hinged on the upstream port appearing
-  as digits, so `127.0.0.1:{http.request.header.X-Up}` (the port chosen by the caller, per
-  request), `{$ENV}`, `dynamic srv` and a port RANGE each routed to the dashboard without ever
-  writing them — all four "Valid configuration" on v2.11.4. Every `reverse_proxy`/`to` upstream
-  must now be a literal `[scheme://]host[:port]`; anything else, plus a heredoc and any `import`
-  other than the one allow-list file, is declined on sight with a message saying the guard cannot
-  reason about it. Also corrected: the old rationale asserted Caddy accepts a single-line
-  `handle /x { … }` block — it does not (`Unexpected next token after '{' on same line`), so the
-  exploit an earlier round narrated was never installable. The suite goes 46 → 69 cases, and the
-  new section 16 is the part that keeps it honest: nine fixtures the scan must call out, one it
-  must NOT (so the scan cannot pass by calling everything a leak), and six that feed the verdict
-  functions losing tuples — because until the comparisons were named functions, neutering one to
-  `[ 1 = 1 ]` left the whole suite green. A gate with no input reports success; both halves are
-  now excluded by construction rather than by a transcript.
+- **The edge guard tokenises the way Caddy does, and declines to certify what it cannot model.**
+  `infra/edge/apply.test.sh` asserts that one tenant's status dashboard is reachable only through
+  the IP-gated `handle @allowed` block of its own site. Five review rounds running it certified a
+  Caddyfile that served that dashboard to the public internet — 45/0, 46/0, 59/0, 69/0 — each time
+  printing a reassuring count. Every one of those rounds fixed a real hole and left the same root
+  cause standing: **the scanner modelled the file differently from Caddy.** Measured against caddy
+  v2.11.4 on the edge host, each of these is `Valid configuration` and each defeated a scanner that
+  read the file its own way — indentation columns (a closing brace with one extra tab ends nothing,
+  so the gate latch was carried and a route appended after it counted as *inside*); a port that is
+  never written as digits (`127.0.0.1:{http.request.header.X-Up}` lets the **caller** pick the port
+  per request; `{$ENV}`, `dynamic srv` and a port range do the same); and a brace inside a larger
+  token (`header X-Pad {pad`), which Caddy reads as text and a character counter reads as a block,
+  including when the token is a quoted string spanning **lines**. The scanner is now a tokeniser:
+  whitespace separates tokens, `#` opens a comment only at a token start, a quoted token may run
+  past the end of a line (the flag is carried between lines), and **only** a token whose whole text
+  is `{` or `}` moves depth — in token order, so `} dash.example {` closes one site and opens
+  another instead of netting to zero. A brace inside a token is a placeholder if it balances
+  (`{host}`) and a **refusal to certify the file** if it does not; so is an unterminated quote, a
+  non-literal upstream, a port range, a heredoc, and an `import` of any file but the one allow list
+  whose contents are not in this repository. Refusing to answer is the correct output for input a
+  scanner cannot model, and it is narrow: a bracketed IPv6 `[::1]:18191`, a `unix/…` socket and a
+  brace inside a quoted string are all accepted, each with a test that says so.
+  **The claim that had to be corrected as well as the code:** the previous entry here said one
+  model was read by *every* assertion, and five awk one-liners still ended a block at a closing
+  brace in column 0. One of them guarded a security property — the `X-Forwarded-For` overwrite —
+  and passed on a file that deleted the header from the gated block and carried it in an unrelated
+  one. Rather than narrow the sentence, the five were retired: the file now contains exactly one
+  `awk` invocation and no pattern that reads a column. The suite goes 46 → 82 cases, of which the
+  last twenty-two exist to keep it honest: fifteen fixtures the scan must call out, one it must
+  **not** (so it cannot pass by calling everything a leak), six losing tuples fed to the verdict
+  functions, and a section that copies the real `infra/edge/` to a scratch directory, mutates the
+  copy's Caddyfile and re-runs **this whole suite** as a child — which is the only thing that can
+  catch a section that stopped feeding the scan's numbers to its own comparisons, and which
+  additionally checks that each mutation actually changed the file, because a fixture that
+  silently does nothing is the same defect as a gate that reads nothing.
 - **`apply.sh` validates under the privilege wrapper.** It `$SUDO`s cp, install and systemctl — it
   assumes it is not run as root — but ran `caddy validate` bare, and the status site imports an
   allow-list file whose documented and actual mode is `0640 root:caddy`. An unprivileged validate

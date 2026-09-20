@@ -190,10 +190,275 @@ echo "== the committed Caddyfile's shape (viafrei #94) =="
 # tenant's owner, 2026-09-19: the product stays public, the operational surface
 # does not). Files only — no caddy, no host, no network.
 
+# THE SCAN. One model, read by every assertion in sections 12, 14 and 15 —
+# there is no second scanner left in this file, and that is load-bearing rather
+# than tidy: this section was four hand-rolled awk scanners through round 4 and
+# five through round 5, and the ones nobody was looking at were the ones still
+# wrong. `caddy_scan` is defined here, before the first assertion that uses it,
+# and every number below comes out of this one call. (Section 17 invokes awk
+# once more — to BUILD a mutant Caddyfile, not to read one. It is the only
+# other awk in the file, and it answers no question about the config.)
+#
+# ROUND 6 — WHY IT IS A TOKENISER AND NOT A CHARACTER COUNT. Rounds 4 and 5
+# counted brace CHARACTERS per line. Caddy opens a block only on a TOKEN whose
+# whole text is `{`; a brace inside a larger token is ordinary text to it. So
+# one unquoted token carrying a brace desynchronised the two models by a level
+# and carried the gate latch across a boundary Caddy had already crossed.
+# Measured on caddy v2.11.4, all three "Valid configuration", all three at
+# 69 passed / 0 failed with `/healthz` reaching the dashboard from any address
+# and the gate printing "2 of 2":
+#
+#     header X-Pad {pad     …     header X-Pad2 }pad        (a padding pair)
+#     the same, plus `} dash.viafrei.de {` reopening a site on one line
+#     respond /a "pad \n { pad \n " 200                     (a quoted token
+#                                                            spanning LINES,
+#                                                            which no per-line
+#                                                            sanitiser can pair)
+#
+# So the line is tokenised the way Caddy tokenises it:
+#   * whitespace separates tokens; `#` starts a comment only at a token start;
+#   * a `"` or a backtick at a token start opens a quoted token, which MAY RUN
+#     PAST THE END OF THE LINE — the `inq` flag is carried between lines, and
+#     `\"` does not close it. Everything inside is text, braces included;
+#   * ONLY a token whose entire text is `{` or `}` moves depth, and it moves it
+#     THERE AND THEN, in token order — which is why `} dash.viafrei.de {`
+#     closes one site and opens another on one line, instead of netting to zero
+#     the way a per-line count did;
+#   * a token that CONTAINS a brace and is not one of those two is examined: if
+#     its braces balance it is a placeholder (`{host}`, `{remote_host}`,
+#     `127.0.0.1:{$PORT}`) and moves nothing; if they do NOT balance it is
+#     `{pad`, and the file is DECLINED. Refusing to answer is the right output
+#     for input this scanner cannot model — much better than a confident 69/0
+#     on a file with a public hole. An unterminated quoted token at EOF is
+#     declined for the same reason.
+#
+# That is one rule covering all three spellings and the fourth nobody thought
+# of, instead of a fourth refusal pattern bolted on — which is the move this
+# file has made three rounds running.
+#
+# HANDLED, each because Caddy behaves this way: indentation (ignored entirely —
+# a closing brace with one extra tab is "Valid configuration" on v2.11.4); a
+# quoted or backtick-quoted token, on one line or several; a comment tail;
+# a site reopened on the same line it closed; braces that do not balance at
+# EOF (reported, not guessed at).
+# REFUSED rather than reasoned about, each narrow, each with a message naming
+# the offending token:
+#   * a brace inside a token that does not balance, and an unterminated quote;
+#   * an upstream that is not a literal address. All of these validate on
+#     v2.11.4 and route wherever they resolve, without the digits ever
+#     appearing: `127.0.0.1:{http.request.header.X-Up}` (the CALLER picks the
+#     port, per request), `{$ENV}`, `dynamic srv`, and a port RANGE
+#     (`:18189-18191` is three upstreams). A literal is
+#     `[scheme://]host[:port]`, a bracketed IPv6 `[::1]:18191`, or a
+#     `unix/…` socket — the last two are valid Caddy and round 5 refused them
+#     while blaming a placeholder that was not there;
+#   * a heredoc (`<<`), whose body a scanner reads as configuration;
+#   * an `import` of anything but the allow-list file, whose contents are not
+#     in this repository and cannot be read by any rule here.
+# DELIBERATELY NOT HANDLED, and the reason:
+#   * the port is matched on the RAW line, never on a token, so no tokeniser
+#     bug and no sanitiser can hide a mention — `reverse_proxy "127.0.0.1:18190"`
+#     is quoted and still counts, and so does a mention inside a multi-line
+#     string. The price is that a comment TAIL naming 18190 outside the gate
+#     goes red. That is the safe direction of wrong.
+#   * FULL-LINE comments are still skipped for the port, because this file's
+#     own prose names the port, including the paragraph you are reading. That
+#     skip is the one hole left in the port rule and it is bounded: a comment
+#     cannot route traffic.
+#
+# NOT written as `awk … | { read … }`: a pipeline runs its last stage in a
+# SUBSHELL, so ok/bad would print their line and lose the counter increment —
+# a red tick and exit 0. That is this file's own subject matter, from the
+# shell side.
+caddy_scan() { # caddy_scan <file> -> the 25 fields read by `read -r` below
+    awk '
+        # ---- the tokeniser: tk[1..ntok], tq[i]=1 if the token was quoted ----
+        function tokenise(line,   i, c, L, start) {
+            ntok = 0
+            i = 1
+            L = length(line)
+            while (i <= L) {
+                c = substr(line, i, 1)
+                if (inq) {                       # a quoted token from an earlier line
+                    while (i <= L) {
+                        c = substr(line, i, 1)
+                        if (c == "\\" && i < L) { i += 2; continue }
+                        if (c == qch) { inq = 0; i++; break }
+                        i++
+                    }
+                    if (inq) return              # the whole line is inside the quote
+                    ntok++; tk[ntok] = ""; tq[ntok] = 1
+                    continue
+                }
+                if (c == " " || c == "\t") { i++; continue }
+                if (c == "#") return             # a comment tail is not configuration
+                if (c == "\"" || c == "`") {
+                    qch = c; inq = 1; i++
+                    while (i <= L) {
+                        c = substr(line, i, 1)
+                        if (c == "\\" && i < L) { i += 2; continue }
+                        if (c == qch) { inq = 0; i++; break }
+                        i++
+                    }
+                    ntok++; tk[ntok] = ""; tq[ntok] = 1
+                    if (inq) return              # unterminated: continues on the next line
+                    continue
+                }
+                start = i
+                while (i <= L) {
+                    c = substr(line, i, 1)
+                    if (c == " " || c == "\t") break
+                    i++
+                }
+                ntok++; tk[ntok] = substr(line, start, i - start); tq[ntok] = 0
+            }
+        }
+        # 1 = a standalone `{`, 2 = a standalone `}`, 3 = a brace inside a token
+        # that does not balance, 0 = anything else (a placeholder included)
+        function brace(t,   i, c, d) {
+            if (t == "{") return 1
+            if (t == "}") return 2
+            d = 0
+            for (i = 1; i <= length(t); i++) {
+                c = substr(t, i, 1)
+                if (c == "{") d++
+                else if (c == "}") { d--; if (d < 0) return 3 }
+            }
+            return (d == 0) ? 0 : 3
+        }
+        function literal(t) {
+            if (t ~ "^unix/") return 1                                     # unix//run/x.sock
+            if (t ~ "^([A-Za-z0-9+.-]+://)?\\[[0-9A-Fa-f:.]+\\](:[0-9]+)?$") return 1   # [::1]:18191
+            return (t ~ "^([A-Za-z0-9+.-]+://)?[A-Za-z0-9._-]+(:[0-9]+)?$")
+        }
+        function matcher(i) { return (!tq[i] && (tk[i] ~ "^[/@]" || tk[i] == "*")) }
+        BEGIN { depth = 0; badtoken = "-"; badbrace = "-" }
+        {
+            raw = $0
+            wasq = inq                     # was this line opened inside a string?
+            tokenise(raw)
+            d1 = (ntok >= 1 && !tq[1]) ? tk[1] : ""
+
+            # ---- directives, read from tokens, against the CURRENT latches ----
+            if (d1 == "import") {
+                imports++
+                if (!(ntok == 2 && tk[2] == "/etc/caddy/viafrei-status-allow.conf")) badimport++
+                else if (site && depth == 1) imp = 1
+            }
+            doorline = 0
+            if (d1 == "respond" && ntok >= 2 && !matcher(2)) {
+                for (i = 2; i <= ntok; i++) if (!tq[i] && tk[i] ~ "^[45][0-9][0-9]$") doorline = 1
+            }
+            if (site && fb && doorline) deny = 1
+            if (inblk && !site && doorline) out_deny++
+            for (i = 1; i <= ntok; i++) {
+                if (tq[i]) continue
+                if (tk[i] == "remote_ip" && inblk && !site) out_remote++
+                if (tk[i] == "@allowed"  && inblk && !site) fork_seen = 1
+                if (index(tk[i], "<<") > 0) heredoc++
+                if (tk[i] ~ ":[0-9]+-[0-9]+") range++
+            }
+            if (d1 == "dynamic") { nonliteral++; if (badtoken == "-") badtoken = tk[1] }
+            if (d1 == "reverse_proxy" || d1 == "to") {
+                for (i = 2; i <= ntok; i++) {
+                    if (!tq[i] && (tk[i] == "{" || matcher(i))) continue
+                    if (tq[i] || !literal(tk[i])) {
+                        nonliteral++
+                        if (badtoken == "-") badtoken = tq[i] ? "<a quoted upstream>" : tk[i]
+                        continue
+                    }
+                    if (site       && tk[i] == "127.0.0.1:18190")       status_proxy = 1
+                    if (landing    && tk[i] == "127.0.0.1:18180")       pub_landing  = 1
+                    if (mcp        && tk[i] == "127.0.0.1:18187")       mcp_rp       = 1
+                    if (beacon     && tk[i] == "https://127.0.0.1:18443") pub_beacon = 1
+                }
+            }
+            if (mcp && d1 == "flush_interval" && ntok == 2 && tk[2] == "-1") mcp_fl = 1
+            if (site && d1 == "header_up" && ntok == 3 && tk[2] == "X-Forwarded-For" && tk[3] == "{remote_host}") xff = 1
+
+            # ---- the port, from the RAW line, minus full-line comments ----
+            if (raw !~ /^[[:space:]]*#/ && raw ~ /18190/) { tot++; if (site && ga) inside++ }
+
+            # ---- structure, token by token, in order ----
+            hdr = ""
+            for (i = 1; i <= ntok; i++) {
+                if (tq[i]) { hdr = (hdr == "" ? "\"\"" : hdr " \"\""); continue }
+                b = brace(tk[i])
+                if (b == 3) { tokbrace++; if (badbrace == "-") badbrace = tk[i]; continue }
+                if (b == 1) {
+                    if (depth == 0) {
+                        site    = (hdr == "status.viafrei.de")
+                        landing = (hdr == "viafrei.de, www.viafrei.de")
+                        mcp     = (hdr == "mcp.viafrei.de")
+                        beacon  = (hdr == "beaconfolio.com, www.beaconfolio.com")
+                        inblk = 1; fork_seen = 0; fork_fb = 0; ga = 0; fb = 0
+                    } else {
+                        if (site && depth == 1 && hdr == "handle @allowed") { ga = 1; gseen = 1; gad = depth }
+                        if (site && depth == 1 && hdr == "handle")          { fb = 1; fbd = depth }
+                        if (inblk && !site && depth == 1 && hdr == "handle") fork_fb = 1
+                    }
+                    depth++; hdr = ""; continue
+                }
+                if (b == 2) {
+                    depth--
+                    if (depth < 0) { neg = 1; depth = 0 }
+                    if (ga && depth <= gad) ga = 0
+                    if (fb && depth <= fbd) fb = 0
+                    if (depth == 0) {
+                        if (inblk && fork_seen) { forks++; if (!fork_fb) forkbad++ }
+                        inblk = 0; site = 0; landing = 0; mcp = 0; beacon = 0
+                        ga = 0; fb = 0; fork_seen = 0; fork_fb = 0
+                    }
+                    hdr = ""; continue
+                }
+                hdr = (hdr == "" ? tk[i] : hdr " " tk[i])
+            }
+        }
+        END { print (tot+0), (inside+0), (imp+0), (gseen+0), (deny+0), \
+                    (range+0), (heredoc+0), (imports+0), (badimport+0), \
+                    ((neg == 0 && depth == 0) ? 1 : 0), (nonliteral+0), \
+                    (out_remote+0), (out_deny+0), (forks+0), (forkbad+0), \
+                    (tokbrace+0), (inq ? 1 : 0), (status_proxy+0), (xff+0), \
+                    (pub_landing+0), ((mcp_rp && mcp_fl) ? 1 : 0), (pub_beacon+0), \
+                    badtoken, badbrace, 25 }' "$1"
+}
+
+# THE VERDICTS, as FUNCTIONS, and that is half of the vacuity problem. Round 4
+# proved the SCAN could see a bad file; it could not prove the COMPARISON could
+# reject one, because an assertion written inline is only ever tried against
+# the one file in front of it — neutered to `[ 1 = 1 ]` it would pass forever.
+# Named, they can be handed a losing tuple, and section 16 does that. Section
+# 17 then closes the last gap: that section 14 actually feeds the scan's
+# numbers INTO them, which `contained 1 1` hardcoded would satisfy just as well.
+contained() { # contained <total> <inside> — every route to the port is gated
+    [ "$1" -ge 1 ] && [ "$1" = "$2" ]
+}
+door() {      # door <imp> <gate> <deny> — the block positively refuses
+    [ "$1" = 1 ] && [ "$2" = 1 ] && [ "$3" = 1 ]
+}
+none() {      # none <count> — the "refused on sight" verdicts
+    [ "$1" = 0 ]
+}
+present() {   # present <flag> — a route that must still be there
+    [ "$1" = 1 ]
+}
+
+read -r gate_tot gate_inside s_imp s_gate s_deny s_range s_heredoc s_imports \
+        s_badimport s_balanced s_nonliteral s_remote s_outdeny s_forks s_forkbad \
+        s_tokbrace s_openquote s_statusproxy s_xff s_landing s_mcp s_beacon \
+        s_badtoken s_badbrace s_nfields \
+    <<< "$(caddy_scan "$SRC")"
+# 25 positional fields is a lot to keep in step, so the scan says how many it
+# wrote and this line checks it. A field added in the middle without updating
+# the reader would otherwise shift every variable after it silently.
+[ "${s_nfields:-}" = 25 ] \
+    && ok "the scan wrote all 25 fields the reader expects" \
+    || bad "caddy_scan wrote a different number of fields (${s_nfields:-none}): every variable after the gap is shifted"
+
 # 12. the status route exists and points at the registered tenant port
 grep -q '^status\.viafrei\.de {$' "$SRC" \
     && ok "the status.viafrei.de site block exists" || bad "no status.viafrei.de site block"
-awk '/^status\.viafrei\.de \{$/{f=1} f&&/reverse_proxy 127\.0\.0\.1:18190/{a=1} /^\}$/{f=0} END{exit !a}' "$SRC" \
+present "$s_statusproxy" \
     && ok "it proxies the viafrei tenant's registered 18190" || bad "the status block does not proxy 127.0.0.1:18190"
 grep -q '18190' "$HERE/ports.md" \
     && ok "18190 is registered in ports.md" || bad "18190 is not in the port registry"
@@ -234,177 +499,7 @@ grep -q 'must exist BEFORE the first apply' "$SRC" \
 
 # 14. the restriction is SCOPED — present in the status block, absent
 # everywhere else — and the status block's door is PROVED rather than inferred.
-#
-# ONE SCAN. Until round 5 this section was FOUR hand-rolled awk scanners, and
-# three of them decided where a block ENDED by looking at the indentation
-# COLUMN of its closing brace. Caddy does not care about indentation: measured
-# against caddy v2.11.4 on the edge host, 2026-09-21, a site block whose
-# closing brace carries one leading tab is "Valid configuration". Round 4
-# retired the column rule in the containment count and in the triple and left
-# it standing in `scoped_count` and in the fork check — so indenting the status
-# block's own closing brace made every "outside the status block" rule go blind
-# to everything after that point, and a `respond 402` door or a `remote_ip`
-# restriction on a later site passed at 59/0 with this section printing that
-# neither existed. Four copies is how three of them stayed wrong for three
-# rounds. There is now one model, and these assertions read its numbers.
-#
-# WHAT THE MODEL IS: brace DEPTH. Every line contributes (count of `{`) minus
-# (count of `}`), and a block ends when the depth returns to the depth it
-# opened at. Nothing anywhere reads a column.
-#
-# Both characters are counted on every line, and the reason is NOT the
-# single-line form `handle /x { … }`: round 3's rationale claimed Caddy reads
-# that, and it does not — v2.11.4 refuses it with "Unexpected next token after
-# '{' on same line", so the one-line route it narrated as an exploit was never
-# installable. The real reasons are that an ordinary line carries BALANCED
-# braces which must cancel instead of opening a block (`header_up Host {host}`
-# is the commonest line in this file), and that this guard reads files Caddy
-# has not accepted yet and must not produce a confident number for one.
-#
-# HANDLED, and each because Caddy behaves this way:
-#   * indentation: ignored entirely, by anything but the eye;
-#   * `{`/`}` inside a "double-quoted" or backtick-quoted token: Caddy reads
-#     those as text, so they are removed before the braces are counted;
-#   * a `# comment tail`: removed before counting, same reason;
-#   * braces that do not balance: NOT guessed at — the scan reports it and the
-#     first assertion below is red. A depth model on an unbalanced file is
-#     arithmetic about nothing.
-# REFUSED rather than reasoned about, each a narrow restriction on a feature
-# this file does not use, each with a message that says why:
-#   * an upstream whose port is not a LITERAL. All of these validate on
-#     v2.11.4 (measured, same session) and route to the dashboard without the
-#     digits 18190 appearing anywhere in the file:
-#         reverse_proxy /ops* 127.0.0.1:{http.request.header.X-Up}
-#         reverse_proxy /ops* 127.0.0.1:{$EDGE_UP_PORT}
-#         reverse_proxy /ops* { dynamic srv _ops._tcp.example }
-#     The first is the worst of them: the port is chosen by the CALLER, at
-#     request time, from a header. No rule that reads this file can know what
-#     an upstream resolves to, so a non-literal upstream is declined, not
-#     analysed.
-#   * a port RANGE (`127.0.0.1:18189-18191` is three upstreams, one of them
-#     18190, and the literal never appears);
-#   * a heredoc (`<<`), whose body is content a brace counter reads as config;
-#   * an `import` of anything but the allow-list file, whose contents are not
-#     in this repository and so cannot be read by any rule here.
-# DELIBERATELY NOT HANDLED, and the reason:
-#   * the port is matched on the RAW line, never on the sanitised copy, so no
-#     sanitiser can hide a mention — `reverse_proxy "127.0.0.1:18190"` is
-#     quoted and still counts. The price is that a comment TAIL naming 18190
-#     outside the gate goes red. That is the safe direction of wrong.
-#   * FULL-LINE comments are still skipped for the port, because this file's
-#     own prose names the port, including the paragraph you are reading. That
-#     skip is the one hole left in the port rule and it is bounded: a comment
-#     cannot route traffic.
-#
-# NOT written as `awk … | { read … }`: a pipeline runs its last stage in a
-# SUBSHELL, so ok/bad would print their line and lose the counter increment —
-# a red tick and exit 0. That is this file's own subject matter, from the
-# shell side.
-caddy_scan() { # caddy_scan <file> -> the 15 numbers read by `read -r` below
-    awk '
-        function clean(s,   t) {           # a copy safe to count braces in
-            t = s
-            gsub(/"[^"]*"/, " ", t)        # quoted tokens are text to Caddy
-            gsub(/`[^`]*`/, " ", t)
-            if (t ~ /^[[:space:]]*#/) t = ""
-            sub(/[[:space:]]#.*$/, "", t)  # and so is a comment tail
-            return t
-        }
-        BEGIN { depth = 0 }
-        {
-            raw = $0
-            bl  = clean(raw)
-            dc  = raw; sub(/[[:space:]]#.*$/, "", dc)   # quotes KEPT: see below
-            opens  = gsub(/\{/, "{", bl)   # gsub returns the COUNT; bl is unchanged
-            closes = gsub(/\}/, "}", bl)
-            pre  = depth
-            post = pre + opens - closes
-            if (post < 0) { neg = 1; post = 0 }
-
-            if (pre == 0 && opens > 0) {   # a site block opens at depth 0
-                site = (bl ~ /^status\.viafrei\.de \{$/)
-                inblk = 1; fork_seen = 0; fork_fb = 0
-                ga = 0; fb = 0
-            }
-            if (site && pre == 1) {        # the site block s own top level
-                if (bl ~ /^[[:space:]]*import[[:space:]]+\/etc\/caddy\/viafrei-status-allow\.conf[[:space:]]*$/) imp = 1
-                if (bl ~ /^[[:space:]]*handle[[:space:]]+@allowed[[:space:]]*\{/) { ga = 1; gseen = 1; gad = pre }
-                if (bl ~ /^[[:space:]]*handle[[:space:]]*\{/)                     { fb = 1; fbd = pre }
-            }
-            # the fallback s BODY, at any depth inside it. `respond "Forbidden"
-            # 403` is a legitimate refusal: clean() has already dropped the
-            # quoted body, so the CODE is what is matched.
-            if (site && fb && bl ~ /respond[[:space:]]+[45][0-9][0-9]([[:space:]]|$)/) deny = 1
-
-            # OUTSIDE the status block. remote_ip and a bare 4xx/5xx refusal
-            # belong to the one site with a door; everywhere else the product
-            # is public and must stay that way.
-            if (inblk && !site) {
-                if (bl ~ /remote_ip/) out_remote++
-                if (bl ~ /respond[[:space:]]+[45][0-9][0-9]([[:space:]]|$)/) out_deny++
-                if (bl ~ /@allowed/) fork_seen = 1
-                if (pre == 1 && bl ~ /^[[:space:]]*handle[[:space:]]*\{/) fork_fb = 1
-            }
-
-            if (raw !~ /^[[:space:]]*#/) {                      # RAW, never cleaned
-                if (raw ~ /18190/) { tot++; if (site && ga) inside++ }
-                if (raw ~ /:[0-9]+-[0-9]+/) range++
-                if (raw ~ /<</) heredoc++
-                if (raw ~ /^[[:space:]]*import[[:space:]]/) {
-                    imports++
-                    if (raw !~ /^[[:space:]]*import[[:space:]]+\/etc\/caddy\/viafrei-status-allow\.conf[[:space:]]*$/) badimport++
-                }
-                # UPSTREAMS, from the comment-stripped but STILL QUOTED line:
-                # clean() would eat `reverse_proxy "127.0.0.1:{$X}"` whole.
-                # Every argument of reverse_proxy / to that is not a matcher
-                # must be a literal [scheme://]host[:port] and nothing else.
-                if (dc ~ /^[[:space:]]*(reverse_proxy|to)[[:space:]]/) {
-                    n = split(dc, tk, /[[:space:]]+/)
-                    for (i = 1; i <= n; i++) {
-                        t = tk[i]
-                        if (t == "" || t == "reverse_proxy" || t == "to" || t == "{") continue
-                        if (t ~ /^[\/@*]/) continue                  # a matcher, not an upstream
-                        if (t !~ "^([A-Za-z0-9+.-]+://)?[A-Za-z0-9._-]+(:[0-9]+)?$") nonliteral++
-                    }
-                }
-                if (dc ~ /^[[:space:]]*dynamic[[:space:]]/) nonliteral++
-            }
-
-            depth = post                   # close what this line closed
-            if (depth <= 0) {
-                if (inblk && fork_seen) { forks++; if (!fork_fb) forkbad++ }
-                inblk = 0; fork_seen = 0; fork_fb = 0
-                site = 0; ga = 0; fb = 0
-            }
-            if (ga && depth <= gad) ga = 0
-            if (fb && depth <= fbd) fb = 0
-        }
-        END { print (tot+0), (inside+0), (imp+0), (gseen+0), (deny+0), \
-                    (range+0), (heredoc+0), (imports+0), (badimport+0), \
-                    ((neg == 0 && depth == 0) ? 1 : 0), (nonliteral+0), \
-                    (out_remote+0), (out_deny+0), (forks+0), (forkbad+0) }' "$1"
-}
-
-# THE VERDICTS, as FUNCTIONS, and that is the round-5 half of the vacuity
-# problem. Round 4 proved the SCAN could see a bad file; it could not prove the
-# COMPARISON could reject one, because an assertion written inline is only ever
-# tried against the one file in front of it — neutered to `[ 1 = 1 ]` it would
-# pass forever and section 16 would stay green. Named, they can be handed a
-# losing tuple, and section 16 does exactly that.
-contained() { # contained <total> <inside> — every route to the port is gated
-    [ "$1" -ge 1 ] && [ "$1" = "$2" ]
-}
-door() {      # door <imp> <gate> <deny> — the block positively refuses
-    [ "$1" = 1 ] && [ "$2" = 1 ] && [ "$3" = 1 ]
-}
-none() {      # none <count> — the "refused on sight" verdicts
-    [ "$1" = 0 ]
-}
-
-read -r gate_tot gate_inside s_imp s_gate s_deny s_range s_heredoc s_imports \
-        s_badimport s_balanced s_nonliteral s_remote s_outdeny s_forks s_forkbad \
-    <<< "$(caddy_scan "$SRC")"
-
+# Every number below comes from the ONE caddy_scan above.
 # The depth model's own precondition, first: on an unbalanced file every number
 # after this line is arithmetic about nothing.
 [ "$s_balanced" = 1 ] \
@@ -433,8 +528,8 @@ none "$s_outdeny" \
     && ok "and neither does a 4xx/5xx refusal, quoted body or not" \
     || bad "a respond 4xx/5xx appears outside the status site block ($s_outdeny line(s))"
 none "$s_nonliteral" \
-    && ok "every reverse_proxy upstream is a literal host:port (a placeholder, {\$ENV} or dynamic upstream is declined, not analysed)" \
-    || bad "$s_nonliteral upstream(s) are NOT literal: a request-time placeholder, {\$ENV} or dynamic upstream routes wherever it resolves — 127.0.0.1:{http.request.header.X-Up} lets the CALLER pick the port — and nothing that reads this file can know where. The gate declines to certify one"
+    && ok "every reverse_proxy upstream is a literal address ([scheme://]host[:port], [::1]:port or unix/…)" \
+    || bad "$s_nonliteral upstream(s) are not a literal address (first: $s_badtoken). A request-time placeholder, {\$ENV}, a dynamic upstream or a port range routes wherever it resolves — 127.0.0.1:{http.request.header.X-Up} lets the CALLER pick the port — and nothing that reads this file can know where. The gate declines to certify it. Accepted literals: [scheme://]host[:port], a bracketed IPv6 such as [::1]:18191, and unix/… sockets"
 none "$s_range" \
     && ok "no upstream carries a port range (the gate cannot expand one, so it refuses to certify one)" \
     || bad "an upstream carries a port RANGE ($s_range line(s)): 127.0.0.1:18189-18191 is three upstreams, one of them 18190, and the literal never appears — the gate declines to certify a range"
@@ -451,24 +546,45 @@ door "$s_imp" "$s_gate" "$s_deny" \
 # longer proxies the dashboard at all, which is a change nobody should make
 # silently, and a rule that passes on zero is the class this file keeps
 # rediscovering.
+none "$s_tokbrace" \
+    && ok "every brace in the file is either a standalone { } token or a balanced placeholder" \
+    || bad "$s_tokbrace token(s) carry a brace that does not balance (first: $s_badbrace): Caddy reads that as text and opens no block, a scanner cannot tell where the block ended, and the gate declines to certify the file rather than guess"
+none "$s_openquote" \
+    && ok "no quoted token is left open at end of file" \
+    || bad "a quoted token is still open at end of file: everything after it is string, not configuration, and the gate declines to certify it"
 contained "$gate_tot" "$gate_inside" \
     && ok "every mention of 18190 in the whole file is inside status.viafrei.de's handle @allowed ($gate_inside of $gate_tot)" \
     || bad "18190 is reachable outside the gate: $gate_inside of $gate_tot mention(s) are inside handle @allowed"
 # The public routes, asserted POSITIVELY: "no matcher anywhere else" would also
 # be true of a file that had lost them.
-awk '/^viafrei\.de, www\.viafrei\.de \{$/{f=1} f&&/reverse_proxy 127\.0\.0\.1:18180/{a=1} f&&/^\}$/{f=0} END{exit !a}' "$SRC" \
+present "$s_landing" \
     && ok "viafrei.de still reverse-proxies 18180, unrestricted" || bad "the viafrei.de block changed"
-awk '/^mcp\.viafrei\.de \{$/{f=1} f&&/reverse_proxy 127\.0\.0\.1:18187/{a=1} f&&/flush_interval -1/{b=1} f&&/^\}$/{f=0} END{exit !(a&&b)}' "$SRC" \
+present "$s_mcp" \
     && ok "mcp.viafrei.de still reverse-proxies 18187 unbuffered, unrestricted" || bad "the mcp.viafrei.de block changed"
-awk '/^beaconfolio\.com, www\.beaconfolio\.com \{$/{f=1} f&&/reverse_proxy https:\/\/127\.0\.0\.1:18443/{a=1} f&&/^\}$/{f=0} END{exit !a}' "$SRC" \
+present "$s_beacon" \
     && ok "and beaconfolio.com is untouched" || bad "the beaconfolio.com block changed"
 
 # 15. X-Forwarded-For is OVERWRITTEN, not appended. Caddy appends by default;
 # the tenant's app trusts the LAST hop when the peer is loopback, so an appended
 # header would let a client choose its own source address for the second layer.
-awk '/^status\.viafrei\.de \{$/{f=1} f&&/header_up X-Forwarded-For \{remote_host\}/{a=1} /^\}$/{f=0} END{exit !a}' "$SRC" \
+# Round 6: this one used to end the status block at a closing brace in column
+# 0 and latch `a` on ANY later line, so a file with the header DELETED from the
+# status block and present in an unrelated block below it printed this tick.
+# A security assertion that passes on a violating file is worse than no
+# assertion, because it is the one people cite. It reads the scan now, and the
+# scan knows which block it is in from the token stream.
+present "$s_xff" \
     && ok "the status block pins header_up X-Forwarded-For {remote_host}" \
     || bad "the status block does not overwrite X-Forwarded-For"
+
+# Sections 16 and 17 are the suite examining ITSELF, and section 17 re-executes
+# this file against mutated copies of the Caddyfile. A child run stops here: it
+# is the subject, not the examiner, and recursing would fork without end.
+if [ -n "${VF_EDGE_CHILD:-}" ]; then
+    echo
+    echo "== apply.sh contract: $PASS passed, $FAIL failed =="
+    if [ "$FAIL" = "0" ]; then exit 0; else exit 1; fi
+fi
 
 echo
 echo "== 16. the gate can fail: the scan AND the verdicts, on inputs built to break them =="
@@ -487,6 +603,8 @@ echo "== 16. the gate can fail: the scan AND the verdicts, on inputs built to br
 vac_scan() { # vac_scan <file>; sets v_* in THIS shell -- no pipeline, no subshell
     read -r v_tot v_inside v_imp v_gate v_deny v_range v_heredoc v_imports \
             v_badimport v_balanced v_nonliteral v_remote v_outdeny v_forks v_forkbad \
+            v_tokbrace v_openquote v_statusproxy v_xff v_landing v_mcp v_beacon \
+            v_badtoken v_badbrace v_nfields \
         <<< "$(caddy_scan "$1")"
 }
 
@@ -650,6 +768,119 @@ vac_scan "$TMP/vac-nested"
     && ok "(i) a nested gate stays gated (2 of 2), a quoted body is still a refusal, and a scheme is still literal — the scan is not merely pessimistic" \
     || bad "(i) a legitimate nested gate was misread: $v_inside of $v_tot inside, deny=$v_deny nonliteral=$v_nonliteral"
 
+# (k) THE ROUND-6 BLOCKER: an unquoted token CARRYING a brace. Caddy opens a
+# block only on a token whose whole text is `{`, so `{pad` is text to it and
+# `header X-Pad2 }pad` puts a character counter back in step -- while the gate
+# latch has been carried across a boundary Caddy already crossed. This file is
+# "Valid configuration" on v2.11.4 and served /healthz to the internet at 69/0.
+cat > "$TMP/vac-token" <<'VACEOF'
+status.viafrei.de {
+	import /etc/caddy/viafrei-status-allow.conf
+	handle @allowed {
+		header X-Pad {pad
+		reverse_proxy 127.0.0.1:18190
+	}
+	handle /healthz {
+		reverse_proxy 127.0.0.1:18190
+	}
+	header X-Pad2 }pad
+	handle {
+		respond 403
+	}
+}
+VACEOF
+vac_scan "$TMP/vac-token"
+[ "$v_tokbrace" = 2 ] && [ "$v_inside" -lt "$v_tot" ] \
+    && ok "(k) the token-carried braces are refused ($v_tokbrace), AND the healthz route is outside the gate anyway ($v_inside of $v_tot)" \
+    || bad "(k) the token-brace bypass is NOT caught: tokbrace=$v_tokbrace, $v_inside of $v_tot inside the gate"
+
+# (l) the same defect with no bare brace token at all: a quoted token spanning
+# LINES, which no per-line sanitiser can pair. The braces inside it are string
+# content and must move nothing; the structure around it must survive.
+cat > "$TMP/vac-mlquote" <<'VACEOF'
+status.viafrei.de {
+	import /etc/caddy/viafrei-status-allow.conf
+	handle @allowed {
+		respond /a "pad
+		{ pad
+		" 200
+		reverse_proxy 127.0.0.1:18190
+	}
+	handle /healthz {
+		reverse_proxy 127.0.0.1:18190
+	}
+	handle {
+		respond 403
+	}
+}
+VACEOF
+vac_scan "$TMP/vac-mlquote"
+[ "$v_balanced" = 1 ] && [ "$v_tokbrace" = 0 ] && [ "$v_tot" = 2 ] && [ "$v_inside" = 1 ] \
+    && ok "(l) a brace inside a MULTI-LINE quoted token moves nothing, and the healthz route is still outside the gate (1 of 2)" \
+    || bad "(l) the multi-line quote desynchronised the model: balanced=$v_balanced tokbrace=$v_tokbrace, $v_inside of $v_tot inside"
+
+# (m) a quoted token nobody closed. Everything after it is string, not
+# configuration, and the scan must say so rather than score it.
+cat > "$TMP/vac-openquote" <<'VACEOF'
+status.viafrei.de {
+	respond /a "never closed
+	handle {
+		respond 403
+	}
+}
+VACEOF
+vac_scan "$TMP/vac-openquote"
+[ "$v_openquote" = 1 ] \
+    && ok "(m) an unterminated quoted token is reported, not scored" \
+    || bad "(m) an unterminated quote was scored as configuration"
+
+# (n) a site CLOSED AND REOPENED on one line. A per-line count nets this to
+# zero and never notices the new block; tokens in order do notice, which is
+# why depth moves at the token and not at the end of the line.
+cat > "$TMP/vac-reopen" <<'VACEOF'
+status.viafrei.de {
+	import /etc/caddy/viafrei-status-allow.conf
+	handle @allowed {
+		reverse_proxy 127.0.0.1:18190
+	}
+	handle {
+		respond 403
+	}
+} dash.viafrei.de {
+	reverse_proxy 127.0.0.1:18190
+}
+VACEOF
+vac_scan "$TMP/vac-reopen"
+[ "$v_tot" = 2 ] && [ "$v_inside" = 1 ] && [ "$v_balanced" = 1 ] \
+    && ok "(n) a site reopened on the line that closed the last one is a SECOND block: 1 of 2, not 2 of 2" \
+    || bad "(n) the one-line site reopen was misread: $v_inside of $v_tot inside, balanced=$v_balanced"
+
+# (o) and the legitimate shapes the round-6 refusals must NOT bite: a brace
+# plainly inside a string, a bracketed IPv6 literal, a unix socket. "Decline to
+# certify" is only defensible while it declines things nobody writes.
+cat > "$TMP/vac-legit" <<'VACEOF'
+mcp.viafrei.de {
+	respond /motd "welcome
+	{ not a block
+	" 200
+	reverse_proxy 127.0.0.1:18187 {
+		flush_interval -1
+	}
+}
+
+other.example {
+	reverse_proxy [::1]:18191
+}
+
+third.example {
+	reverse_proxy unix//run/x.sock
+}
+VACEOF
+vac_scan "$TMP/vac-legit"
+[ "$v_tokbrace" = 0 ] && [ "$v_openquote" = 0 ] && [ "$v_nonliteral" = 0 ] && [ "$v_balanced" = 1 ] && [ "$v_mcp" = 1 ] \
+    && ok "(o) a quoted multi-line brace, [::1]:18191 and unix//run/x.sock are all accepted — the refusals are narrow" \
+    || bad "(o) a legitimate Caddyfile was refused: tokbrace=$v_tokbrace openquote=$v_openquote nonliteral=$v_nonliteral balanced=$v_balanced mcp=$v_mcp"
+
 # (j) THE SECOND HALF, and the one round 4 was missing: the VERDICTS. Every
 # tick in section 14 is a comparison, and until these six lines existed no test
 # could tell a comparison that judges from one that says yes. Neuter
@@ -673,6 +904,77 @@ door 1 1 0 \
 none 0 && none 1 \
     && bad "(j) the refusal verdict ACCEPTS 1: every 'refused on sight' rule above is decoration" \
     || ok "(j) the refusal verdicts accept 0 and reject 1"
+
+echo
+echo "== 17. the WIRING: the whole suite, run against a mutated copy of the real file =="
+# THE LAST GAP, and it is a real one. Section 14 reads numbers out of
+# caddy_scan and hands them to contained() / door() / none(). Section 16 proves
+# the scan discriminates and proves the verdicts reject a losing tuple. Neither
+# proves that section 14 passes the FORMER to the LATTER: `contained 1 1`
+# written literally would satisfy every assertion in this file and still print
+# 71 passed, 0 failed on a Caddyfile with a public route to the dashboard.
+#
+# So: copy the real infra/edge/ into a scratch directory, mutate the COPY's
+# Caddyfile, and run this whole suite there as a child. The mutation is a
+# routing change a reviewer would care about; the child must FAIL. And the
+# unmutated copy must PASS -- without that control, "the child failed" would be
+# satisfied by a child that always fails, which is the same vacuity one level up.
+e17="$TMP/e17"
+mkdir -p "$e17"
+cp "$HERE/apply.sh" "$HERE/apply.test.sh" "$HERE/ports.md" "$e17/"
+child_rc() { # child_rc -> the suite's exit code in $e17, against $e17/Caddyfile
+    local rc=0
+    ( cd "$e17" && VF_EDGE_CHILD=1 bash ./apply.test.sh ) >/dev/null 2>&1 || rc=$?
+    echo "$rc"
+}
+# EVERY mutation is checked for having HAPPENED. The first draft of this
+# section deleted the fallback's refusal with `grep -v 'respond 403'`, which
+# matches nothing in a file whose refusal is spelled `respond "Forbidden" 403`
+# -- a legitimate variant this suite green-lights elsewhere. The mutation
+# became a no-op, the child passed, and the case reported that a bad file had
+# been accepted. A fixture that silently does nothing is the same defect as a
+# gate that reads nothing: it reports about work it never did.
+mutate() { # mutate <desc> <candidate-file> -> 0 only if it differs from $SRC
+    cp "$2" "$e17/Caddyfile"
+    if cmp -s "$SRC" "$e17/Caddyfile"; then
+        bad "$1: the MUTATION CHANGED NOTHING, so this case proves nothing"
+        return 1
+    fi
+    return 0
+}
+
+cp "$SRC" "$e17/Caddyfile"
+[ "$(child_rc)" = 0 ] \
+    && ok "the control passes: an UNMUTATED copy of the real file is green as a child" \
+    || bad "the control FAILS: the child suite is red on the committed Caddyfile, so every mutation below would 'fail' for free"
+
+{ cat "$SRC"; printf '\ndash.example {\n\treverse_proxy 127.0.0.1:18190\n}\n'; } > "$TMP/m17"
+if mutate "a public second route to 18190" "$TMP/m17"; then
+    [ "$(child_rc)" != 0 ] \
+        && ok "a public second route to 18190 fails the suite end to end (containment is WIRED to the scan)" \
+        || bad "a public second route to 18190 passed the whole suite: section 14 is not reading the scan"
+fi
+
+awk '{ print } /handle @allowed \{$/ { print "\t\theader X-Pad {pad" }' "$SRC" > "$TMP/m17"
+if mutate "a token-carried brace" "$TMP/m17"; then
+    [ "$(child_rc)" != 0 ] \
+        && ok "a token-carried brace fails the suite end to end" \
+        || bad "a token-carried brace passed the whole suite: the round-6 bypass is not wired in"
+fi
+
+grep -v 'header_up X-Forwarded-For' "$SRC" > "$TMP/m17"
+if mutate "X-Forwarded-For deleted from the status block" "$TMP/m17"; then
+    [ "$(child_rc)" != 0 ] \
+        && ok "deleting X-Forwarded-For from the status block fails the suite end to end" \
+        || bad "the X-Forwarded-For overwrite is not actually asserted"
+fi
+
+grep -vE 'respond[[:space:]].*[45][0-9][0-9]' "$SRC" > "$TMP/m17"
+if mutate "the fallback's refusal deleted" "$TMP/m17"; then
+    [ "$(child_rc)" != 0 ] \
+        && ok "deleting the fallback's refusal fails the suite end to end (door is WIRED to the scan)" \
+        || bad "a status block whose fallback refuses nobody passed the whole suite"
+fi
 
 echo
 echo "== apply.sh contract: $PASS passed, $FAIL failed =="
