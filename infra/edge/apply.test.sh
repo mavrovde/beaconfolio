@@ -243,8 +243,10 @@ awk '
     END {exit !!bad}' "$SRC" \
     && ok "@allowed outside the status block only routes ($forks such block(s); each has an open fallback)" \
     || bad "a block matches @allowed with no open fallback: it refuses visitors outside the status block"
-[ "$(scoped_count 'respond 403')" = 0 ] \
-    && ok "and neither does the bare 403" || bad "a respond 403 appears outside the status site block"
+# Every spelling of a door, not one: 401, 404, 503 refuse a visitor exactly as
+# 403 does, and a rule naming a single code is a rule a typo walks past.
+[ "$(scoped_count 'respond [45][0-9][0-9]')" = 0 ] \
+    && ok "and neither does a bare 4xx/5xx refusal" || bad "a respond 4xx/5xx appears outside the status site block"
 # THE OTHER DIRECTION, and it was missing until 2026-09-20. Everything above
 # says where a refusal may NOT appear. Nothing said that the status block
 # actually HAS one. Both rules were satisfied by a status block reduced to a
@@ -257,12 +259,29 @@ awk '
 # is `handle { respond 403 }`. Reading the fallback's BODY matters: a `handle {`
 # containing a reverse_proxy would pass a shape check and serve the dashboard
 # to everyone.
+#
+# `fb` MUST be cleared at the fallback's closing brace. Written as a latch that
+# is only ever set, `deny` means "a respond 40x exists somewhere later in this
+# block" rather than "the fallback's body is a refusal" -- and the two blocks
+# simply swapped (matcher-less `handle { reverse_proxy 18190 }` first, then
+# `handle @allowed { respond 403 }`) set all three flags and passed. Caddy takes
+# `handle` blocks in written order and a matcher-less one matches everything,
+# so that file serves the dashboard to the internet while this line prints
+# "its fallback is respond 403" -- a sentence false about the file in front of
+# it, which is the failure this whole assertion exists to prevent.
+#
+# The code is a class, not the literal 403: `respond "Forbidden" 403` is a
+# legitimate refusal and an assertion that calls it a hole would be wrong about
+# Caddy, not strict. Tabs are assumed because `caddy fmt` writes tabs and this
+# file is byte-diffed against the host's copy; a space-indented rewrite fails
+# here first, which is the right place to find out.
 awk '
     /^status\.viafrei\.de \{$/ {f=1; next}
     f && /^\timport \/etc\/caddy\/viafrei-status-allow\.conf$/ {imp=1}
     f && /^\thandle @allowed \{$/ {gate=1}
     f && /^\thandle \{$/ {fb=1; next}
-    f && fb && /^\t\trespond 403$/ {deny=1}
+    f && fb && /^\t\trespond ([^\t]+ )?[45][0-9][0-9]$/ {deny=1}
+    f && fb && /^\t\}$/ {fb=0}
     f && /^\}$/ {f=0}
     END {exit !(imp && gate && deny)}' "$SRC" \
     && ok "the status block imports the list, gates on @allowed, and its fallback is respond 403" \
