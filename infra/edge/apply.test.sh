@@ -255,89 +255,150 @@ awk '
 # internet -- and the suite reported 44 passed, 0 failed. A restriction proved
 # only by the absence of restrictions elsewhere is not proved at all.
 #
-# So assert the door positively, as a triple inside that one block: the address
-# list is imported, the allowed path is a `handle @allowed`, and the fallback
-# is `handle { respond 403 }`. Reading the fallback's BODY matters: a `handle {`
-# containing a reverse_proxy would pass a shape check and serve the dashboard
-# to everyone.
+# So assert the door positively, as a triple: the address list is imported, the
+# allowed path is a `handle @allowed`, and the fallback is `handle { respond
+# 403 }`. Reading the fallback's BODY matters: a `handle {` containing a
+# reverse_proxy would pass a shape check and serve the dashboard to everyone.
 #
-# `fb` MUST be cleared at the fallback's closing brace. Written as a latch that
-# is only ever set, `deny` means "a respond 40x exists somewhere later in this
-# block" rather than "the fallback's body is a refusal" -- and the two blocks
-# simply swapped (matcher-less `handle { reverse_proxy 18190 }` first, then
-# `handle @allowed { respond 403 }`) set all three flags and passed. Caddy takes
-# `handle` blocks in written order and a matcher-less one matches everything,
-# so that file serves the dashboard to the internet while this line prints
-# "its fallback is respond 403" -- a sentence false about the file in front of
-# it, which is the failure this whole assertion exists to prevent.
-#
-# The code is a class, not the literal 403: `respond "Forbidden" 403` is a
-# legitimate refusal and an assertion that calls it a hole would be wrong about
-# Caddy, not strict. Tabs are assumed because `caddy fmt` writes tabs and this
-# file is byte-diffed against the host's copy; a space-indented rewrite fails
-# here first, which is the right place to find out.
-awk '
-    /^status\.viafrei\.de \{$/ {f=1; next}
-    f && /^\timport \/etc\/caddy\/viafrei-status-allow\.conf$/ {imp=1}
-    f && /^\thandle @allowed \{$/ {gate=1}
-    f && /^\thandle \{$/ {fb=1; next}
-    f && fb && /^\t\trespond ([^\t]+ )?[45][0-9][0-9]$/ {deny=1}
-    f && fb && /^\t\}$/ {fb=0}
-    f && /^\}$/ {f=0}
-    END {exit !(imp && gate && deny)}' "$SRC" \
-    && ok "the status block imports the list, gates on @allowed, and its fallback is respond 403" \
-    || bad "the status block does not positively refuse: import + handle @allowed + handle { respond 403 } is not all present"
-
-# NECESSARY IS NOT SUFFICIENT. The triple above is satisfied by a file that
-# ALSO carries a third block -- `handle /healthz { reverse_proxy 18190 }` for an
+# NECESSARY IS NOT SUFFICIENT. The triple is satisfied by a file that ALSO
+# carries a third block -- `handle /healthz { reverse_proxy 18190 }` for an
 # uptime monitor is the shape this will really arrive in -- with the gate and
 # the 403 fallback both intact. Nothing lies in that case, which is what makes
-# it harder than the last one: every sentence the suite prints is true about
-# the file, and the dashboard is still open to the internet.
+# it harder: every sentence the suite prints is true about the file, and the
+# dashboard is still open to the internet. So also assert CONTAINMENT: every
+# route to 18190 must sit inside `handle @allowed`.
 #
-# So assert CONTAINMENT, not presence: every route to 18190 inside this block
-# must sit inside `handle @allowed`. Counted rather than pattern-matched,
-# because the count is also the precondition -- zero routes to 18190 means the
-# block no longer proxies the dashboard at all, which is a change nobody should
-# make silently, and a rule that passes on zero is the class this file keeps
+# Round 3 made THE PORT the subject of containment over the WHOLE file, after
+# the reviewer walked through four doors that each left the suite at 46/0:
+# `localhost:18190`, `http://127.0.0.1:18190`, `reverse_proxy { to …:18190 }`,
+# and a separate `dash.viafrei.de` block a status-scoped rule cannot see by
+# construction. A route to the dashboard must name the port somewhere, whatever
+# words surround it.
+#
+# ROUND 4 -- WHY THIS IS ONE awk AND NOT THREE. Rounds 2 and 3 both decided
+# where a block ENDED by looking at the indentation COLUMN of a closing brace
+# (`/^\t\}$/`). Caddy ignores indentation entirely. One extra tab on the gate's
+# closing brace, which `caddy validate` accepts and `caddy fmt` is not run on
+# the host, left the `ga` latch stuck for the rest of the site block: a
+# `handle /healthz { reverse_proxy 127.0.0.1:18190 }` appended after it was
+# COUNTED AS INSIDE THE GATE, the suite printed "2 of 2" and passed 46/0, and
+# the dashboard was on the public internet. The same column rule cleared the
+# fallback latch `fb` in the triple -- one bug, written twice -- so both now
+# read one model and there is no twin left to forget.
+#
+# The model is BRACE DEPTH. Every line contributes (count of `{`) - (count of
+# `}`); a block ends when depth returns to the depth it opened at. Both
+# characters are counted, so the single-line form `handle /x { … }` opens and
+# closes on the one line, as Caddy reads it.
+#
+# HANDLED, and each because Caddy behaves this way:
+#   * indentation: ignored entirely, by anything but the eye;
+#   * `{`/`}` inside a "double-quoted" or `backtick-quoted` token: Caddy reads
+#     those as text, so they are removed before the braces are counted;
+#   * a `# comment tail`: removed before counting, same reason;
+#   * braces that do not balance: NOT guessed at -- the scan reports it and
+#     the first assertion below is red. A depth model on an unbalanced file
+#     is arithmetic about nothing.
+# REFUSED rather than reasoned about, each a narrow restriction on a feature
+# this file does not use, each with a message saying why:
+#   * a port RANGE (`reverse_proxy 127.0.0.1:18189-18191` is three upstreams,
+#     one of them 18190, and the literal never appears in the file);
+#   * a heredoc (`<<`), whose body is content the depth model would read as
+#     configuration;
+#   * an `import` of anything but the allow-list file, whose contents are not
+#     in this repository and so cannot be read by any file-based rule here.
+# DELIBERATELY NOT HANDLED, and the reason:
+#   * the port is matched on the RAW line, never on the sanitised copy, so no
+#     sanitiser can hide a mention -- `reverse_proxy "127.0.0.1:18190"` is
+#     quoted and still counts. The price is that a comment TAIL naming 18190
+#     outside the gate goes red. That is the safe direction of wrong.
+#   * FULL-LINE comments are still skipped for the port, because this file's
+#     own prose names the port, including the paragraph you are reading. That
+#     skip is the one hole left in the port rule and it is bounded: a comment
+#     cannot route traffic.
+#
+# NOT written as `awk … | { read … }`: a pipeline runs its last stage in a
+# SUBSHELL, so ok/bad would print their line and lose the counter increment --
+# a red tick and exit 0. That is this file's own subject matter, from the
+# shell side.
+caddy_scan() { # caddy_scan <file> -> "tot inside imp gate deny range heredoc imports badimport balanced"
+    awk '
+        function clean(s,   t) {           # a copy safe to count braces in
+            t = s
+            gsub(/"[^"]*"/, " ", t)        # quoted tokens are text to Caddy
+            gsub(/`[^`]*`/, " ", t)
+            if (t ~ /^[[:space:]]*#/) t = ""
+            sub(/[[:space:]]#.*$/, "", t)  # and so is a comment tail
+            return t
+        }
+        BEGIN { depth = 0 }
+        {
+            raw = $0
+            bl  = clean(raw)
+            opens  = gsub(/\{/, "{", bl)   # gsub returns the COUNT; bl is unchanged
+            closes = gsub(/\}/, "}", bl)
+            pre  = depth
+            post = pre + opens - closes
+            if (post < 0) { neg = 1; post = 0 }
+
+            if (pre == 0 && opens > 0) {   # a site block opens at depth 0
+                site = (bl ~ /^status\.viafrei\.de \{$/)
+                ga = 0; fb = 0
+            }
+            if (site && pre == 1) {        # the site block s own top level
+                if (bl ~ /^[[:space:]]*import[[:space:]]+\/etc\/caddy\/viafrei-status-allow\.conf[[:space:]]*$/) imp = 1
+                if (bl ~ /^[[:space:]]*handle[[:space:]]+@allowed[[:space:]]*\{/) { ga = 1; gseen = 1; gad = pre }
+                if (bl ~ /^[[:space:]]*handle[[:space:]]*\{/)                     { fb = 1; fbd = pre }
+            }
+            # the fallback s BODY, at any depth inside it. `respond "Forbidden"
+            # 403` is a legitimate refusal: clean() has already dropped the
+            # quoted body, so the code is what is matched.
+            if (site && fb && bl ~ /respond[[:space:]]+[45][0-9][0-9]([[:space:]]|$)/) deny = 1
+
+            if (raw !~ /^[[:space:]]*#/) {                      # RAW, never cleaned
+                if (raw ~ /18190/) { tot++; if (site && ga) inside++ }
+                if (raw ~ /:[0-9]+-[0-9]+/) range++
+                if (raw ~ /<</) heredoc++
+                if (raw ~ /^[[:space:]]*import[[:space:]]/) {
+                    imports++
+                    if (raw !~ /^[[:space:]]*import[[:space:]]+\/etc\/caddy\/viafrei-status-allow\.conf[[:space:]]*$/) badimport++
+                }
+            }
+
+            depth = post                   # close what this line closed
+            if (depth <= 0)    { site = 0; ga = 0; fb = 0 }
+            if (ga && depth <= gad) ga = 0
+            if (fb && depth <= fbd) fb = 0
+        }
+        END { print (tot+0), (inside+0), (imp+0), (gseen+0), (deny+0), \
+                    (range+0), (heredoc+0), (imports+0), (badimport+0), \
+                    ((neg == 0 && depth == 0) ? 1 : 0) }' "$1"
+}
+
+read -r gate_tot gate_inside s_imp s_gate s_deny s_range s_heredoc s_imports s_badimport s_balanced \
+    <<< "$(caddy_scan "$SRC")"
+
+# The depth model s own precondition, first: on an unbalanced file every number
+# after this line is arithmetic about nothing.
+[ "$s_balanced" = 1 ] \
+    && ok "the file's braces balance, so the depth model has something true to model" \
+    || bad "the Caddyfile's braces do not balance: every containment number below would be meaningless"
+[ "$s_range" = 0 ] \
+    && ok "no upstream carries a port range (the gate cannot expand one, so it refuses to certify one)" \
+    || bad "an upstream carries a port RANGE ($s_range line(s)): 127.0.0.1:18189-18191 is three upstreams, one of them 18190, and the literal never appears — the gate declines to certify a range"
+[ "$s_heredoc" = 0 ] \
+    && ok "no heredoc (<<) in the file (its body would be read as configuration by a brace counter)" \
+    || bad "a heredoc (<<) appears in the Caddyfile: the gate cannot tell its body from configuration and declines to certify it"
+[ "$s_imports" -ge 1 ] && [ "$s_badimport" = 0 ] \
+    && ok "every import is the allow-list file itself ($s_imports import(s)) — an imported file is not in this repository and no rule here can read it" \
+    || bad "an import other than /etc/caddy/viafrei-status-allow.conf is present ($s_badimport of $s_imports): its contents are outside this repository and could route 18190"
+[ "$s_imp" = 1 ] && [ "$s_gate" = 1 ] && [ "$s_deny" = 1 ] \
+    && ok "the status block imports the list, gates on @allowed, and its fallback is respond 4xx/5xx" \
+    || bad "the status block does not positively refuse: import + handle @allowed + handle { respond 403 } is not all present (imp=$s_imp gate=$s_gate deny=$s_deny)"
+# The count is also the precondition: zero routes to 18190 means the block no
+# longer proxies the dashboard at all, which is a change nobody should make
+# silently, and a rule that passes on zero is the class this file keeps
 # rediscovering.
-# Round 3. Round 2 asserted containment but counted only the ONE spelling
-# `reverse_proxy 127.0.0.1:18190`, and counted it only INSIDE the status
-# block. The reviewer walked through four doors, each validating on the
-# host's caddy and each leaving the suite at 46/0 with the dashboard public:
-#
-#     reverse_proxy localhost:18190
-#     reverse_proxy http://127.0.0.1:18190
-#     reverse_proxy { to 127.0.0.1:18190 }
-#     dash.viafrei.de { reverse_proxy 127.0.0.1:18190 }
-#
-# Three are just the ordinary ways a person writes the same upstream. The
-# fourth never touches the status block at all, so a rule scoped to that
-# block cannot see it by construction.
-#
-# So the subject of the rule is now THE PORT, over the WHOLE file: every
-# non-comment line mentioning 18190 must sit inside status.viafrei.de's
-# `handle @allowed`. That has no free variables left -- a route to the
-# dashboard must name the port somewhere, whatever words surround it.
-#
-# Comment lines are skipped because this file's own prose names the port,
-# including the block you are reading. That skip is the one hole left, and
-# it is bounded: a comment cannot route traffic.
-#
-# NOT written as `awk ... | { read tot inside; ok/bad }`: a pipeline runs its
-# last stage in a SUBSHELL, so ok/bad would print their line and lose the
-# counter increment -- the suite would show a red tick and still exit 0. That
-# is this file's own subject matter, arrived at from the shell side.
-gate_counts=$(awk '
-    /^[[:space:]]*#/ {next}
-    /^[^[:space:]].*\{$/ {site = ($0 ~ /^status\.viafrei\.de \{$/) ? 1 : 0; ga=0; next}
-    site && /^\thandle @allowed \{$/ {ga=1}
-    site && ga && /^\t\}$/ {ga=0}
-    /18190/ {tot++; if (site && ga) inside++}
-    /^\}$/ {site=0; ga=0}
-    END {print (tot+0) " " (inside+0)}' "$SRC")
-gate_tot=${gate_counts% *}
-gate_inside=${gate_counts#* }
 [ "$gate_tot" -ge 1 ] && [ "$gate_tot" = "$gate_inside" ] \
     && ok "every mention of 18190 in the whole file is inside status.viafrei.de's handle @allowed ($gate_inside of $gate_tot)" \
     || bad "18190 is reachable outside the gate: $gate_inside of $gate_tot mention(s) are inside handle @allowed"
@@ -356,6 +417,124 @@ awk '/^beaconfolio\.com, www\.beaconfolio\.com \{$/{f=1} f&&/reverse_proxy https
 awk '/^status\.viafrei\.de \{$/{f=1} f&&/header_up X-Forwarded-For \{remote_host\}/{a=1} /^\}$/{f=0} END{exit !a}' "$SRC" \
     && ok "the status block pins header_up X-Forwarded-For {remote_host}" \
     || bad "the status block does not overwrite X-Forwarded-For"
+
+echo
+echo "== 16. the gate can fail: the same scan, on inputs built to break it =="
+# A GATE WITH NO INPUT REPORTS SUCCESS. That is this repository's single most
+# repeated defect, and section 14 is exactly its shape: fourteen ticks, all
+# read from ONE file that happens to be correct. A caddy_scan() that returned
+# "all clear" unconditionally -- or a regex that silently matched nothing after
+# an edit -- would print the same fourteen ticks and the suite would be
+# decoration.
+#
+# So the round-4 mutants are FROZEN HERE as fixtures, and the scan must call
+# each of them out on every run. This is not a transcript of one session's
+# testing: it is the assertion that the assertions can fail.
+vac_scan() { # vac_scan <file>; sets v_* in THIS shell -- no pipeline, no subshell
+    read -r v_tot v_inside v_imp v_gate v_deny v_range v_heredoc v_imports v_badimport v_balanced \
+        <<< "$(caddy_scan "$1")"
+}
+
+# (a) nothing at all. The `-ge 1` preconditions in section 14 are what make
+# this red rather than a free pass, and this line is what proves they are.
+: > "$TMP/vac-empty"
+vac_scan "$TMP/vac-empty"
+[ "$v_tot" = 0 ] && [ "$v_gate" = 0 ] && [ "$v_imp" = 0 ] && [ "$v_deny" = 0 ] && [ "$v_imports" = 0 ] \
+    && ok "on an EMPTY file the scan reports 0 routes, no gate, no refusal, no import (so section 14 goes red, not quiet)" \
+    || bad "an empty file did not read as empty: tot=$v_tot gate=$v_gate imp=$v_imp deny=$v_deny imports=$v_imports"
+
+# (b) THE ROUND-4 BLOCKER, verbatim: the gate's closing brace one tab deeper
+# than a column rule expects, and a healthz route after it. Valid Caddy; the
+# indentation means nothing to it. Every OTHER assertion is green on this file
+# -- balanced, imported, gated, refusing -- so containment is the only thing
+# between it and a public dashboard. Before this fix the suite said "2 of 2".
+cat > "$TMP/vac-deep" <<'VACEOF'
+status.viafrei.de {
+	import /etc/caddy/viafrei-status-allow.conf
+	handle @allowed {
+		reverse_proxy 127.0.0.1:18190 {
+			header_up Host {host}
+		}
+		}
+	handle /healthz {
+		reverse_proxy 127.0.0.1:18190
+	}
+	handle {
+		respond 403
+	}
+}
+VACEOF
+vac_scan "$TMP/vac-deep"
+[ "$v_balanced" = 1 ] && [ "$v_imp" = 1 ] && [ "$v_gate" = 1 ] && [ "$v_deny" = 1 ] \
+    && ok "the deep-brace fixture is otherwise impeccable: balanced, imported, gated, refusing" \
+    || bad "the deep-brace fixture is not the intended shape (balanced=$v_balanced imp=$v_imp gate=$v_gate deny=$v_deny)"
+[ "$v_tot" = 2 ] && [ "$v_inside" = 1 ] \
+    && ok "and the scan still places its healthz route OUTSIDE the gate: 1 of 2, not the '2 of 2' a column rule reported" \
+    || bad "the deep-brace bypass is NOT caught: $v_inside of $v_tot counted inside the gate"
+
+# (c) the port RANGE. 18189-18191 is three upstreams, one of them the
+# dashboard, and no /18190/ test can ever see it.
+cat > "$TMP/vac-range" <<'VACEOF'
+dash.viafrei.de {
+	reverse_proxy 127.0.0.1:18189-18191
+}
+VACEOF
+vac_scan "$TMP/vac-range"
+[ "$v_range" -ge 1 ] && [ "$v_tot" = 0 ] \
+    && ok "the range fixture is refused on sight ($v_range range(s)) though it mentions 18190 exactly $v_tot times" \
+    || bad "a port range was not refused: range=$v_range tot=$v_tot"
+
+# (d) an import this repository cannot read. Its contents decide whether the
+# dashboard is public, and they are not here.
+cat > "$TMP/vac-import" <<'VACEOF'
+viafrei.de {
+	import /etc/caddy/viafrei-extra.conf
+	reverse_proxy 127.0.0.1:18180
+}
+VACEOF
+vac_scan "$TMP/vac-import"
+[ "$v_badimport" = 1 ] && [ "$v_imports" = 1 ] \
+    && ok "a foreign import is refused ($v_badimport of $v_imports), because no rule in this repository can read the file it names" \
+    || bad "a foreign import was not refused: badimport=$v_badimport imports=$v_imports"
+
+# (e) braces that do not balance. A depth model must say so rather than
+# produce a confident number from arithmetic that went wrong halfway.
+cat > "$TMP/vac-unbalanced" <<'VACEOF'
+status.viafrei.de {
+	handle @allowed {
+		reverse_proxy 127.0.0.1:18190
+	}
+VACEOF
+vac_scan "$TMP/vac-unbalanced"
+[ "$v_balanced" = 0 ] \
+    && ok "an unbalanced file is reported as unbalanced instead of scored" \
+    || bad "unbalanced braces were scored as if the depth model still meant something"
+
+# (f) AND THE OTHER DIRECTION: the fixtures must not be red by construction.
+# A scan that called everything a leak would pass (a)-(e) and be useless. The
+# committed Caddyfile is the positive control -- it is green in section 14 --
+# and so is a gate whose body nests, which is the shape a matcher inside the
+# allow-list takes.
+cat > "$TMP/vac-nested" <<'VACEOF'
+status.viafrei.de {
+	import /etc/caddy/viafrei-status-allow.conf
+	handle @allowed {
+		handle /api/* {
+			reverse_proxy 127.0.0.1:18190
+		}
+		reverse_proxy 127.0.0.1:18190 {
+			header_up Host {host}
+		}
+	}
+	handle {
+		respond "Forbidden" 403
+	}
+}
+VACEOF
+vac_scan "$TMP/vac-nested"
+[ "$v_tot" = 2 ] && [ "$v_inside" = 2 ] && [ "$v_deny" = 1 ] \
+    && ok "a nested handle inside the gate stays inside it (2 of 2) and a quoted body is still a refusal — the scan is not merely pessimistic" \
+    || bad "a legitimate nested gate was misread: $v_inside of $v_tot inside, deny=$v_deny"
 
 echo
 echo "== apply.sh contract: $PASS passed, $FAIL failed =="
