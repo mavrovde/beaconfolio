@@ -1,12 +1,12 @@
 fastapi==0.141.1
-uvicorn[standard]==0.52.4
+uvicorn[standard]==0.53.0
 pydantic>=2.13.5
 pydantic-settings==2.15.0
 python-dotenv==1.2.3
-sqlalchemy[asyncio]==2.0.52
+sqlalchemy[asyncio]==2.0.54
 asyncpg==0.31.0
 pgvector==0.5.0
-alembic==1.19.2
+alembic==1.20.0
 httpx==0.28.1
 python-jose[cryptography]==3.5.0
 # Direct dependency (issue #143): Fernet field-level encryption of the Gemini
@@ -27,6 +27,6 @@ setuptools==84.0.0
 faster-whisper==1.2.1
 
 
-google-genai==2.23.0
+google-genai==2.24.0
 respx==0.23.1
 linkedin-api==2.2.1
