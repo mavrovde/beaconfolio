@@ -37,7 +37,7 @@ All notable changes to this project will be documented in this file.
   and passed on a file that deleted the header from the gated block and carried it in an unrelated
   one. Rather than narrow the sentence, the five were retired: the file now contains exactly one
   `awk` invocation and no pattern that reads a column. The suite goes 46 → 97 cases, of which the
-  last fifty-one exist to keep it honest: nineteen fixtures, four of which are legitimate files it
+  last fifty-six exist to keep it honest: twenty-two fixtures, six of which are legitimate files it
   must **not** call out (so it cannot pass by calling everything a leak), ten losing tuples fed to the verdict
   functions, and a section that copies the real `infra/edge/` to a scratch directory, mutates the
   copy's Caddyfile and re-runs **this whole suite** as a child — which is the only thing that can
@@ -63,7 +63,22 @@ All notable changes to this project will be documented in this file.
   tick about `X-Forwarded-For` while the child failed on the `mcp` block — checking that the
   mutation changed the file closed that instance, not the class. Each mutation now names the
   assertion it expects; a child that fails for a different or an additional reason is a failure,
-  and the judgement that decides it is itself fed four losing tuples. 82 → 97 cases.
+  and the judgement that decides it is itself fed four losing tuples.
+  **Round 8, the same shape once more, in the exemption added by round 7:** a refusal answering a
+  *matcher* is not a site-wide door, but the test for "has a matcher" was the first character of
+  the token, so `handle *`, `route /*`, `handle_path /*` and a named matcher defined as `path /*`
+  — each `Valid configuration`, each refusing every request to its site — bought the exemption
+  that the identical bare `handle { respond 403 }` never got. The exemption is now granted only
+  where the scanner can **see** that the matcher is narrow; a block matcher, a `not`, and a name
+  the file never defines are all "not narrow", because unknown must not mean exempt. Named
+  matchers are collected in a first pass, so a definition written **below** the handle that uses
+  it counts — Caddy allows that, and a one-pass rule is one an attacker satisfies by moving a
+  line. The last assumption went with it: every verdict rested on `\}` not meaning `}` inside a
+  quoted token (true on v2.11.4, where `respond "\}" 200` is `Valid configuration`), recorded
+  only in a comment. Those two strings are the entire set of tokens whose structure differs
+  between the two readings, so they are declined — the dependency removed rather than pinned,
+  because a pin that only runs where caddy is installed is a check that reads nothing everywhere
+  else. 82 → 102 cases.
 - **`apply.sh` validates under the privilege wrapper.** It `$SUDO`s cp, install and systemctl — it
   assumes it is not run as root — but ran `caddy validate` bare, and the status site imports an
   allow-list file whose documented and actual mode is `0640 root:caddy`. An unprivileged validate

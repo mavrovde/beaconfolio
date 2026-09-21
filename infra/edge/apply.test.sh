@@ -58,6 +58,28 @@ bad()  { FAIL=$((FAIL+1)); echo "  ✗ $1" >&2; }
 check() { # check <desc> <expected-rc> <actual-rc>
     if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (want rc=$2, got rc=$3)"; fi
 }
+# A NEGATIVE grep reports success in two ways that look identical from here:
+# the file is clean, or the PATTERN is wrong and matches nothing anywhere. The
+# second one is this whole review in miniature -- section 17 once deleted
+# `respond 403` from a file that spells it `respond "Forbidden" 403`, and the
+# no-op read as a pass. So every negative grep below is first shown a line it
+# MUST match. A canary that goes red means the tick under it was free.
+# Defined HERE, above the first negative grep in the file, because round 7 put
+# it below one of them -- the `restor` check in case 10 -- and a class closed
+# for three of four instances is a class that survives.
+canary() { # canary <what> <pattern> <line the pattern must match>
+    printf '%s\n' "$3" > "$TMP/canary"
+    grep -qE "$2" "$TMP/canary" \
+        && ok "canary: the $1 pattern matches the shape it hunts" \
+        || bad "canary: the $1 pattern matches NOTHING, so the check under it passes on any file"
+}
+RX_REMOTE_IP='^[^#]*remote_ip[[:space:]]+[0-9]'
+RX_MODE_0644='^#.*viafrei-status-allow\.conf.*0644'
+RX_RESTOR='[Rr]estor'
+foreign_ipv4() { # foreign_ipv4 <file> — a routable-looking IPv4 off a comment line
+    grep -vE '^[[:space:]]*#' "$1" | grep -oE '[0-9]{1,3}(\.[0-9]{1,3}){3}' \
+        | grep -qv '^127\.0\.0\.1$'
+}
 
 fresh_case() { # resets DST dir + reload log; $1 = optional pre-existing DST content
     DST="$TMP/etc/Caddyfile"; LOG="$TMP/reload.log"
@@ -172,7 +194,8 @@ out="$TMP/out10"; rc=0; run_apply --apply >"$out" 2>&1 || rc=$?
 check "fresh-host apply succeeds" 0 "$rc"
 diff -q "$DST" "$SRC" >/dev/null && ok "fresh-host apply installed the committed file" \
     || bad "fresh-host apply did not install"
-grep -qi "restor" "$out" && bad "fresh-host apply printed a restore message" \
+canary "restore message" "$RX_RESTOR" '  restoring /etc/caddy/Caddyfile.bak and reloading the old config'
+grep -qE "$RX_RESTOR" "$out" && bad "fresh-host apply printed a restore message" \
     || ok "fresh-host apply never claims to restore"
 
 # 11. in-sync --apply is an idempotent no-op (minor 10)
@@ -239,6 +262,16 @@ echo "== the committed Caddyfile's shape (viafrei #94) =="
 #     across several. Refusing to answer is the right output for input this
 #     scanner cannot model — much better than a confident 69/0 on a file with
 #     a public hole. An unterminated quoted token at EOF is declined too;
+#   * a token whose WHOLE text is `\{` or `\}` is declined, and that is the
+#     one rule here written against a future version of somebody else's
+#     parser. Everything above rests on `\}` not meaning `}`; on v2.11.4 it
+#     does not (`"\}"` in directive position is `unrecognized directive: \}`,
+#     and `respond "\}" 200` is Valid configuration — the backslash survives).
+#     If that ever changes, every such token becomes a block brace and a gate
+#     opens quietly. Those two strings are the ENTIRE set of tokens whose
+#     structure differs between the two readings, so declining them removes
+#     the dependency instead of pinning a measurement this suite cannot
+#     re-take — it runs where no caddy is installed;
 #     `"\{"` keeps its backslash (measured: Caddy reports the site address
 #     `\{`), so the inner text is taken raw and never unescaped.
 #
@@ -264,6 +297,19 @@ echo "== the committed Caddyfile's shape (viafrei #94) =="
 #     `unix/…` socket — the last two are valid Caddy and round 5 refused them
 #     while blaming a placeholder that was not there;
 #   * a heredoc (`<<`), whose body a scanner reads as configuration;
+#   * a `respond 4xx/5xx` outside the status site whose matcher matches
+#     EVERYTHING. A refusal that answers a matcher is not a site-wide door,
+#     but `handle *`, `route /*`, `handle_path /*` and a named matcher defined
+#     as `path /*` (or `path_regexp .*`) answer every request — they are the
+#     bare `handle { respond 403 }` with extra characters, and all of them are
+#     Valid configuration on v2.11.4. The exemption is granted only where this
+#     scanner can SEE that the matcher is narrow, which means a named matcher
+#     whose definition it has read, in the inline form, not negated: a block
+#     matcher, a `not`, and a name never defined in this file are all answered
+#     "not narrow", because unknown must not mean exempt. Named matchers are
+#     collected in a FIRST PASS over the file, so a definition written BELOW
+#     the handle that uses it counts — Caddy allows that, and a one-pass rule
+#     is one an attacker satisfies by moving a line;
 #   * an `import` of anything but the allow-list file OR a snippet defined in
 #     THIS file, because only those two have contents a rule here can read. An
 #     in-file `(snippet)` body is scanned by every rule in this scan, so it is
@@ -330,7 +376,10 @@ caddy_scan() { # caddy_scan <file> -> the 25 fields read by `read -r` below
                     # v2.11.4. Round 6 threw this away and skipped the token,
                     # which is the exact inverse of the parser it models.
                     # Measured: "\\{" stays two characters (Caddy reports the
-                    # site address `\\{`), so the inner text is taken RAW.
+                    # site address `\\{`), so the inner text is taken RAW and is
+                    # never unescaped here either. That is a behaviour of
+                    # another parser, so the guard does not DEPEND on it: a
+                    # token whose whole text is `\\{` or `\\}` is declined below.
                     ntok++
                     tk[ntok] = (inq ? "" : substr(line, start, i - 1 - start))
                     tq[ntok] = 1; tml[ntok] = (inq ? 1 : 0)
@@ -369,12 +418,43 @@ caddy_scan() { # caddy_scan <file> -> the 25 fields read by `read -r` below
             return (t ~ "^([A-Za-z0-9+.-]+://)?[A-Za-z0-9._-]+(:[0-9]+)?$")
         }
         function matcher(i) { return (!tq[i] && (tk[i] ~ "^[/@]" || tk[i] == "*")) }
+        # NARROW: does this matcher token exempt a refusal from being read as a
+        # site-wide door? Only if the scanner can SEE that it matches less than
+        # everything. `*` and `/*` match everything, a named matcher it has
+        # never seen the definition of is unknown, and one defined with `not`
+        # or as a block is beyond this scanner -- all of those are answered NO,
+        # which is the fail-closed direction: the refusal is then counted.
+        function narrow(m) {
+            if (m == "*" || m == "/*") return 0
+            if (substr(m, 1, 1) == "@") return ((m in nm) && !(m in cm))
+            return (substr(m, 1, 1) == "/")
+        }
         BEGIN { depth = 0; badtoken = "-"; badbrace = "-"; mdepth = -1 }
+        # THE FILE IS READ TWICE. Pass 1 collects named-matcher definitions and
+        # nothing else, because Caddy does not require one to be written above
+        # the handle that uses it -- and a rule that only sees the definitions
+        # ahead of it is a rule an attacker writes the definition below. The
+        # tokeniser runs in both passes (a definition inside a multi-line
+        # string is not a definition), so `inq` is reset at the boundary.
+        FNR == 1 && NR > 1 { pass2 = 1; inq = 0 }
         {
             raw = $0
             wasq = inq                     # was this line opened inside a string?
             tokenise(raw)
             d1 = (ntok >= 1 && !tq[1]) ? tk[1] : ""
+            if (!pass2) {
+                if (ntok >= 2 && !tq[1] && substr(d1, 1, 1) == "@") {
+                    nm[d1] = 1
+                    if (tk[2] == "{" || tk[2] == "not") cm[d1] = 1
+                    for (i = 2; i <= ntok; i++)
+                        if (!tq[i] && (tk[i] == "*" || tk[i] == "/*")) cm[d1] = 1
+                    if (tk[2] == "path_regexp" && ntok >= 3) {
+                        rx = tk[ntok]; sub("^\\^", "", rx); sub("\\$$", "", rx)
+                        if (rx == "" || rx == ".*" || rx == "/.*" || rx == "(.*)") cm[d1] = 1
+                    }
+                }
+                next
+            }
 
             # ---- directives, read from tokens, against the CURRENT latches ----
             if (d1 == "import") {
@@ -434,7 +514,7 @@ caddy_scan() { # caddy_scan <file> -> the 25 fields read by `read -r` below
                 # routes nothing and must not be declined (fixture o/q). But a
                 # quoted token whose WHOLE text is a brace is structure, and
                 # the distinction is whole-token equality, not "contains".
-                if (tq[i] && b == 3) b = 0
+                if (tq[i] && b == 3 && tk[i] != "\\{" && tk[i] != "\\}") b = 0
                 if (b == 3) { tokbrace++; if (badbrace == "-") badbrace = tk[i]; continue }
                 if (b == 1) {
                     if (depth == 0) {
@@ -445,7 +525,8 @@ caddy_scan() { # caddy_scan <file> -> the 25 fields read by `read -r` below
                         inblk = 1; fork_seen = 0; fork_fb = 0; ga = 0; fb = 0
                         if (hdr ~ "^\\(.+\\)$") snip[substr(hdr, 2, length(hdr) - 2)] = 1
                     } else {
-                        if (mdepth < 0 && hdr ~ "^(handle|handle_path|route)[[:space:]]+[@/*]") mdepth = depth
+                        if (mdepth < 0 && hdr ~ "^(handle|handle_path|route)[[:space:]]" \
+                            && narrow(substr(hdr, index(hdr, " ") + 1))) mdepth = depth
                         if (site && depth == 1 && hdr == "handle @allowed") { ga = 1; gseen = 1; gad = depth }
                         if (site && depth == 1 && hdr == "handle")          { fb = 1; fbd = depth }
                         if (inblk && !site && depth == 1 && hdr == "handle") fork_fb = 1
@@ -480,7 +561,7 @@ caddy_scan() { # caddy_scan <file> -> the 25 fields read by `read -r` below
                     (out_remote+0), (out_deny+0), (forks+0), (forkbad+0), \
                     (tokbrace+0), (inq ? 1 : 0), (status_proxy+0), (xff+0), \
                     (pub_landing+0), ((mcp_rp && mcp_fl) ? 1 : 0), (pub_beacon+0), \
-                    badtoken, badbrace, 25 }' "$1"
+                    badtoken, badbrace, 25 }' "$1" "$1"
 }
 
 # THE VERDICTS, as FUNCTIONS, and that is half of the vacuity problem. Round 4
@@ -528,24 +609,6 @@ grep -q '18190' "$HERE/ports.md" \
 grep -q 'import /etc/caddy/viafrei-status-allow.conf' "$SRC" \
     && ok "the allow-list is imported from a file outside this repository" \
     || bad "the status block does not import its address list"
-# A NEGATIVE grep reports success in two ways that look identical from here:
-# the file is clean, or the PATTERN is wrong and matches nothing anywhere. The
-# second one is this whole review in miniature -- section 17 once deleted
-# `respond 403` from a file that spells it `respond "Forbidden" 403`, and the
-# no-op read as a pass. So every negative grep below is first shown a line it
-# MUST match. A canary that goes red means the tick under it was free.
-canary() { # canary <what> <pattern> <line the pattern must match>
-    printf '%s\n' "$3" > "$TMP/canary"
-    grep -qE "$2" "$TMP/canary" \
-        && ok "canary: the $1 pattern matches the shape it hunts" \
-        || bad "canary: the $1 pattern matches NOTHING, so the check under it passes on any file"
-}
-RX_REMOTE_IP='^[^#]*remote_ip[[:space:]]+[0-9]'
-RX_MODE_0644='^#.*viafrei-status-allow\.conf.*0644'
-foreign_ipv4() { # foreign_ipv4 <file> — a routable-looking IPv4 off a comment line
-    grep -vE '^[[:space:]]*#' "$1" | grep -oE '[0-9]{1,3}(\.[0-9]{1,3}){3}' \
-        | grep -qv '^127\.0\.0\.1$'
-}
 canary "remote_ip literal" "$RX_REMOTE_IP" '	remote_ip 192.0.2.7'
 grep -qE "$RX_REMOTE_IP" "$SRC" \
     && bad "an address literal follows remote_ip in the committed file" \
@@ -1067,6 +1130,130 @@ vac_scan "$TMP/vac-snippet"
     && ok "(t) an in-file snippet import is accepted ($v_imports imports, $v_badimport unreadable) and the allow-list import is still seen" \
     || bad "(t) an in-file snippet was refused as unreadable: badimport=$v_badimport imports=$v_imports imp=$v_imp"
 
+# (u) A MATCHER THAT MATCHES EVERYTHING IS NOT A MATCHER, for this rule's
+# purpose. The exemption added in round 7 says a `respond 4xx` answering a
+# matcher is not a site-wide door -- and round 7 spelled the test "the first
+# character is @, / or *", which hands the exemption to the catch-alls. Every
+# block below is `Valid configuration` on caddy v2.11.4 and every one of them
+# refuses every request to its site; the bare `handle { respond 403 }` that
+# does exactly the same thing was red all along. Eight spellings, one verdict.
+cat > "$TMP/vac-catchall" <<'VACEOF'
+a.example {
+	handle * {
+		respond 403
+	}
+}
+
+b.example {
+	route /* {
+		respond 403
+	}
+}
+
+c.example {
+	@everything path /*
+	handle @everything {
+		respond 403
+	}
+}
+
+d.example {
+	handle @late {
+		respond 403
+	}
+	@late path /*
+}
+
+e.example {
+	handle_path /* {
+		respond 403
+	}
+}
+
+f.example {
+	@blk {
+		path /x
+	}
+	handle @blk {
+		respond 403
+	}
+}
+
+g.example {
+	@nope not path /never
+	handle @nope {
+		respond 403
+	}
+}
+
+h.example {
+	handle @undefined {
+		respond 403
+	}
+}
+VACEOF
+vac_scan "$TMP/vac-catchall"
+[ "$v_outdeny" = 8 ] && [ "$v_balanced" = 1 ] \
+    && ok "(u) all eight catch-all spellings are read as doors ($v_outdeny of 8) — *, /*, a named path /*, one defined BELOW its use, handle_path /*, a block matcher, a negated one, and one never defined" \
+    || bad "(u) a catch-all matcher bought the exemption: outdeny=$v_outdeny of 8, balanced=$v_balanced"
+
+# (v) and the other half, which is what keeps (u) from being a rule that just
+# says no: a matcher this scanner can SEE is narrow still exempts. Round 7
+# added the exemption because refusing these is how a guard gets switched off.
+cat > "$TMP/vac-narrow" <<'VACEOF'
+n1.example {
+	handle /.git/* {
+		respond 404
+	}
+}
+
+n2.example {
+	@hidden path_regexp /\..*
+	handle @hidden {
+		respond 404
+	}
+}
+
+n3.example {
+	handle_path /.well-known/x/* {
+		respond 404
+	}
+}
+
+n4.example {
+	route /admin* {
+		respond 403
+	}
+}
+VACEOF
+vac_scan "$TMP/vac-narrow"
+[ "$v_outdeny" = 0 ] && [ "$v_balanced" = 1 ] \
+    && ok "(v) a narrow path, a narrow named matcher, handle_path and route still exempt — the rule discriminates instead of refusing everything" \
+    || bad "(v) a narrow matcher was read as a site-wide door: outdeny=$v_outdeny balanced=$v_balanced"
+
+# (w) THE ASSUMPTION THIS FILE NO LONGER MAKES. Depth keys on token text, so
+# `"}"` closes a block and `"\}"` does not -- measured on v2.11.4, where a
+# `"\}"` in directive position is `unrecognized directive: \}` and
+# `respond "\}" 200` is Valid configuration, i.e. the backslash survives. That
+# is a behaviour of somebody else's parser, recorded in a comment, load-bearing
+# for every verdict here: if a future Caddy unescapes it, `"\}"` becomes a
+# block close and a gate quietly opens. Rather than pin a measurement this
+# suite cannot re-take (it runs where no caddy exists), the dependency is
+# removed: a token whose WHOLE text is an escaped brace is the entire set of
+# tokens whose meaning differs between the two readings, and it is DECLINED.
+cat > "$TMP/vac-escbrace" <<'VACEOF'
+mcp.viafrei.de {
+	respond /esc "\}" 200
+	reverse_proxy 127.0.0.1:18187 {
+		flush_interval -1
+	}
+}
+VACEOF
+vac_scan "$TMP/vac-escbrace"
+[ "$v_tokbrace" = 1 ] && [ "$v_badbrace" = '\}' ] \
+    && ok "(w) a whole-token escaped brace is declined (first: $v_badbrace) — the verdict no longer depends on how a future Caddy reads it" \
+    || bad "(w) an escaped brace was scored: tokbrace=$v_tokbrace badbrace=$v_badbrace"
+
 # (j) THE SECOND HALF, and the one round 4 was missing: the VERDICTS. Every
 # tick in section 14 is a comparison, and until these six lines existed no test
 # could tell a comparison that judges from one that says yes. Neuter
@@ -1228,6 +1415,17 @@ fi
 
 # and the decoy that exposed the defect: a mutation of something ELSE must not
 # be readable as any of the above. It is caught, by its own assertion.
+awk '{ print }
+     /^viafrei\.de, www\.viafrei\.de \{$/ {
+         print "\thandle * {"
+         print "\t\trespond 403"
+         print "\t}"
+     }' "$SRC" > "$TMP/m17"
+if mutate "a catch-all door on the public landing" "$TMP/m17"; then
+    expect_fail "a catch-all handle * door fails end to end, on the OUTSIDE-DOOR assertion" \
+        "a respond 4xx/5xx appears outside the status site block"
+fi
+
 grep -v 'flush_interval' "$SRC" > "$TMP/m17"
 if mutate "flush_interval deleted from the mcp block" "$TMP/m17"; then
     expect_fail "deleting flush_interval fails end to end on the MCP assertion — no other tick claims it" \
