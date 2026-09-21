@@ -22,9 +22,10 @@ All notable changes to this project will be documented in this file.
   token (`header X-Pad {pad`), which Caddy reads as text and a character counter reads as a block,
   including when the token is a quoted string spanning **lines**. The scanner is now a tokeniser:
   whitespace separates tokens, `#` opens a comment only at a token start, a quoted token may run
-  past the end of a line (the flag is carried between lines), and **only** a token whose whole text
-  is `{` or `}` moves depth — in token order, so `} dash.example {` closes one site and opens
-  another instead of netting to zero. A brace inside a token is a placeholder if it balances
+  past the end of a line (the flag is carried between lines) **with its text kept**, and a token
+  whose text is exactly `{` or `}` moves depth **however it is spelled** — bare, `"quoted"` or
+  backquoted are one token to Caddy — in token order, so `} dash.example {` closes one site and
+  opens another instead of netting to zero. A brace inside an unquoted token is a placeholder if it balances
   (`{host}`) and a **refusal to certify the file** if it does not; so is an unterminated quote, a
   non-literal upstream, a port range, a heredoc, and an `import` of any file but the one allow list
   whose contents are not in this repository. Refusing to answer is the correct output for input a
@@ -35,14 +36,34 @@ All notable changes to this project will be documented in this file.
   brace in column 0. One of them guarded a security property — the `X-Forwarded-For` overwrite —
   and passed on a file that deleted the header from the gated block and carried it in an unrelated
   one. Rather than narrow the sentence, the five were retired: the file now contains exactly one
-  `awk` invocation and no pattern that reads a column. The suite goes 46 → 82 cases, of which the
-  last twenty-two exist to keep it honest: fifteen fixtures the scan must call out, one it must
-  **not** (so it cannot pass by calling everything a leak), six losing tuples fed to the verdict
+  `awk` invocation and no pattern that reads a column. The suite goes 46 → 97 cases, of which the
+  last fifty-one exist to keep it honest: nineteen fixtures, four of which are legitimate files it
+  must **not** call out (so it cannot pass by calling everything a leak), ten losing tuples fed to the verdict
   functions, and a section that copies the real `infra/edge/` to a scratch directory, mutates the
   copy's Caddyfile and re-runs **this whole suite** as a child — which is the only thing that can
   catch a section that stopped feeding the scan's numbers to its own comparisons, and which
   additionally checks that each mutation actually changed the file, because a fixture that
   silently does nothing is the same defect as a gate that reads nothing.
+  **Round 7, and the same root cause spelled a sixth way:** the tokeniser above threw a quoted
+  token's text away and skipped it before the depth test — the inverse of the parser it models,
+  since Caddy compares a token's text and quoting does not change it. Measured on v2.11.4,
+  `example.com "{"` is `Valid configuration` and `respond "{" 200` is a wrong argument count: the
+  quoted brace is structure, not an argument. So a `"}"` closed the gate for Caddy while the
+  scanner stayed inside it, a `handle "{"` re-synchronised the two, and a sibling `handle /healthz`
+  served the dashboard to the internet at 82 passed, 0 failed. Depth now keys on a token's text,
+  quoted or not, and the distinction against `"closed { for now }"` is whole-token equality rather
+  than "contains a brace". Three refusals of legitimate, `Valid configuration` Caddy went with it,
+  because a gate that refuses what people write is a gate that gets switched off: a `respond 404`
+  inside a **matched** `handle @hidden` block is not a site-wide door (the inline `respond /.env
+  404` spelling was already accepted — same intent, opposite verdict), and an `import` of a
+  snippet defined **in the same file** is not an unreadable foreign file. A `{placeholder}` upstream
+  filled by `map` stays refused, and its message now says which guess it is declining to make.
+  **And one more claim that was doing no work:** section 17 asserted only that the child suite
+  went red, so swapping its `X-Forwarded-For` mutation for an unrelated one left it printing a
+  tick about `X-Forwarded-For` while the child failed on the `mcp` block — checking that the
+  mutation changed the file closed that instance, not the class. Each mutation now names the
+  assertion it expects; a child that fails for a different or an additional reason is a failure,
+  and the judgement that decides it is itself fed four losing tuples. 82 → 97 cases.
 - **`apply.sh` validates under the privilege wrapper.** It `$SUDO`s cp, install and systemctl — it
   assumes it is not run as root — but ran `caddy validate` bare, and the status site imports an
   allow-list file whose documented and actual mode is `0640 root:caddy`. An unprivileged validate
