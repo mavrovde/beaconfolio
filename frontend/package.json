@@ -64,18 +64,18 @@
     "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/express": "^5.0.6",
-    "@types/node": "^26.5.1",
-    "@vitest/browser-playwright": "^5.0.0",
-    "@vitest/coverage-v8": "^5.0.0",
+    "@types/node": "^26.6.1",
+    "@vitest/browser-playwright": "^5.0.1",
+    "@vitest/coverage-v8": "^5.0.1",
     "angular-eslint": "^22.5.0",
     "eslint": "^10.10.0",
-    "jsdom": "^30.0.1",
+    "jsdom": "^30.1.0",
     "ng-packagr": "^22.0.2",
     "stylelint": "^17.14.1",
     "stylelint-config-standard": "^40.0.0",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.70.0",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.1"
   }
 }
