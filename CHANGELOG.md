@@ -37,8 +37,8 @@ All notable changes to this project will be documented in this file.
   and passed on a file that deleted the header from the gated block and carried it in an unrelated
   one. Rather than narrow the sentence, the five were retired: the file now contains exactly one
   `awk` invocation and no pattern that reads a column. The suite goes 46 → 97 cases, of which the
-  last fifty-six exist to keep it honest: twenty-two fixtures, six of which are legitimate files it
-  must **not** call out (so it cannot pass by calling everything a leak), ten losing tuples fed to the verdict
+  last fifty-eight exist to keep it honest: twenty-four fixtures, seven of which are legitimate
+  files it must **not** call out (so it cannot pass by calling everything a leak), ten losing tuples fed to the verdict
   functions, and a section that copies the real `infra/edge/` to a scratch directory, mutates the
   copy's Caddyfile and re-runs **this whole suite** as a child — which is the only thing that can
   catch a section that stopped feeding the scan's numbers to its own comparisons, and which
@@ -68,9 +68,17 @@ All notable changes to this project will be documented in this file.
   *matcher* is not a site-wide door, but the test for "has a matcher" was the first character of
   the token, so `handle *`, `route /*`, `handle_path /*` and a named matcher defined as `path /*`
   — each `Valid configuration`, each refusing every request to its site — bought the exemption
-  that the identical bare `handle { respond 403 }` never got. The exemption is now granted only
-  where the scanner can **see** that the matcher is narrow; a block matcher, a `not`, and a name
-  the file never defines are all "not narrow", because unknown must not mean exempt. Named
+  that the identical bare `handle { respond 403 }` never got. **The rule is an allow-list**, and
+  that is the substance of the change rather than the eight spellings it happens to close: the
+  exemption is granted only for the two shapes the scanner models — an inline `/path` token, and a
+  named matcher whose module is `path` or `path_regexp` with an argument that demands a path — and
+  refused for every other module. A deny-list of ways a matcher can be wide can never be complete,
+  so `expression true`, `method GET`, `header_regexp Host .*`, `query a=*`, `client_ip 0.0.0.0/0`
+  and `vars {host} example.com` were all exempt while being site-wide doors, each `Valid
+  configuration`; under an allow-list an unmodelled module is a refusal somebody fixes rather than
+  a hole nobody sees, and the matcher module Caddy adds next year arrives as a false refusal
+  instead of silence. `path *.php` stays exempt because the catch-all test is whole-token `*`
+  rather than "contains a star". Named
   matchers are collected in a first pass, so a definition written **below** the handle that uses
   it counts — Caddy allows that, and a one-pass rule is one an attacker satisfies by moving a
   line. The last assumption went with it: every verdict rested on `\}` not meaning `}` inside a
@@ -78,7 +86,7 @@ All notable changes to this project will be documented in this file.
   only in a comment. Those two strings are the entire set of tokens whose structure differs
   between the two readings, so they are declined — the dependency removed rather than pinned,
   because a pin that only runs where caddy is installed is a check that reads nothing everywhere
-  else. 82 → 102 cases.
+  else. 82 → 104 cases.
 - **`apply.sh` validates under the privilege wrapper.** It `$SUDO`s cp, install and systemctl — it
   assumes it is not run as root — but ran `caddy validate` bare, and the status site imports an
   allow-list file whose documented and actual mode is `0640 root:caddy`. An unprivileged validate

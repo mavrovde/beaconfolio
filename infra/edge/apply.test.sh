@@ -302,14 +302,24 @@ echo "== the committed Caddyfile's shape (viafrei #94) =="
 #     but `handle *`, `route /*`, `handle_path /*` and a named matcher defined
 #     as `path /*` (or `path_regexp .*`) answer every request — they are the
 #     bare `handle { respond 403 }` with extra characters, and all of them are
-#     Valid configuration on v2.11.4. The exemption is granted only where this
-#     scanner can SEE that the matcher is narrow, which means a named matcher
-#     whose definition it has read, in the inline form, not negated: a block
-#     matcher, a `not`, and a name never defined in this file are all answered
-#     "not narrow", because unknown must not mean exempt. Named matchers are
-#     collected in a FIRST PASS over the file, so a definition written BELOW
-#     the handle that uses it counts — Caddy allows that, and a one-pass rule
-#     is one an attacker satisfies by moving a line;
+#     Valid configuration on v2.11.4. The exemption is granted ONLY for the
+#     two shapes this scanner models — an inline `/path` token, and a named
+#     matcher whose module is `path` or `path_regexp` with an argument that
+#     demands a path — and REFUSED for every other matcher module, named or
+#     not. That is an allow-list, and the inversion is the point: rounds 4
+#     through 8 each found one more spelling that walked past a deny-list
+#     here, closed that spelling, and shipped a guard that was honest until
+#     somebody was cleverer. `expression true`, `method GET`,
+#     `header_regexp Host .*`, `query a=*`, `client_ip 0.0.0.0/0` and
+#     `vars {host} example.com` are all Valid configuration, all site-wide
+#     doors, and all were exempt under the deny-list; fixture (x) samples
+#     nine of a set that has no end. Under the allow-list a module nobody has
+#     modelled is a REFUSAL somebody fixes rather than a hole nobody sees,
+#     and the matcher module Caddy adds next year arrives as a false refusal
+#     instead of silence. Named matchers are collected in a FIRST PASS over
+#     the file, so a definition written BELOW the handle that uses it counts —
+#     Caddy allows that, and a one-pass rule is one an attacker satisfies by
+#     moving a line;
 #   * an `import` of anything but the allow-list file OR a snippet defined in
 #     THIS file, because only those two have contents a rule here can read. An
 #     in-file `(snippet)` body is scanned by every rule in this scan, so it is
@@ -418,16 +428,51 @@ caddy_scan() { # caddy_scan <file> -> the 25 fields read by `read -r` below
             return (t ~ "^([A-Za-z0-9+.-]+://)?[A-Za-z0-9._-]+(:[0-9]+)?$")
         }
         function matcher(i) { return (!tq[i] && (tk[i] ~ "^[/@]" || tk[i] == "*")) }
-        # NARROW: does this matcher token exempt a refusal from being read as a
-        # site-wide door? Only if the scanner can SEE that it matches less than
-        # everything. `*` and `/*` match everything, a named matcher it has
-        # never seen the definition of is unknown, and one defined with `not`
-        # or as a block is beyond this scanner -- all of those are answered NO,
-        # which is the fail-closed direction: the refusal is then counted.
+        # NARROW: does this matcher token exempt a refusal from being read as
+        # a site-wide door? The answer is YES only for the shapes this scanner
+        # MODELS, and NO for everything else -- an ALLOW-LIST. Rounds 4 to 8
+        # each found one more spelling that walked past a deny-list here and
+        # each closed that one spelling; a deny-list of matcher modules can
+        # never be complete, so that sequence has no end and every round ships
+        # a guard that is honest until somebody is cleverer. Inverted, the
+        # burden lands the other way: a module nobody has modelled is a
+        # REFUSAL somebody fixes, not a hole nobody sees, and a matcher module
+        # Caddy adds next year arrives as a false refusal rather than silence.
+        # Modelled: an inline `/path` token, and a named matcher whose module
+        # is `path` or `path_regexp` (decided in pass 1, below). Not modelled,
+        # therefore not narrow: `expression`, `method`, `header_regexp`,
+        # `query`, `client_ip`, `vars`, a block form, a `not`, a name this
+        # file never defines -- and the catch-all arguments of the two modules
+        # that ARE modelled, `*`, `/*` and a regex that matches every path.
         function narrow(m) {
             if (m == "*" || m == "/*") return 0
             if (substr(m, 1, 1) == "@") return ((m in nm) && !(m in cm))
             return (substr(m, 1, 1) == "/")
+        }
+        # A path_regexp is narrow only if it DEMANDS a first path segment: an
+        # optional `^`, then `/`, then one literal character that is not
+        # quantified away. Every path starts with `/`, so an unanchored `.+`,
+        # a bare `/`, `^/` and `/.*` all match everything. A character class
+        # (`/[a-z]`) and an escaped class (`/\w`) are refused too: they are not
+        # a literal this scanner can reason about, and unknown means not
+        # narrow. Deciding in general whether a regex matches every path is
+        # not decidable here, which is exactly why the test is a shape this
+        # file can recognise rather than a list of shapes it rejects.
+        function narrow_rx(rx,   c, n) {
+            if (rx == "") return 0
+            if (substr(rx, 1, 1) == "^") rx = substr(rx, 2)
+            if (substr(rx, 1, 1) != "/") return 0
+            rx = substr(rx, 2)
+            if (rx == "") return 0
+            c = substr(rx, 1, 1)
+            n = substr(rx, 2, 1)
+            if (c == "\\") {
+                c = n
+                if (c == "" || c ~ /^[A-Za-z0-9]$/) return 0
+                n = substr(rx, 3, 1)
+            } else if (index("[](){}.*+?^$|\\", c) > 0) return 0
+            if (n == "*" || n == "?" || n == "{") return 0
+            return 1
         }
         BEGIN { depth = 0; badtoken = "-"; badbrace = "-"; mdepth = -1 }
         # THE FILE IS READ TWICE. Pass 1 collects named-matcher definitions and
@@ -444,14 +489,23 @@ caddy_scan() { # caddy_scan <file> -> the 25 fields read by `read -r` below
             d1 = (ntok >= 1 && !tq[1]) ? tk[1] : ""
             if (!pass2) {
                 if (ntok >= 2 && !tq[1] && substr(d1, 1, 1) == "@") {
+                    # nm = seen at all, cm = seen and NOT narrow. A name is
+                    # narrow only if every definition of it is. These two are
+                    # file-global while Caddy scopes matcher names per site
+                    # block, and that asymmetry errs closed: a name defined
+                    # narrowly in one block and widely in another is treated
+                    # as wide everywhere. The exempting direction cannot be
+                    # reached, because using a name undefined in its OWN block
+                    # is an adapt error -- such a file never deploys. If Caddy
+                    # ever stops erroring on that, this is the assumption that
+                    # expired and the two arrays have to become per-block.
                     nm[d1] = 1
-                    if (tk[2] == "{" || tk[2] == "not") cm[d1] = 1
-                    for (i = 2; i <= ntok; i++)
-                        if (!tq[i] && (tk[i] == "*" || tk[i] == "/*")) cm[d1] = 1
-                    if (tk[2] == "path_regexp" && ntok >= 3) {
-                        rx = tk[ntok]; sub("^\\^", "", rx); sub("\\$$", "", rx)
-                        if (rx == "" || rx == ".*" || rx == "/.*" || rx == "(.*)") cm[d1] = 1
-                    }
+                    if (tk[2] == "path" && ntok >= 3) {
+                        for (i = 3; i <= ntok; i++)
+                            if (tq[i] || tk[i] == "*" || tk[i] == "/*") cm[d1] = 1
+                    } else if (tk[2] == "path_regexp" && ntok >= 3) {
+                        if (!narrow_rx(tk[ntok])) cm[d1] = 1
+                    } else cm[d1] = 1
                 }
                 next
             }
@@ -1198,8 +1252,10 @@ vac_scan "$TMP/vac-catchall"
     || bad "(u) a catch-all matcher bought the exemption: outdeny=$v_outdeny of 8, balanced=$v_balanced"
 
 # (v) and the other half, which is what keeps (u) from being a rule that just
-# says no: a matcher this scanner can SEE is narrow still exempts. Round 7
-# added the exemption because refusing these is how a guard gets switched off.
+# says no: a matcher whose shape this scanner MODELS -- an inline /path token,
+# or the path / path_regexp modules with an argument that demands a path --
+# still exempts. Round 7 added the exemption because refusing these is how a
+# guard gets switched off; fixture (y) is the same claim for the named forms.
 cat > "$TMP/vac-narrow" <<'VACEOF'
 n1.example {
 	handle /.git/* {
@@ -1253,6 +1309,121 @@ vac_scan "$TMP/vac-escbrace"
 [ "$v_tokbrace" = 1 ] && [ "$v_badbrace" = '\}' ] \
     && ok "(w) a whole-token escaped brace is declined (first: $v_badbrace) — the verdict no longer depends on how a future Caddy reads it" \
     || bad "(w) an escaped brace was scored: tokbrace=$v_tokbrace badbrace=$v_badbrace"
+
+# (x) THE DENY-LIST, ENDED. Round 8 answered "is this matcher narrow?" by
+# listing the ways it could be wide -- block form, `not`, `*`, `/*`, four
+# catch-all regexes. Anything else fell through to narrow, which meant every
+# matcher MODULE nobody had thought about. Nine of them, each `Valid
+# configuration` on caddy v2.11.4, each a site-wide door, each scoring a clean
+# 102 passed, 0 failed before this fixture existed. The rule is now an
+# allow-list, so this fixture is not a list of nine holes that were patched:
+# it is nine samples of the infinite set that is now refused by default.
+cat > "$TMP/vac-modules" <<'VACEOF'
+m1.example {
+	@m1 expression true
+	handle @m1 {
+		respond 403
+	}
+}
+
+m2.example {
+	@m2 method GET
+	handle @m2 {
+		respond 403
+	}
+}
+
+m3.example {
+	@m3 header_regexp Host .*
+	handle @m3 {
+		respond 403
+	}
+}
+
+m4.example {
+	@m4 path_regexp .+
+	handle @m4 {
+		respond 403
+	}
+}
+
+m5.example {
+	@m5 path_regexp /
+	handle @m5 {
+		respond 403
+	}
+}
+
+m6.example {
+	@m6 path_regexp ^/
+	handle @m6 {
+		respond 403
+	}
+}
+
+m7.example {
+	@m7 query a=*
+	handle @m7 {
+		respond 403
+	}
+}
+
+m8.example {
+	@m8 client_ip 0.0.0.0/0
+	handle @m8 {
+		respond 403
+	}
+}
+
+m9.example {
+	@m9 vars {host} example.com
+	handle @m9 {
+		respond 403
+	}
+}
+VACEOF
+vac_scan "$TMP/vac-modules"
+[ "$v_outdeny" = 9 ] && [ "$v_balanced" = 1 ] \
+    && ok "(x) nine matcher modules outside the allow-list are all read as doors ($v_outdeny of 9): expression, method, header_regexp, query, client_ip, vars, and the three path_regexp spellings that match every path" \
+    || bad "(x) a matcher module outside the allow-list bought the exemption: outdeny=$v_outdeny of 9, balanced=$v_balanced"
+
+# (y) and the allow-list itself, which is the whole reason (x) is not simply
+# "refuse every matcher": the two modules this scanner models still exempt,
+# including `path *.php`, which survives because the catch-all test is
+# whole-token `*` and not "contains a star".
+cat > "$TMP/vac-allowed" <<'VACEOF'
+y1.example {
+	@y1 path *.php
+	handle @y1 {
+		respond 404
+	}
+}
+
+y2.example {
+	@y2 path_regexp /\..*
+	handle @y2 {
+		respond 404
+	}
+}
+
+y3.example {
+	@y3 path_regexp ^/api/v[0-9]+
+	handle @y3 {
+		respond 404
+	}
+}
+
+y4.example {
+	@y4 path /admin/*
+	handle @y4 {
+		respond 404
+	}
+}
+VACEOF
+vac_scan "$TMP/vac-allowed"
+[ "$v_outdeny" = 0 ] && [ "$v_balanced" = 1 ] \
+    && ok "(y) the two modelled modules still exempt — path *.php, path_regexp /\..*, ^/api/v[0-9]+ and path /admin/* are narrow, so the allow-list discriminates rather than refusing everything" \
+    || bad "(y) the allow-list refused a narrow matcher it models: outdeny=$v_outdeny balanced=$v_balanced"
 
 # (j) THE SECOND HALF, and the one round 4 was missing: the VERDICTS. Every
 # tick in section 14 is a comparison, and until these six lines existed no test
