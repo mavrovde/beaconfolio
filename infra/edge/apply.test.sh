@@ -305,7 +305,8 @@ echo "== the committed Caddyfile's shape (viafrei #94) =="
 #     Valid configuration on v2.11.4. The exemption is granted ONLY for the
 #     two shapes this scanner models — an inline `/path` token, and a named
 #     matcher whose module is `path` or `path_regexp` with an argument that
-#     demands a path — and REFUSED for every other matcher module, named or
+#     demands a first path segment in EVERY branch — and REFUSED for every
+#     other matcher module, named or
 #     not. That is an allow-list, and the inversion is the point: rounds 4
 #     through 8 each found one more spelling that walked past a deny-list
 #     here, closed that spelling, and shipped a guard that was honest until
@@ -449,17 +450,35 @@ caddy_scan() { # caddy_scan <file> -> the 25 fields read by `read -r` below
             if (substr(m, 1, 1) == "@") return ((m in nm) && !(m in cm))
             return (substr(m, 1, 1) == "/")
         }
-        # A path_regexp is narrow only if it DEMANDS a first path segment: an
-        # optional `^`, then `/`, then one literal character that is not
-        # quantified away. Every path starts with `/`, so an unanchored `.+`,
-        # a bare `/`, `^/` and `/.*` all match everything. A character class
+        # A path_regexp is narrow only if it DEMANDS a first path segment,
+        # in EVERY branch: no `|` anywhere, then an optional `^`, then `/`,
+        # then one literal character that is not quantified away. Every path
+        # starts with `/`, so an unanchored `.+`, a bare `/`, `^/` and `/.*`
+        # all match everything, and `/a|.*` matches everything down its second
+        # branch while its first one looks narrow. A character class
         # (`/[a-z]`) and an escaped class (`/\w`) are refused too: they are not
         # a literal this scanner can reason about, and unknown means not
         # narrow. Deciding in general whether a regex matches every path is
         # not decidable here, which is exactly why the test is a shape this
         # file can recognise rather than a list of shapes it rejects.
+        #
+        # WHEN THE CHARACTER-CLASS REFUSAL BITES -- and the spelling to expect
+        # first is `^/[a-z]{2}/`, a locale prefix, because a class sits exactly
+        # where this test wants a literal and a multilingual tenant is not
+        # exotic -- the sound widening is A NEW SHAPE, not a new reject: "a
+        # character class of ordinary path characters counts as the one
+        # literal". `\.php$` and `\.(js|css)$` can never satisfy the shape at
+        # all, because they demand a path ENDING and say nothing about its
+        # start. Whoever needs those adds the shape and the fixture; reaching
+        # for a list of regexes to reject is how rounds 4 through 8 went.
         function narrow_rx(rx,   c, n) {
             if (rx == "") return 0
+            # A TOP-LEVEL ALTERNATION RE-WIDENS A NARROW PREFIX, and the shape
+            # test below reads the front of the regex only: `/a|.*` demands a
+            # first segment in its left branch and matches every path in its
+            # right one. Any `|` anywhere is answered no -- deciding which
+            # alternations are safe is the analysis this file declines to do.
+            if (index(rx, "|") > 0) return 0
             if (substr(rx, 1, 1) == "^") rx = substr(rx, 2)
             if (substr(rx, 1, 1) != "/") return 0
             rx = substr(rx, 2)
@@ -501,8 +520,13 @@ caddy_scan() { # caddy_scan <file> -> the 25 fields read by `read -r` below
                     # expired and the two arrays have to become per-block.
                     nm[d1] = 1
                     if (tk[2] == "path" && ntok >= 3) {
+                        # judged on TEXT, quoted or not, like every other token
+                        # in this file: `path "/admin/*"` and `path /admin/*`
+                        # are one token to Caddy and must be one answer here.
+                        # A token that began on an earlier line has no text to
+                        # compare, so it is not narrow.
                         for (i = 3; i <= ntok; i++)
-                            if (tq[i] || tk[i] == "*" || tk[i] == "/*") cm[d1] = 1
+                            if (tml[i] || tk[i] == "*" || tk[i] == "/*") cm[d1] = 1
                     } else if (tk[2] == "path_regexp" && ntok >= 3) {
                         if (!narrow_rx(tk[ntok])) cm[d1] = 1
                     } else cm[d1] = 1
@@ -1253,7 +1277,8 @@ vac_scan "$TMP/vac-catchall"
 
 # (v) and the other half, which is what keeps (u) from being a rule that just
 # says no: a matcher whose shape this scanner MODELS -- an inline /path token,
-# or the path / path_regexp modules with an argument that demands a path --
+# or the path / path_regexp modules with an argument that demands a first
+# path segment in every branch --
 # still exempts. Round 7 added the exemption because refusing these is how a
 # guard gets switched off; fixture (y) is the same claim for the named forms.
 cat > "$TMP/vac-narrow" <<'VACEOF'
@@ -1419,11 +1444,73 @@ y4.example {
 		respond 404
 	}
 }
+
+y5.example {
+	@y5 path "/admin/*"
+	handle @y5 {
+		respond 404
+	}
+}
+
+y6.example {
+	handle "/admin/*" {
+		respond 404
+	}
+}
 VACEOF
 vac_scan "$TMP/vac-allowed"
 [ "$v_outdeny" = 0 ] && [ "$v_balanced" = 1 ] \
-    && ok "(y) the two modelled modules still exempt — path *.php, path_regexp /\..*, ^/api/v[0-9]+ and path /admin/* are narrow, so the allow-list discriminates rather than refusing everything" \
+    && ok "(y) the two modelled modules still exempt — path *.php, path_regexp /\..*, ^/api/v[0-9]+ and path /admin/* are narrow, quoted or not, so the allow-list discriminates rather than refusing everything" \
     || bad "(y) the allow-list refused a narrow matcher it models: outdeny=$v_outdeny balanced=$v_balanced"
+
+# (z) AN ALTERNATION RE-WIDENS A NARROW PREFIX. The shape test in narrow_rx
+# reads the front of the regex -- `/`, then one literal that is not quantified
+# away -- and a `|` further along adds a branch it never looks at: `/a|.*`
+# demands a first segment on the left and matches every path on the right.
+# All four were `outdeny = 0` and a clean 104 passed, 0 failed one commit ago.
+# The fifth line is the other half of the same idea: quoting is structure to
+# Caddy and not meaning, so `path "*"` is the catch-all `path *`, and (y5)
+# pins the converse -- `path "/admin/*"` is as narrow as the bare spelling.
+cat > "$TMP/vac-altern" <<'VACEOF'
+z1.example {
+	@z1 path_regexp /a|.*
+	handle @z1 {
+		respond 403
+	}
+}
+
+z2.example {
+	@z2 path_regexp /a|
+	handle @z2 {
+		respond 403
+	}
+}
+
+z3.example {
+	@z3 path_regexp ^/api|.*
+	handle @z3 {
+		respond 403
+	}
+}
+
+z4.example {
+	@z4 path_regexp /x|^
+	handle @z4 {
+		respond 403
+	}
+}
+
+z5.example {
+	@z5 path "*"
+	handle @z5 {
+		respond 403
+	}
+}
+VACEOF
+vac_scan "$TMP/vac-altern"
+[ "$v_outdeny" = 5 ] && [ "$v_balanced" = 1 ] \
+    && ok "(z) an alternation re-widening a narrow prefix is read as a door ($v_outdeny of 5), and a QUOTED catch-all path is the catch-all it spells" \
+    || bad "(z) an alternation or a quoted catch-all bought the exemption: outdeny=$v_outdeny of 5, balanced=$v_balanced"
 
 # (j) THE SECOND HALF, and the one round 4 was missing: the VERDICTS. Every
 # tick in section 14 is a comparison, and until these six lines existed no test
