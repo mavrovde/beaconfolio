@@ -36,6 +36,24 @@ admin.beaconfolio.com {
 # viafrei.de/www serve a static landing page; mcp.viafrei.de is an MCP
 # Streamable HTTP server (long-lived SSE responses — no buffering).
 
+# viafrei.de is PUBLIC and serves ONE page to everybody: the live national
+# digest on :18180 (viafrei repo issue #176, owner 2026-09-20).
+#
+# It used to fork on the owner's address — :18181 for the owner, :18180 for
+# everybody else — from the days when :18180 was the "im Aufbau" notice and
+# :18181 was the private preview of the real page. #176 put the live digest on
+# :18180, and the fork inverted without anyone editing it: a stranger got the
+# product and the owner got the building site. Measured before removing it,
+# from two addresses: 23 840 bytes and "live in Deutschland" from off-host,
+# 2 160 bytes and "Vorschau" from the owner's.
+#
+# That is the failure a routing fork invites — its two sides are named by
+# what they were, and one of them changed underneath the name. There is
+# nothing left to preview privately, so the fork is gone rather than swapped.
+#
+# :18181 still exists in the tenant's compose and still serves the old notice;
+# nothing routes to it. Retiring the port is a viafrei-repo change and belongs
+# with the v0.1.0 landing work.
 viafrei.de, www.viafrei.de {
 	reverse_proxy 127.0.0.1:18180 {
 		header_up Host {host}
@@ -75,7 +93,7 @@ mcp.viafrei.de {
 #   2. `bash infra/edge/apply.sh`          (read-only check + diff)
 #   3. `bash infra/edge/apply.sh --apply`  (validate, then reload)
 #
-# DNS: `status.viafrei.com` must be a plain A/AAAA record, NEVER a
+# DNS: `status.viafrei.de` must be a plain A/AAAA record, NEVER a
 # CDN-proxied one. `remote_ip` matches the DIRECT peer, so behind a proxy this
 # block would see the proxy's address and the restriction would silently become
 # "nobody" — or, if that range were ever listed, "everybody".
@@ -98,7 +116,7 @@ mcp.viafrei.de {
 # (STATUS_TRUSTED_PROXY_CIDR, viafrei's deploy/docker-compose.prod.yml) and
 # reads the LAST hop, the one written here. Nothing on that path is configured
 # in this repository; the only contract is: overwrite, never append.
-status.viafrei.com {
+status.viafrei.de {
 	import /etc/caddy/viafrei-status-allow.conf
 	handle @allowed {
 		reverse_proxy 127.0.0.1:18190 {

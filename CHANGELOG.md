@@ -8,6 +8,98 @@ All notable changes to this project will be documented in this file.
 - Placeholder for next release.
 
 ### Changed
+- **The edge guard tokenises the way Caddy does, and declines to certify what it cannot model.**
+  `infra/edge/apply.test.sh` asserts that one tenant's status dashboard is reachable only through
+  the IP-gated `handle @allowed` block of its own site. Five review rounds running it certified a
+  Caddyfile that served that dashboard to the public internet — 45/0, 46/0, 59/0, 69/0 — each time
+  printing a reassuring count. Every one of those rounds fixed a real hole and left the same root
+  cause standing: **the scanner modelled the file differently from Caddy.** Measured against caddy
+  v2.11.4 on the edge host, each of these is `Valid configuration` and each defeated a scanner that
+  read the file its own way — indentation columns (a closing brace with one extra tab ends nothing,
+  so the gate latch was carried and a route appended after it counted as *inside*); a port that is
+  never written as digits (`127.0.0.1:{http.request.header.X-Up}` lets the **caller** pick the port
+  per request; `{$ENV}`, `dynamic srv` and a port range do the same); and a brace inside a larger
+  token (`header X-Pad {pad`), which Caddy reads as text and a character counter reads as a block,
+  including when the token is a quoted string spanning **lines**. The scanner is now a tokeniser:
+  whitespace separates tokens, `#` opens a comment only at a token start, a quoted token may run
+  past the end of a line (the flag is carried between lines) **with its text kept**, and a token
+  whose text is exactly `{` or `}` moves depth **however it is spelled** — bare, `"quoted"` or
+  backquoted are one token to Caddy — in token order, so `} dash.example {` closes one site and
+  opens another instead of netting to zero. A brace inside an unquoted token is a placeholder if it balances
+  (`{host}`) and a **refusal to certify the file** if it does not; so is an unterminated quote, a
+  non-literal upstream, a port range, a heredoc, and an `import` of any file but the one allow list
+  whose contents are not in this repository. Refusing to answer is the correct output for input a
+  scanner cannot model, and it is narrow: a bracketed IPv6 `[::1]:18191`, a `unix/…` socket and a
+  brace inside a quoted string are all accepted, each with a test that says so.
+  **The claim that had to be corrected as well as the code:** the previous entry here said one
+  model was read by *every* assertion, and five awk one-liners still ended a block at a closing
+  brace in column 0. One of them guarded a security property — the `X-Forwarded-For` overwrite —
+  and passed on a file that deleted the header from the gated block and carried it in an unrelated
+  one. Rather than narrow the sentence, the five were retired: the file now contains exactly one
+  `awk` invocation and no pattern that reads a column. The suite goes 46 → 97 cases, of which the
+  last fifty-nine exist to keep it honest: twenty-five fixtures, seven of which are legitimate
+  files it must **not** call out (so it cannot pass by calling everything a leak), ten losing tuples fed to the verdict
+  functions, and a section that copies the real `infra/edge/` to a scratch directory, mutates the
+  copy's Caddyfile and re-runs **this whole suite** as a child — which is the only thing that can
+  catch a section that stopped feeding the scan's numbers to its own comparisons, and which
+  additionally checks that each mutation actually changed the file, because a fixture that
+  silently does nothing is the same defect as a gate that reads nothing.
+  **Round 7, and the same root cause spelled a sixth way:** the tokeniser above threw a quoted
+  token's text away and skipped it before the depth test — the inverse of the parser it models,
+  since Caddy compares a token's text and quoting does not change it. Measured on v2.11.4,
+  `example.com "{"` is `Valid configuration` and `respond "{" 200` is a wrong argument count: the
+  quoted brace is structure, not an argument. So a `"}"` closed the gate for Caddy while the
+  scanner stayed inside it, a `handle "{"` re-synchronised the two, and a sibling `handle /healthz`
+  served the dashboard to the internet at 82 passed, 0 failed. Depth now keys on a token's text,
+  quoted or not, and the distinction against `"closed { for now }"` is whole-token equality rather
+  than "contains a brace". Three refusals of legitimate, `Valid configuration` Caddy went with it,
+  because a gate that refuses what people write is a gate that gets switched off: a `respond 404`
+  inside a **matched** `handle @hidden` block is not a site-wide door (the inline `respond /.env
+  404` spelling was already accepted — same intent, opposite verdict), and an `import` of a
+  snippet defined **in the same file** is not an unreadable foreign file. A `{placeholder}` upstream
+  filled by `map` stays refused, and its message now says which guess it is declining to make.
+  **And one more claim that was doing no work:** section 17 asserted only that the child suite
+  went red, so swapping its `X-Forwarded-For` mutation for an unrelated one left it printing a
+  tick about `X-Forwarded-For` while the child failed on the `mcp` block — checking that the
+  mutation changed the file closed that instance, not the class. Each mutation now names the
+  assertion it expects; a child that fails for a different or an additional reason is a failure,
+  and the judgement that decides it is itself fed four losing tuples.
+  **Round 8, the same shape once more, in the exemption added by round 7:** a refusal answering a
+  *matcher* is not a site-wide door, but the test for "has a matcher" was the first character of
+  the token, so `handle *`, `route /*`, `handle_path /*` and a named matcher defined as `path /*`
+  — each `Valid configuration`, each refusing every request to its site — bought the exemption
+  that the identical bare `handle { respond 403 }` never got. **The rule is an allow-list**, and
+  that is the substance of the change rather than the eight spellings it happens to close: the
+  exemption is granted only for the two shapes the scanner models — an inline `/path` token, and a
+  named matcher whose module is `path` or `path_regexp` with an argument that demands a first path
+  segment in **every branch** — and refused for every other module. A deny-list of ways a matcher can be wide can never be complete,
+  so `expression true`, `method GET`, `header_regexp Host .*`, `query a=*`, `client_ip 0.0.0.0/0`
+  and `vars {host} example.com` were all exempt while being site-wide doors, each `Valid
+  configuration`; under an allow-list an unmodelled module is a refusal somebody fixes rather than
+  a hole nobody sees, and the matcher module Caddy adds next year arrives as a false refusal
+  instead of silence. `path *.php` stays exempt because the catch-all test is whole-token `*`
+  rather than "contains a star", and a quoted argument is judged on its text like every other
+  token here, so `path "/admin/*"` and `path /admin/*` get one answer rather than two. The shape
+  test reads the front of a regex, so an alternation that re-widens a narrow prefix (`/a|.*` is
+  narrow on the left and matches every path on the right) is refused on the `|` alone: deciding
+  which alternations are safe is analysis this file declines to do, and the alternative is a rule
+  that reads the first two characters of a pattern and pronounces on the rest. Named
+  matchers are collected in a first pass, so a definition written **below** the handle that uses
+  it counts — Caddy allows that, and a one-pass rule is one an attacker satisfies by moving a
+  line. The last assumption went with it: every verdict rested on `\}` not meaning `}` inside a
+  quoted token (true on v2.11.4, where `respond "\}" 200` is `Valid configuration`), recorded
+  only in a comment. Those two strings are the entire set of tokens whose structure differs
+  between the two readings, so they are declined — the dependency removed rather than pinned,
+  because a pin that only runs where caddy is installed is a check that reads nothing everywhere
+  else. 82 → 105 cases.
+- **`apply.sh` validates under the privilege wrapper.** It `$SUDO`s cp, install and systemctl — it
+  assumes it is not run as root — but ran `caddy validate` bare, and the status site imports an
+  allow-list file whose documented and actual mode is `0640 root:caddy`. An unprivileged validate
+  could not read it (`Could not import …: permission denied`), so the only sanctioned way to
+  change the running edge stopped at its first step for anyone but root; under sudo the same
+  command on the same host answers "Valid configuration". Fail-closed, so nothing was ever wrongly
+  installed. A new case pins which steps are wrapped, using a recording sudo stub rather than
+  asserting that a wrapper exists.
 - **`env-gotchas`: `awk '{print length}'` counts BYTES, and no awk on either userland counts
   characters.** An em-dash is 3 bytes, so one of them makes a 99-character line measure 101.
   Measured against `a—b` (3 characters, 5 bytes): macOS BSD awk reports 5 and ignores `LC_ALL`;
