@@ -8,19 +8,36 @@ All notable changes to this project will be documented in this file.
 - **The shared edge writes an access log for `mcp.viafrei.de`, and only for that site.** The
   viafrei tenant needs to tell "slow before the app" from "slow in the app" for multi-second
   stalls (viafrei repo issue #438); Caddy's JSON access line carries `duration` and `status`.
-  The log goes to `/var/log/caddy/viafrei-mcp-access.log`, rolled at 50 MiB, five old files at
-  most, nothing older than 168 h, so it cannot fill the shared disk. Personal data is minimised
-  at write time: the client address is masked to /24 (IPv4) or /48 (IPv6) on both `remote_ip`
-  and `client_ip`, and `Authorization`, `Cookie`, `Set-Cookie`, the `Mcp-Session-Id` header (both
-  directions) and the legacy `sessionId` query parameter are deleted before the line is written.
-  Measured in `caddy:2.11.4` (the host's version) with all five planted as secrets: none reached
-  the line, IPv4 logged as `x.y.z.0`, IPv6 as its /48. `infra/edge/apply.test.sh` gains a 26th
-  scan field and a privacy-floor assertion, proved by two end-to-end mutants (the
-  `Authorization` delete removed; the IPv4 mask widened to /32); suite 105 → 108.
-  **Also fixed in the suite:** it now runs `bash -n` on itself first. An apostrophe in the
-  single-quoted awk program made macOS bash 3.2 (the pre-push gate) print a syntax error halfway
-  through and exit **0**, after the apply cases and before every Caddyfile assertion; bash 5.2
-  (CI) exits 2. A suite that stopped early was green locally.
+  File `/var/log/caddy/viafrei-mcp-access.log`; `roll_size 50MiB`, `roll_interval 24h`,
+  `roll_keep 7`, `roll_keep_for 120h`, rotated files gzipped. **Headers are an allow-list**: both
+  header maps are deleted whole (`request>headers delete`, `resp_headers delete`) and
+  `log_append` puts back only `User-Agent`, `Accept` and `Content-Type`, because a deny-list
+  cannot be complete — a client-sent `X-Forwarded-For`, `Forwarded`, `X-Real-IP`,
+  `True-Client-IP`, `CF-Connecting-IP` or `Referer` would have been written unmasked (review
+  round 1). The client address is masked to /24 (IPv4) or /48 (IPv6) on `remote_ip` and
+  `client_ip`; the legacy `sessionId` query parameter is deleted. Measured in `caddy:2.11.4`
+  (the host's version) with thirteen secrets and addresses planted in headers and the query:
+  none reached the line. **Retention, measured:** rotation (size or interval) happens only on a
+  WRITE — 2.11.4 has no timer — and `roll_keep_for` counts from a rotated file's rotation time
+  and is enforced at rotations (a 6-day-old rotated file is pruned, a 4-day-old one kept). With
+  daily traffic a line is gone within ~24 h + 120 h + 24 h = 168 h; with no requests at all
+  nothing rotates or is pruned, and nothing new is written either.
+- **`apply.sh` validates as the service user.** Run as root, `caddy validate` provisions the
+  config and creates every `output file` log root:root 0600 (measured in `caddy:2.11.4`); the
+  caddy-user service then cannot open it, so `--apply` would reload, fail, restore, and the
+  leftover file would break every retry (review round 1, blocker). Validate now runs as
+  `sudo -u caddy -H` against a 0644 temp copy (the checkout may sit under `/root`), and an
+  existing log file the config names that is not owned by the service user is refused by name
+  before anything runs. `apply.test.sh` pins both, each in both directions; a revert of either
+  fix goes red.
+- **`apply.test.sh`**: the privacy floor (whole-map deletes, the `log_append` allow-list, both
+  IP masks, the `sessionId` delete), a retention bound (`roll_interval` <= 24h,
+  `roll_keep_for` <= 120h), and zero `log`/`log_append` directives outside the mcp block, each
+  read from the one tokeniser and each proved by an end-to-end mutant (whole-map delete removed,
+  an `X-Forwarded-For` `log_append` planted, `roll_interval` removed, a `log` planted in
+  `viafrei.de`, the IPv4 mask widened to /32). Suite 105 → 124. It also runs `bash -n` on itself
+  first: an apostrophe in the single-quoted awk program made macOS bash 3.2 (the pre-push gate)
+  stop halfway with exit **0**; bash 5.2 (CI) exits 2.
 
 ### Changed
 - **The edge guard tokenises the way Caddy does, and declines to certify what it cannot model.**

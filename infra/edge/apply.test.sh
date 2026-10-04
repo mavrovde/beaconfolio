@@ -25,6 +25,7 @@ mkdir -p "$STUB"
 cat > "$STUB/caddy" <<'EOF'
 #!/usr/bin/env bash
 [ "$1" = "validate" ] || { echo "stub caddy: unexpected args: $*" >&2; exit 99; }
+[ -n "${CADDY_LOG:-}" ] && echo "validate $*" >> "$CADDY_LOG"
 exit "${STUB_CADDY_RC:-0}"
 EOF
 cat > "$STUB/systemctl" <<'EOF'
@@ -48,11 +49,18 @@ cat > "$STUB/sudo" <<'EOF'
 echo "sudo $*" >> "$SUDO_LOG"
 exec "$@"
 EOF
-chmod +x "$STUB/caddy" "$STUB/systemctl" "$STUB/sudo"
+cat > "$STUB/ascaddy" <<'EOF'
+#!/usr/bin/env bash
+# the run-as-service-user wrapper, recorded the same way
+echo "ascaddy $*" >> "$ASCADDY_LOG"
+exec "$@"
+EOF
+chmod +x "$STUB/caddy" "$STUB/systemctl" "$STUB/sudo" "$STUB/ascaddy"
+ME="$(id -un)"
 
 run_apply() { # run_apply <mode-args...>; env seams pre-exported per case
-    env EDGE_DST="$DST" EDGE_SUDO= EDGE_CADDY="$STUB/caddy" \
-        EDGE_SYSTEMCTL="$STUB/systemctl" STUB_LOG="$LOG" \
+    env EDGE_DST="$DST" EDGE_SUDO= EDGE_AS_CADDY= EDGE_CADDY_USER="$ME" \
+        EDGE_CADDY="$STUB/caddy" EDGE_SYSTEMCTL="$STUB/systemctl" STUB_LOG="$LOG" \
         STUB_CADDY_RC="${STUB_CADDY_RC:-0}" STUB_RELOAD_RC="${STUB_RELOAD_RC:-0}" \
         STUB_ACTIVE_RC="${STUB_ACTIVE_RC:-0}" \
         EDGE_APPLY_CONFIRM="${EDGE_APPLY_CONFIRM:-0}" \
@@ -126,7 +134,7 @@ check "--check is green when in sync" 0 "$rc"
 # sail through every later gate and INSTALL the decoy — both assertions red.
 fresh_case "old config"
 printf 'DECOY — must never be validated or installed\n' > "$TMP/Caddyfile"
-rc=0; ( cd "$TMP" && env EDGE_DST="$DST" EDGE_SUDO= EDGE_CADDY="$STUB/caddy" \
+rc=0; ( cd "$TMP" && env EDGE_DST="$DST" EDGE_SUDO= EDGE_AS_CADDY= EDGE_CADDY="$STUB/caddy" \
     EDGE_SYSTEMCTL="$STUB/systemctl" STUB_LOG="$LOG" EDGE_APPLY_CONFIRM=1 \
     bash -s -- --apply < "$APPLY" ) >/dev/null 2>&1 || rc=$?
 check "stdin mode (bash -s) is refused" 1 "$rc"
@@ -158,24 +166,72 @@ check "validation failure is red" 1 "$rc"
     || bad "validation failure MODIFIED the target"
 [ ! -s "$LOG" ] && ok "validation failure never reloaded" || bad "reloaded after failed validation"
 
-# 7b. validate runs UNDER the privilege wrapper. Not a style point: the status
-# block imports /etc/caddy/viafrei-status-allow.conf, whose documented and
-# actual mode is 0640 root:caddy. Run as the ordinary user this script assumes
-# everywhere else (it $SUDOs cp, install and systemctl), `caddy validate` could
-# not read that import and exited with
-#     Could not import /etc/caddy/viafrei-status-allow.conf: permission denied
-# — measured on the edge host, 2026-09-21, where the same command under sudo
-# answers "Valid configuration". Fail-closed, so nothing was ever wrongly
-# installed; it meant the sanctioned apply path stopped at its first step.
+# 7b. validate runs AS THE SERVICE USER, and NOT under the root wrapper.
+# Two measured failures pin this. Run as an ordinary user, validate cannot read
+# the 0640 root:caddy allow-list import (edge host, 2026-09-21). Run as ROOT,
+# validate provisions the config and creates every `output file` access log
+# root:root 0600 (caddy:2.11.4, #477 review round 1); the caddy-user service
+# then cannot open it, the reload fails and restores, and the leftover file
+# breaks every retry. The service user reads the import through its group and
+# creates the log as itself — exactly what the reload will do.
 fresh_case "old config"; EDGE_APPLY_CONFIRM=1
 SUDO_LOG="$TMP/sudo.log"; : > "$SUDO_LOG"
-rc=0; env EDGE_DST="$DST" EDGE_SUDO="$STUB/sudo" EDGE_CADDY="$STUB/caddy" \
+ASCADDY_LOG="$TMP/ascaddy.log"; : > "$ASCADDY_LOG"
+CADDY_LOG="$TMP/caddy.log"; : > "$CADDY_LOG"
+rc=0; env EDGE_DST="$DST" EDGE_SUDO="$STUB/sudo" EDGE_AS_CADDY="$STUB/ascaddy" \
+    EDGE_CADDY_USER="$ME" EDGE_CADDY="$STUB/caddy" \
     EDGE_SYSTEMCTL="$STUB/systemctl" STUB_LOG="$LOG" SUDO_LOG="$SUDO_LOG" \
+    ASCADDY_LOG="$ASCADDY_LOG" CADDY_LOG="$CADDY_LOG" \
     EDGE_APPLY_CONFIRM=1 bash "$APPLY" --apply >/dev/null 2>&1 || rc=$?
-check "apply with a recording sudo wrapper succeeds" 0 "$rc"
-grep -q "sudo .*validate" "$SUDO_LOG" \
-    && ok "caddy validate runs under the privilege wrapper (the 0640 root:caddy import is unreadable without it)" \
-    || bad "caddy validate is NOT wrapped in \$SUDO: on the real host it cannot read the allow-list import and every apply dies there"
+check "apply with recording sudo + run-as-service-user wrappers succeeds" 0 "$rc"
+grep -q "ascaddy .*validate" "$ASCADDY_LOG" \
+    && ok "caddy validate runs under the run-as-service-user wrapper" \
+    || bad "caddy validate does NOT run as the service user: as root it creates the access log root-owned and the reload cannot open it"
+grep -q "validate" "$SUDO_LOG" \
+    && bad "caddy validate runs under the ROOT wrapper (\$SUDO): it creates the access log root:root 0600" \
+    || ok "and never under the root wrapper"
+grep -q "sudo .*install" "$SUDO_LOG" \
+    && ok "(canary) the root wrapper log is live — install is recorded in it" \
+    || bad "(canary) the sudo log recorded no install: the negative check above is free"
+vcfg="$(sed -n 's/.*--config \([^ ]*\).*/\1/p' "$CADDY_LOG" | head -1)"
+[ -n "$vcfg" ] && [ "$vcfg" != "$SRC" ] \
+    && ok "validate reads a temp copy, not the checkout (which may sit under /root)" \
+    || bad "validate read '${vcfg:-nothing}' — the service user may not be able to read the checkout"
+[ -n "$vcfg" ] && [ ! -e "$vcfg" ] \
+    && ok "and the temp copy is removed afterwards" || bad "the validate temp copy was left behind: $vcfg"
+grep -qF 'AS_CADDY="${EDGE_AS_CADDY-sudo -u $CADDY_USER -H}"' "$APPLY" \
+    && grep -qF 'CADDY_USER="${EDGE_CADDY_USER:-caddy}"' "$APPLY" \
+    && ok "the real default is sudo -u caddy -H (the stub replaces only the wrapper)" \
+    || bad "the default run-as wrapper is no longer sudo -u caddy -H"
+
+# 7c. an access-log file left by an earlier attempt, owned by someone other
+# than the service user, is REFUSED by name before validate — and the same
+# tree with the file owned by the service user passes. Both directions, so the
+# refusal is not a refusal of every existing file.
+e7c="$TMP/e7c"; mkdir -p "$e7c/logs"
+cp "$APPLY" "$e7c/apply.sh"
+sed "s#/var/log/caddy/#$e7c/logs/#" "$SRC" > "$e7c/Caddyfile"
+grep -q "output file $e7c/logs/" "$e7c/Caddyfile" \
+    && ok "(7c) the fixture names a log file under the test tree" \
+    || bad "(7c) the fixture names no log file: the cases below are free"
+: > "$e7c/logs/viafrei-mcp-access.log"
+OTHER=root; [ "$ME" = root ] && OTHER=nobody
+fresh_case "old config"; CADDY_LOG="$TMP/caddy7c.log"; : > "$CADDY_LOG"
+out="$TMP/out7c"; rc=0
+env EDGE_DST="$DST" EDGE_SUDO= EDGE_AS_CADDY= EDGE_CADDY_USER="$OTHER" \
+    EDGE_CADDY="$STUB/caddy" EDGE_SYSTEMCTL="$STUB/systemctl" STUB_LOG="$LOG" \
+    CADDY_LOG="$CADDY_LOG" EDGE_APPLY_CONFIRM=1 bash "$e7c/apply.sh" --apply >"$out" 2>&1 || rc=$?
+check "(7c) a log file not owned by the service user is refused" 1 "$rc"
+grep -q "viafrei-mcp-access.log exists and is not owned by $OTHER" "$out" \
+    && ok "(7c) the refusal names the file and the user" || bad "(7c) the refusal does not name the file"
+[ ! -s "$CADDY_LOG" ] && ok "(7c) and nothing was validated" || bad "(7c) validate ran past the refusal"
+[ "$(cat "$DST")" = "old config" ] && [ ! -s "$LOG" ] \
+    && ok "(7c) the target is untouched and nothing reloaded" || bad "(7c) the refusal still changed the edge"
+fresh_case "old config"; rc=0
+env EDGE_DST="$DST" EDGE_SUDO= EDGE_AS_CADDY= EDGE_CADDY_USER="$ME" \
+    EDGE_CADDY="$STUB/caddy" EDGE_SYSTEMCTL="$STUB/systemctl" STUB_LOG="$LOG" \
+    EDGE_APPLY_CONFIRM=1 bash "$e7c/apply.sh" --apply >/dev/null 2>&1 || rc=$?
+check "(7c) the same file owned by the service user passes" 0 "$rc"
 
 # 8. reload failure restores the backup and reloads the old config
 fresh_case "old config"; STUB_RELOAD_RC=1 EDGE_APPLY_CONFIRM=1
@@ -356,7 +412,7 @@ echo "== the committed Caddyfile's shape (viafrei #94) =="
 # SUBSHELL, so ok/bad would print their line and lose the counter increment —
 # a red tick and exit 0. That is this file's own subject matter, from the
 # shell side.
-caddy_scan() { # caddy_scan <file> -> the 26 fields read by `read -r` below
+caddy_scan() { # caddy_scan <file> -> the 28 fields read by `read -r` below
     awk '
         # ---- the tokeniser: tk[1..ntok], tq[i]=1 if the token was quoted ----
         function tokenise(line,   i, c, L, start) {
@@ -587,11 +643,18 @@ caddy_scan() { # caddy_scan <file> -> the 26 fields read by `read -r` below
             }
             if (mcp && d1 == "flush_interval" && ntok == 2 && tk[2] == "-1") mcp_fl = 1
             # ---- the mcp access log: its privacy floor (viafrei repo #438) ----
-            # The block may log only with the client address truncated on
-            # BOTH fields that carry it (ipv4 /24 or wider, ipv6 /48 or wider)
-            # and with every credential and session handle deleted. Only the
-            # block form `ip_mask { ipv4 N ipv6 N }` is modelled; any other
-            # spelling is a false red somebody fixes, never a silent pass.
+            # HEADERS ARE AN ALLOW-LIST: both header maps must be deleted WHOLE
+            # and every log_append must put back one of three request headers
+            # (User-Agent, Accept, Content-Type) and nothing else -- a deny-list
+            # misses the header a client invents (#477 review round 1). The
+            # client address is truncated on BOTH fields (ipv4 /24 or wider,
+            # ipv6 /48 or wider), the legacy ?sessionId is deleted, and the
+            # file rotates at least daily and keeps rotated files at most 120h.
+            # Only the block form `ip_mask { ipv4 N ipv6 N }` and `Nh` durations
+            # are modelled; any other spelling is a false red somebody fixes,
+            # never a silent pass. Outside the mcp block, ANY log or log_append
+            # is counted: no other site may start logging unnoticed.
+            if (!mcp && (d1 == "log" || d1 == "log_append")) olog++
             if (mcp) {
                 if (d1 == "log") ml_log = 1
                 if (d1 == "}") { ml_cur = ""; ml_q = 0 }
@@ -599,15 +662,21 @@ caddy_scan() { # caddy_scan <file> -> the 26 fields read by `read -r` below
                     && ntok == 3 && tk[2] == "ip_mask" && tk[3] == "{") ml_cur = d1
                 if (ml_cur != "" && d1 == "ipv4" && ntok == 2 && tk[2] ~ /^[0-9]+$/ && tk[2] + 0 <= 24) ml_v4[ml_cur] = 1
                 if (ml_cur != "" && d1 == "ipv6" && ntok == 2 && tk[2] ~ /^[0-9]+$/ && tk[2] + 0 <= 48) ml_v6[ml_cur] = 1
-                if (ntok == 2 && tk[2] == "delete" && !tq[2] && \
-                    (d1 == "request>headers>Authorization" || d1 == "request>headers>Cookie" || \
-                     d1 == "request>headers>Mcp-Session-Id" || d1 == "resp_headers>Mcp-Session-Id" || \
-                     d1 == "resp_headers>Set-Cookie")) ml_del[d1] = 1
+                if (ntok == 2 && tk[2] == "delete" && !tq[2] && d1 == "request>headers") ml_rqh = 1
+                if (ntok == 2 && tk[2] == "delete" && !tq[2] && d1 == "resp_headers")    ml_rsh = 1
+                if (d1 == "log_append") {
+                    if (ntok == 3 && !tq[3] && \
+                        (tk[3] == "{http.request.header.User-Agent}" || \
+                         tk[3] == "{http.request.header.Accept}" || \
+                         tk[3] == "{http.request.header.Content-Type}")) ml_app_ok++
+                    else ml_app_bad++
+                }
                 if (d1 == "request>uri" && ntok == 3 && tk[2] == "query" && tk[3] == "{") ml_q = 1
                 if (ml_q && d1 == "delete" && ntok == 2 && tk[2] == "sessionId") ml_qd = 1
+                if (d1 == "roll_interval" && ntok == 2 && tk[2] ~ /^[0-9]+h$/ && tk[2] + 0 >= 1 && tk[2] + 0 <= 24) ml_ri = 1
+                if (d1 == "roll_keep_for" && ntok == 2 && tk[2] ~ /^[0-9]+h$/ && tk[2] + 0 >= 1 && tk[2] + 0 <= 120) ml_kf = 1
             }
             if (site && d1 == "header_up" && ntok == 3 && tk[2] == "X-Forwarded-For" && tk[3] == "{remote_host}") xff = 1
-
             # ---- the port, from the RAW line, minus full-line comments ----
             if (raw !~ /^[[:space:]]*#/ && raw ~ /18190/) { tot++; if (site && ga) inside++ }
 
@@ -660,17 +729,17 @@ caddy_scan() { # caddy_scan <file> -> the 26 fields read by `read -r` below
         }
         END {
               for (j = 1; j <= nimp; j++) if (!(impn[j] in snip)) badimport++
-              nd = 0; for (k in ml_del) nd++
               mlog = (ml_log && ml_v4["request>remote_ip"] && ml_v6["request>remote_ip"] \
                       && ml_v4["request>client_ip"] && ml_v6["request>client_ip"] \
-                      && nd == 5 && ml_qd) ? 1 : 0
+                      && ml_rqh && ml_rsh && ml_app_bad == 0 && ml_qd) ? 1 : 0
+              mret = (ml_log && ml_ri && ml_kf) ? 1 : 0
               print (tot+0), (inside+0), (imp+0), (gseen+0), (deny+0), \
                     (range+0), (heredoc+0), (imports+0), (badimport+0), \
                     ((neg == 0 && depth == 0) ? 1 : 0), (nonliteral+0), \
                     (out_remote+0), (out_deny+0), (forks+0), (forkbad+0), \
                     (tokbrace+0), (inq ? 1 : 0), (status_proxy+0), (xff+0), \
                     (pub_landing+0), ((mcp_rp && mcp_fl) ? 1 : 0), (pub_beacon+0), \
-                    mlog, badtoken, badbrace, 26 }' "$1" "$1"
+                    mlog, mret, (olog+0), badtoken, badbrace, 28 }' "$1" "$1"
 }
 
 # THE VERDICTS, as FUNCTIONS, and that is half of the vacuity problem. Round 4
@@ -695,14 +764,14 @@ present() {   # present <flag> — a route that must still be there
 
 read -r gate_tot gate_inside s_imp s_gate s_deny s_range s_heredoc s_imports \
         s_badimport s_balanced s_nonliteral s_remote s_outdeny s_forks s_forkbad \
-        s_tokbrace s_openquote s_statusproxy s_xff s_landing s_mcp s_beacon s_mcplog \
+        s_tokbrace s_openquote s_statusproxy s_xff s_landing s_mcp s_beacon s_mcplog s_mcpret s_otherlog \
         s_badtoken s_badbrace s_nfields \
     <<< "$(caddy_scan "$SRC")"
-# 26 positional fields is a lot to keep in step, so the scan says how many it
+# 28 positional fields is a lot to keep in step, so the scan says how many it
 # wrote and this line checks it. A field added in the middle without updating
 # the reader would otherwise shift every variable after it silently.
-[ "${s_nfields:-}" = 26 ] \
-    && ok "the scan wrote all 26 fields the reader expects" \
+[ "${s_nfields:-}" = 28 ] \
+    && ok "the scan wrote all 28 fields the reader expects" \
     || bad "caddy_scan wrote a different number of fields (${s_nfields:-none}): every variable after the gap is shifted"
 
 # 12. the status route exists and points at the registered tenant port
@@ -823,8 +892,14 @@ present "$s_beacon" \
 # exist only with the client address truncated on both fields and every
 # credential / session handle deleted before the line is written.
 present "$s_mcplog" \
-    && ok "mcp.viafrei.de logs with remote_ip/client_ip masked (/24, /48) and Authorization, Cookie, Set-Cookie, both Mcp-Session-Id and ?sessionId deleted" \
-    || bad "the mcp.viafrei.de access log lost its privacy floor (IP mask or a secret-field delete)"
+    && ok "mcp.viafrei.de logs with remote_ip/client_ip masked (/24, /48), both header maps deleted whole, only User-Agent/Accept/Content-Type appended, ?sessionId deleted" \
+    || bad "the mcp.viafrei.de access log lost its privacy floor (IP mask, a whole-map header delete, the log_append allow-list or the sessionId delete)"
+present "$s_mcpret" \
+    && ok "and it rotates at least daily (roll_interval <= 24h) and keeps rotated files at most 120h" \
+    || bad "the mcp.viafrei.de access log lost its retention bound (roll_interval <= 24h and roll_keep_for <= 120h)"
+none "$s_otherlog" \
+    && ok "no other site block (and no global block) carries a log or log_append directive" \
+    || bad "$s_otherlog log/log_append directive(s) outside mcp.viafrei.de: another site would start writing an access log"
 
 # 15. X-Forwarded-For is OVERWRITTEN, not appended. Caddy appends by default;
 # the tenant's app trusts the LAST hop when the peer is loopback, so an appended
@@ -865,7 +940,7 @@ echo "== 16. the gate can fail: the scan AND the verdicts, on inputs built to br
 vac_scan() { # vac_scan <file>; sets v_* in THIS shell -- no pipeline, no subshell
     read -r v_tot v_inside v_imp v_gate v_deny v_range v_heredoc v_imports \
             v_badimport v_balanced v_nonliteral v_remote v_outdeny v_forks v_forkbad \
-            v_tokbrace v_openquote v_statusproxy v_xff v_landing v_mcp v_beacon v_mcplog \
+            v_tokbrace v_openquote v_statusproxy v_xff v_landing v_mcp v_beacon v_mcplog v_mcpret v_otherlog \
             v_badtoken v_badbrace v_nfields \
         <<< "$(caddy_scan "$1")"
 }
@@ -1727,10 +1802,29 @@ if mutate "flush_interval deleted from the mcp block" "$TMP/m17"; then
         "the mcp.viafrei.de block changed"
 fi
 
-grep -v 'request>headers>Authorization delete' "$SRC" > "$TMP/m17"
-if mutate "the Authorization delete removed from the mcp access log" "$TMP/m17"; then
-    expect_fail "logging Authorization fails end to end, on the PRIVACY-FLOOR assertion" \
+grep -v 'request>headers delete' "$SRC" > "$TMP/m17"
+if mutate "the whole-map request header delete removed from the mcp access log" "$TMP/m17"; then
+    expect_fail "logging every request header fails end to end, on the PRIVACY-FLOOR assertion" \
         "the mcp.viafrei.de access log lost its privacy floor"
+fi
+
+awk '{ print } /^\tlog_append user_agent / { print "\tlog_append xff {http.request.header.X-Forwarded-For}" }' \
+    "$SRC" > "$TMP/m17"
+if mutate "an X-Forwarded-For log_append planted in the mcp block" "$TMP/m17"; then
+    expect_fail "appending X-Forwarded-For fails end to end, on the PRIVACY-FLOOR assertion" \
+        "the mcp.viafrei.de access log lost its privacy floor"
+fi
+
+grep -v 'roll_interval' "$SRC" > "$TMP/m17"
+if mutate "roll_interval removed from the mcp access log" "$TMP/m17"; then
+    expect_fail "a size-only rotation fails end to end, on the RETENTION assertion" \
+        "the mcp.viafrei.de access log lost its retention bound"
+fi
+
+awk '{ print } /^viafrei\.de, www\.viafrei\.de \{$/ { print "\tlog" }' "$SRC" > "$TMP/m17"
+if mutate "a log directive planted in the viafrei.de block" "$TMP/m17"; then
+    expect_fail "a second site that logs fails end to end, on the OTHER-LOG assertion" \
+        "outside mcp.viafrei.de: another site would start writing an access log"
 fi
 
 sed 's/ipv4 24/ipv4 32/' "$SRC" > "$TMP/m17"

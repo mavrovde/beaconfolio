@@ -407,16 +407,16 @@ file, reconciled:
   refuses to drop running-only lines without `EDGE_APPLY_CONFIRM=1`.
 
 **Edge access logs are per site and opt-in.** The edge writes no access log by
-default. The one site block that logs today is `mcp.viafrei.de` (viafrei repo
-issue #438): JSON lines with `duration` and `status` in
-`/var/log/caddy/viafrei-mcp-access.log`, rolled at 50 MiB, at most five old
-files, none older than 168 h, so it is bounded on the shared disk. The client
-address is masked to /24 (IPv4) or /48 (IPv6) on both `remote_ip` and
-`client_ip`, and `Authorization`, `Cookie`, `Set-Cookie`, the `Mcp-Session-Id`
-header (both directions) and the `sessionId` query parameter are deleted
-before the line is written. `infra/edge/apply.test.sh` asserts that privacy
-floor, so an edit that drops one filter goes red. A tenant that wants a log
-adds the same shape to its own block via PR; nothing about other sites changes.
+default, and `apply.test.sh` asserts that no block but `mcp.viafrei.de` carries a
+`log` or `log_append`. That block (viafrei repo issue #438) writes JSON lines with
+`duration` and `status` to `/var/log/caddy/viafrei-mcp-access.log`: `roll_size 50MiB`,
+`roll_interval 24h`, `roll_keep 7`, `roll_keep_for 120h`. Headers are an allow-list —
+both header maps deleted whole, `User-Agent`, `Accept` and `Content-Type` appended
+back — the client address is masked to /24 or /48 on `remote_ip` and `client_ip`,
+and the `sessionId` query parameter is deleted. Rotation in Caddy 2.11.4 happens
+only on a write, so the 7-day bound holds while the endpoint sees at least one
+request a day. The log file must belong to the `caddy` user; `apply.sh` validates
+as that user and refuses an existing file owned by anyone else.
 
 Two consequences for beaconfolio's own configuration:
 
