@@ -5,7 +5,22 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
-- Placeholder for next release.
+- **The shared edge writes an access log for `mcp.viafrei.de`, and only for that site.** The
+  viafrei tenant needs to tell "slow before the app" from "slow in the app" for multi-second
+  stalls (viafrei repo issue #438); Caddy's JSON access line carries `duration` and `status`.
+  The log goes to `/var/log/caddy/viafrei-mcp-access.log`, rolled at 50 MiB, five old files at
+  most, nothing older than 168 h, so it cannot fill the shared disk. Personal data is minimised
+  at write time: the client address is masked to /24 (IPv4) or /48 (IPv6) on both `remote_ip`
+  and `client_ip`, and `Authorization`, `Cookie`, `Set-Cookie`, the `Mcp-Session-Id` header (both
+  directions) and the legacy `sessionId` query parameter are deleted before the line is written.
+  Measured in `caddy:2.11.4` (the host's version) with all five planted as secrets: none reached
+  the line, IPv4 logged as `x.y.z.0`, IPv6 as its /48. `infra/edge/apply.test.sh` gains a 26th
+  scan field and a privacy-floor assertion, proved by two end-to-end mutants (the
+  `Authorization` delete removed; the IPv4 mask widened to /32); suite 105 → 108.
+  **Also fixed in the suite:** it now runs `bash -n` on itself first. An apostrophe in the
+  single-quoted awk program made macOS bash 3.2 (the pre-push gate) print a syntax error halfway
+  through and exit **0**, after the apply cases and before every Caddyfile assertion; bash 5.2
+  (CI) exits 2. A suite that stopped early was green locally.
 
 ### Changed
 - **The edge guard tokenises the way Caddy does, and declines to certify what it cannot model.**

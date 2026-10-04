@@ -60,7 +60,52 @@ viafrei.de, www.viafrei.de {
 	}
 }
 
+# ACCESS LOG for mcp.viafrei.de ONLY (viafrei repo issue #438, that tenant's
+# owner 2026-10-04). Purpose: tell "slow before the app" from "slow in the
+# app" for multi-second stalls — Caddy's JSON line carries `duration` (the
+# whole request as the edge saw it) and `status`, and the MCP server logs its
+# own per-request time, so the two can be laid side by side. No other site
+# block on this host logs, and this directive changes nothing about them.
+#
+# Bounded on disk because the disk is shared: at most roll_keep + 1 files of
+# roll_size each (about 300 MiB), and nothing older than roll_keep_for (7 days).
+#
+# Personal data, minimised at write time (GDPR art. 5(1)(c)): the client
+# address is truncated to its /24 (IPv4) or /48 (IPv6) on BOTH fields that
+# carry it, and every header or query value that is a credential or a session
+# handle is deleted before the line is written — `Authorization` and `Cookie`
+# on the request, `Set-Cookie` on the response, and the MCP session id, which
+# travels as the `Mcp-Session-Id` header (Streamable HTTP, both directions)
+# and as the `sessionId` query parameter (the legacy `/messages` endpoint).
 mcp.viafrei.de {
+	log {
+		output file /var/log/caddy/viafrei-mcp-access.log {
+			roll_size 50MiB
+			roll_keep 5
+			roll_keep_for 168h
+		}
+		format filter {
+			wrap json
+			fields {
+				request>remote_ip ip_mask {
+					ipv4 24
+					ipv6 48
+				}
+				request>client_ip ip_mask {
+					ipv4 24
+					ipv6 48
+				}
+				request>headers>Authorization delete
+				request>headers>Cookie delete
+				request>headers>Mcp-Session-Id delete
+				request>uri query {
+					delete sessionId
+				}
+				resp_headers>Mcp-Session-Id delete
+				resp_headers>Set-Cookie delete
+			}
+		}
+	}
 	reverse_proxy 127.0.0.1:18187 {
 		header_up Host {host}
 		flush_interval -1

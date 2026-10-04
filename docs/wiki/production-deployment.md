@@ -406,6 +406,18 @@ file, reconciled:
   `infra/edge/Caddyfile` via PR first — apply.sh prints the exact diff and
   refuses to drop running-only lines without `EDGE_APPLY_CONFIRM=1`.
 
+**Edge access logs are per site and opt-in.** The edge writes no access log by
+default. The one site block that logs today is `mcp.viafrei.de` (viafrei repo
+issue #438): JSON lines with `duration` and `status` in
+`/var/log/caddy/viafrei-mcp-access.log`, rolled at 50 MiB, at most five old
+files, none older than 168 h, so it is bounded on the shared disk. The client
+address is masked to /24 (IPv4) or /48 (IPv6) on both `remote_ip` and
+`client_ip`, and `Authorization`, `Cookie`, `Set-Cookie`, the `Mcp-Session-Id`
+header (both directions) and the `sessionId` query parameter are deleted
+before the line is written. `infra/edge/apply.test.sh` asserts that privacy
+floor, so an edit that drops one filter goes red. A tenant that wants a log
+adds the same shape to its own block via PR; nothing about other sites changes.
+
 Two consequences for beaconfolio's own configuration:
 
 - `TRUSTED_PROXY_CIDRS` — **check it; do not assume it needs changing.** A

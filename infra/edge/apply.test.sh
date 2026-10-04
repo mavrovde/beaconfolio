@@ -5,6 +5,13 @@
 # Runs anywhere (macOS/Linux) — no sudo, no caddy, no systemd needed.
 set -euo pipefail
 
+# Parse the WHOLE file before running any of it. Measured while adding the
+# mcp access-log case: an apostrophe inside the single-quoted awk program
+# made bash 3.2 (macOS, where the pre-push gate runs) print a syntax error
+# halfway through and exit 0, after the apply cases and before every Caddyfile
+# assertion; bash 5.2 (CI) exits 2. A suite that stops early must not be green.
+bash -n "${BASH_SOURCE[0]}" || { echo "✗ apply.test.sh does not parse — nothing was tested" >&2; exit 2; }
+
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APPLY="$HERE/apply.sh"
 SRC="$HERE/Caddyfile"
@@ -349,7 +356,7 @@ echo "== the committed Caddyfile's shape (viafrei #94) =="
 # SUBSHELL, so ok/bad would print their line and lose the counter increment —
 # a red tick and exit 0. That is this file's own subject matter, from the
 # shell side.
-caddy_scan() { # caddy_scan <file> -> the 25 fields read by `read -r` below
+caddy_scan() { # caddy_scan <file> -> the 26 fields read by `read -r` below
     awk '
         # ---- the tokeniser: tk[1..ntok], tq[i]=1 if the token was quoted ----
         function tokenise(line,   i, c, L, start) {
@@ -579,6 +586,26 @@ caddy_scan() { # caddy_scan <file> -> the 25 fields read by `read -r` below
                 }
             }
             if (mcp && d1 == "flush_interval" && ntok == 2 && tk[2] == "-1") mcp_fl = 1
+            # ---- the mcp access log: its privacy floor (viafrei repo #438) ----
+            # The block may log only with the client address truncated on
+            # BOTH fields that carry it (ipv4 /24 or wider, ipv6 /48 or wider)
+            # and with every credential and session handle deleted. Only the
+            # block form `ip_mask { ipv4 N ipv6 N }` is modelled; any other
+            # spelling is a false red somebody fixes, never a silent pass.
+            if (mcp) {
+                if (d1 == "log") ml_log = 1
+                if (d1 == "}") { ml_cur = ""; ml_q = 0 }
+                if ((d1 == "request>remote_ip" || d1 == "request>client_ip") \
+                    && ntok == 3 && tk[2] == "ip_mask" && tk[3] == "{") ml_cur = d1
+                if (ml_cur != "" && d1 == "ipv4" && ntok == 2 && tk[2] ~ /^[0-9]+$/ && tk[2] + 0 <= 24) ml_v4[ml_cur] = 1
+                if (ml_cur != "" && d1 == "ipv6" && ntok == 2 && tk[2] ~ /^[0-9]+$/ && tk[2] + 0 <= 48) ml_v6[ml_cur] = 1
+                if (ntok == 2 && tk[2] == "delete" && !tq[2] && \
+                    (d1 == "request>headers>Authorization" || d1 == "request>headers>Cookie" || \
+                     d1 == "request>headers>Mcp-Session-Id" || d1 == "resp_headers>Mcp-Session-Id" || \
+                     d1 == "resp_headers>Set-Cookie")) ml_del[d1] = 1
+                if (d1 == "request>uri" && ntok == 3 && tk[2] == "query" && tk[3] == "{") ml_q = 1
+                if (ml_q && d1 == "delete" && ntok == 2 && tk[2] == "sessionId") ml_qd = 1
+            }
             if (site && d1 == "header_up" && ntok == 3 && tk[2] == "X-Forwarded-For" && tk[3] == "{remote_host}") xff = 1
 
             # ---- the port, from the RAW line, minus full-line comments ----
@@ -633,13 +660,17 @@ caddy_scan() { # caddy_scan <file> -> the 25 fields read by `read -r` below
         }
         END {
               for (j = 1; j <= nimp; j++) if (!(impn[j] in snip)) badimport++
+              nd = 0; for (k in ml_del) nd++
+              mlog = (ml_log && ml_v4["request>remote_ip"] && ml_v6["request>remote_ip"] \
+                      && ml_v4["request>client_ip"] && ml_v6["request>client_ip"] \
+                      && nd == 5 && ml_qd) ? 1 : 0
               print (tot+0), (inside+0), (imp+0), (gseen+0), (deny+0), \
                     (range+0), (heredoc+0), (imports+0), (badimport+0), \
                     ((neg == 0 && depth == 0) ? 1 : 0), (nonliteral+0), \
                     (out_remote+0), (out_deny+0), (forks+0), (forkbad+0), \
                     (tokbrace+0), (inq ? 1 : 0), (status_proxy+0), (xff+0), \
                     (pub_landing+0), ((mcp_rp && mcp_fl) ? 1 : 0), (pub_beacon+0), \
-                    badtoken, badbrace, 25 }' "$1" "$1"
+                    mlog, badtoken, badbrace, 26 }' "$1" "$1"
 }
 
 # THE VERDICTS, as FUNCTIONS, and that is half of the vacuity problem. Round 4
@@ -664,14 +695,14 @@ present() {   # present <flag> — a route that must still be there
 
 read -r gate_tot gate_inside s_imp s_gate s_deny s_range s_heredoc s_imports \
         s_badimport s_balanced s_nonliteral s_remote s_outdeny s_forks s_forkbad \
-        s_tokbrace s_openquote s_statusproxy s_xff s_landing s_mcp s_beacon \
+        s_tokbrace s_openquote s_statusproxy s_xff s_landing s_mcp s_beacon s_mcplog \
         s_badtoken s_badbrace s_nfields \
     <<< "$(caddy_scan "$SRC")"
-# 25 positional fields is a lot to keep in step, so the scan says how many it
+# 26 positional fields is a lot to keep in step, so the scan says how many it
 # wrote and this line checks it. A field added in the middle without updating
 # the reader would otherwise shift every variable after it silently.
-[ "${s_nfields:-}" = 25 ] \
-    && ok "the scan wrote all 25 fields the reader expects" \
+[ "${s_nfields:-}" = 26 ] \
+    && ok "the scan wrote all 26 fields the reader expects" \
     || bad "caddy_scan wrote a different number of fields (${s_nfields:-none}): every variable after the gap is shifted"
 
 # 12. the status route exists and points at the registered tenant port
@@ -788,6 +819,12 @@ present "$s_mcp" \
     && ok "mcp.viafrei.de still reverse-proxies 18187 unbuffered, unrestricted" || bad "the mcp.viafrei.de block changed"
 present "$s_beacon" \
     && ok "and beaconfolio.com is untouched" || bad "the beaconfolio.com block changed"
+# The one access log on this edge (viafrei repo #438) is personal data: it may
+# exist only with the client address truncated on both fields and every
+# credential / session handle deleted before the line is written.
+present "$s_mcplog" \
+    && ok "mcp.viafrei.de logs with remote_ip/client_ip masked (/24, /48) and Authorization, Cookie, Set-Cookie, both Mcp-Session-Id and ?sessionId deleted" \
+    || bad "the mcp.viafrei.de access log lost its privacy floor (IP mask or a secret-field delete)"
 
 # 15. X-Forwarded-For is OVERWRITTEN, not appended. Caddy appends by default;
 # the tenant's app trusts the LAST hop when the peer is loopback, so an appended
@@ -828,7 +865,7 @@ echo "== 16. the gate can fail: the scan AND the verdicts, on inputs built to br
 vac_scan() { # vac_scan <file>; sets v_* in THIS shell -- no pipeline, no subshell
     read -r v_tot v_inside v_imp v_gate v_deny v_range v_heredoc v_imports \
             v_badimport v_balanced v_nonliteral v_remote v_outdeny v_forks v_forkbad \
-            v_tokbrace v_openquote v_statusproxy v_xff v_landing v_mcp v_beacon \
+            v_tokbrace v_openquote v_statusproxy v_xff v_landing v_mcp v_beacon v_mcplog \
             v_badtoken v_badbrace v_nfields \
         <<< "$(caddy_scan "$1")"
 }
@@ -1688,6 +1725,18 @@ grep -v 'flush_interval' "$SRC" > "$TMP/m17"
 if mutate "flush_interval deleted from the mcp block" "$TMP/m17"; then
     expect_fail "deleting flush_interval fails end to end on the MCP assertion — no other tick claims it" \
         "the mcp.viafrei.de block changed"
+fi
+
+grep -v 'request>headers>Authorization delete' "$SRC" > "$TMP/m17"
+if mutate "the Authorization delete removed from the mcp access log" "$TMP/m17"; then
+    expect_fail "logging Authorization fails end to end, on the PRIVACY-FLOOR assertion" \
+        "the mcp.viafrei.de access log lost its privacy floor"
+fi
+
+sed 's/ipv4 24/ipv4 32/' "$SRC" > "$TMP/m17"
+if mutate "the IPv4 mask widened to /32 (no truncation)" "$TMP/m17"; then
+    expect_fail "an untruncated IPv4 address fails end to end, on the PRIVACY-FLOOR assertion" \
+        "the mcp.viafrei.de access log lost its privacy floor"
 fi
 
 echo
