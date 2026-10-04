@@ -406,6 +406,18 @@ file, reconciled:
   `infra/edge/Caddyfile` via PR first — apply.sh prints the exact diff and
   refuses to drop running-only lines without `EDGE_APPLY_CONFIRM=1`.
 
+**Edge access logs are per site and opt-in.** The edge writes no access log by
+default, and `apply.test.sh` asserts that no block but `mcp.viafrei.de` carries a
+`log` or `log_append`. That block (viafrei repo issue #438) writes JSON lines with
+`duration` and `status` to `/var/log/caddy/viafrei-mcp-access.log`: `roll_size 50MiB`,
+`roll_interval 24h`, `roll_keep 7`, `roll_keep_for 120h`. Headers are an allow-list —
+both header maps deleted whole, `User-Agent`, `Accept` and `Content-Type` appended
+back — the client address is masked to /24 or /48 on `remote_ip` and `client_ip`,
+and the `sessionId` query parameter is deleted. Rotation in Caddy 2.11.4 happens
+only on a write, so the 7-day bound holds while the endpoint sees at least one
+request a day. The log file must belong to the `caddy` user; `apply.sh` validates
+as that user and refuses an existing file owned by anyone else.
+
 Two consequences for beaconfolio's own configuration:
 
 - `TRUSTED_PROXY_CIDRS` — **check it; do not assume it needs changing.** A

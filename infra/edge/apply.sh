@@ -32,6 +32,9 @@
 #   EDGE_SUDO      privilege wrapper  (default sudo; test sets it empty)
 #   EDGE_CADDY     caddy binary       (default caddy)
 #   EDGE_SYSTEMCTL systemctl binary   (default systemctl)
+#   EDGE_CADDY_USER the service user  (default caddy)
+#   EDGE_AS_CADDY  run-as-service-user wrapper for validate
+#                  (default `sudo -u $EDGE_CADDY_USER -H`)
 set -euo pipefail
 
 if [ -z "${BASH_SOURCE[0]:-}" ]; then
@@ -47,6 +50,8 @@ DST="${EDGE_DST:-/etc/caddy/Caddyfile}"
 SUDO="${EDGE_SUDO-sudo}"
 CADDY="${EDGE_CADDY:-caddy}"
 SYSTEMCTL="${EDGE_SYSTEMCTL:-systemctl}"
+CADDY_USER="${EDGE_CADDY_USER:-caddy}"
+AS_CADDY="${EDGE_AS_CADDY-sudo -u $CADDY_USER -H}"
 
 MODE="${1:---check}"
 case "$MODE" in
@@ -82,16 +87,40 @@ if [ -f "$DST" ] && diff -q "$DST" "$SRC" >/dev/null; then
     exit 0
 fi
 
-# Under $SUDO, and that is not decoration: the status block imports
-# /etc/caddy/viafrei-status-allow.conf, which is documented (and is, measured
-# on the host 2026-09-21) 0640 root:caddy. An UNPRIVILEGED validate cannot read
-# it and dies with "Could not import ...: permission denied" — so every --apply
-# by the ordinary user this script otherwise assumes (it wraps cp/install/
-# systemctl in $SUDO precisely because it is not run as root) failed at the
-# first step. Fail-closed, so nothing was ever wrongly applied; it simply
-# meant the sanctioned path could not complete.
-echo "== validating committed Caddyfile =="
-if ! $SUDO "$CADDY" validate --config "$SRC" --adapter caddyfile; then
+# PRECONDITION: every access-log file the committed config names must, if it
+# already exists, belong to the service user. Caddy opens it as that user on
+# reload; a file left root-owned (0600) by an earlier root-run validate makes
+# the reload fail with "permission denied", every retry included (#477 review
+# round 1). Refused here, by name, before anything else runs. Absent files are
+# fine: the validate below creates them as the service user.
+while IFS= read -r lf; do
+    [ -n "$lf" ] || continue
+    if [ -e "$lf" ] && [ -z "$(find "$lf" -maxdepth 0 -user "$CADDY_USER" 2>/dev/null)" ]; then
+        echo "✗ log file $lf exists and is not owned by $CADDY_USER — the service could" >&2
+        echo "  not open it after the reload. Fix: sudo chown $CADDY_USER:$CADDY_USER $lf" >&2
+        echo "  (nothing was validated or applied)" >&2
+        exit 1
+    fi
+done < <(awk '$1 == "output" && $2 == "file" { print $3 }' "$SRC")
+
+# AS THE SERVICE USER, and that is not decoration, twice over:
+#  * the status block imports /etc/caddy/viafrei-status-allow.conf, 0640
+#    root:caddy (measured 2026-09-21) — an ordinary user cannot read it, the
+#    service user can, through its group;
+#  * validate PROVISIONS the config, which opens every `output file` log. Run
+#    as root (the previous `$SUDO caddy validate`) it created those files
+#    root:root 0600 — measured in caddy:2.11.4 — and the caddy-user service
+#    then failed to open them, so --apply reloaded, failed and restored, and
+#    the leftover file broke every retry (#477 review round 1, blocker).
+# Validating as the user the service runs as makes validate see exactly what
+# the reload will see. The config is validated from a 0644 temp copy because
+# the checkout may sit where that user cannot read (e.g. under /root).
+echo "== validating committed Caddyfile (as $CADDY_USER) =="
+VCFG="$(mktemp "${TMPDIR:-/tmp}/edge-validate.XXXXXX")"
+trap 'rm -f "$VCFG"' EXIT
+cp "$SRC" "$VCFG"
+chmod 0644 "$VCFG"
+if ! $AS_CADDY "$CADDY" validate --config "$VCFG" --adapter caddyfile; then
     echo "✗ validation FAILED — the running edge was NOT touched" >&2
     exit 1
 fi

@@ -60,7 +60,69 @@ viafrei.de, www.viafrei.de {
 	}
 }
 
+# ACCESS LOG for mcp.viafrei.de ONLY (viafrei repo issue #438, that tenant's
+# owner 2026-10-04). Purpose: tell "slow before the app" from "slow in the
+# app" for multi-second stalls — Caddy's JSON line carries `duration` (the
+# whole request as the edge saw it) and `status`, and the MCP server logs its
+# own per-request time, so the two can be laid side by side. No other site
+# block on this host logs (apply.test.sh asserts it), and this block changes
+# nothing about them.
+#
+# HEADERS ARE AN ALLOW-LIST, not a deny-list. `request>headers delete` and
+# `resp_headers delete` drop both header maps whole, and `log_append` puts back
+# exactly three request headers as top-level fields. A deny-list cannot be
+# complete: any header a client invents (X-Forwarded-For, Forwarded,
+# X-Real-IP, True-Client-IP, CF-Connecting-IP, Referer, an API key under a
+# custom name) would be written verbatim, unmasked (#477 review round 1).
+# Dropped with the maps: Authorization, Cookie, Set-Cookie and Mcp-Session-Id
+# in both directions. The legacy `/messages` endpoint carries the MCP session
+# in the `sessionId` query parameter; it is deleted from `uri`.
+#
+# The client address is truncated to its /24 (IPv4) or /48 (IPv6) on BOTH
+# fields that carry it (GDPR art. 5(1)(c), minimised at write time).
+#
+# RETENTION, measured on caddy 2.11.4: the active file rotates when it reaches
+# roll_size OR when roll_interval has passed — but only at the next WRITE;
+# Caddy has no timer, so with no requests nothing rotates and nothing is
+# pruned (nor is anything new written). roll_keep_for counts from a rotated
+# file's ROTATION time and is enforced at rotations, so with daily rotation a
+# line is deleted at the latest ~24h (active) + 120h (kept) + 24h (the next
+# rotation that prunes) = 168h after it was written, as long as the endpoint
+# gets a request at least once a day. Rotated files are gzipped. Disk bound:
+# at most roll_keep + 1 files of roll_size (about 400 MiB, far less gzipped).
+#
+# The file must belong to the service user: apply.sh validates AS that user
+# and refuses an existing log file owned by anyone else.
 mcp.viafrei.de {
+	log_append user_agent {http.request.header.User-Agent}
+	log_append accept {http.request.header.Accept}
+	log_append content_type {http.request.header.Content-Type}
+	log {
+		output file /var/log/caddy/viafrei-mcp-access.log {
+			roll_size 50MiB
+			roll_interval 24h
+			roll_keep 7
+			roll_keep_for 120h
+		}
+		format filter {
+			wrap json
+			fields {
+				request>remote_ip ip_mask {
+					ipv4 24
+					ipv6 48
+				}
+				request>client_ip ip_mask {
+					ipv4 24
+					ipv6 48
+				}
+				request>headers delete
+				resp_headers delete
+				request>uri query {
+					delete sessionId
+				}
+			}
+		}
+	}
 	reverse_proxy 127.0.0.1:18187 {
 		header_up Host {host}
 		flush_interval -1
