@@ -36,7 +36,7 @@ jobs:
       - name: Pull the published image
         run: docker pull ghcr.io/${{ github.repository_owner }}/beaconfolio-${{ matrix.service }}:latest
       - name: Snyk Container test → SARIF
-        uses: snyk/actions/docker@12140f4059e244892ae643824a95459a102120dd
+        uses: snyk/actions/docker@b075801f26076be9bb50521154cafab73f44da0c
         continue-on-error: true   # findings are release-triage input (rule 8), not a build-breaker
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

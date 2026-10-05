@@ -52,7 +52,7 @@ jobs:
           if ! grep -Eq '^version: "?v[0-9]' .snyk; then
             echo "::error::.snyk has no valid 'version:' key — Snyk silently ignores the whole policy file, so every exclude/ignore in it is dead (#381)"; exit 1
           fi
-      - uses: snyk/actions/setup@12140f4059e244892ae643824a95459a102120dd
+      - uses: snyk/actions/setup@b075801f26076be9bb50521154cafab73f44da0c
       # Snyk needs resolvable dependency trees for SCA: install both stacks' manifests.
       - uses: actions/setup-node@v7
         with:
