@@ -30,6 +30,14 @@ admin.beaconfolio.com {
 	}
 }
 
+# mavrov.de is the owner's personal domain and only REDIRECTS to beaconfolio.com
+# (owner, 2026-10-11). No upstream and no port: Caddy answers it itself, with a
+# certificate of its own obtained automatically (the DNS zone is at Hetzner and
+# points both names at this host). 301, path and query kept.
+mavrov.de, www.mavrov.de {
+	redir https://beaconfolio.com{uri} permanent
+}
+
 # --- Tenant: viafrei (ports.md block 18100–18199) ----------------------------
 # Plain-HTTP loopback upstreams: the tenant terminates nothing itself (no
 # self-signed hop, so no tls_insecure_skip_verify and no redirect-only port).
