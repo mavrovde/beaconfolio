@@ -30,11 +30,11 @@ admin.beaconfolio.com {
 	}
 }
 
-# mavrov.de is the owner's personal domain and only REDIRECTS to beaconfolio.com
+# mavrov.de is the owner's personal domain and only REDIRECTS to beaconfolio.com — de-brand:canonical: the owner's personal domain, kept only as a redirect to the product
 # (owner, 2026-10-11). No upstream and no port: Caddy answers it itself, with a
 # certificate of its own obtained automatically (the DNS zone is at Hetzner and
 # points both names at this host). 301, path and query kept.
-mavrov.de, www.mavrov.de {
+mavrov.de, www.mavrov.de { # de-brand:canonical: the owner's personal domain, kept only as a redirect to the product
 	redir https://beaconfolio.com{uri} permanent
 }
 
