@@ -146,11 +146,14 @@ mcp.viafrei.de {
 	}
 }
 
-# The viafrei tenant's STATUS DASHBOARD (viafrei repo issue #94) — the only site
-# block on this host with an IP restriction, and deliberately so: the two blocks
-# above serve the product and stay PUBLIC (viafrei owner, 2026-09-19), this one
-# serves the operational surface — every worker's effective configuration, every
-# feed's errors, the schema head, what is deployed.
+# The viafrei tenant's OPERATIONS CONSOLE (viafrei repo issues #94, #560) — the
+# only site block on this host with an IP restriction, and deliberately so: the
+# blocks above serve the product and stay PUBLIC (viafrei owner, 2026-09-19), this
+# one serves the operational surface — every worker's effective configuration,
+# every feed's errors, the schema head, what is deployed, and since viafrei 2.0
+# the owner's restart and configuration actions. It moved from status.viafrei.de
+# to admin.viafrei.de in viafrei 2.0 (owner, 2026-10-11/12); status.viafrei.de is
+# now the PUBLIC status page, the next block.
 #
 # THE ADDRESSES ARE NOT IN THIS FILE, and must never be. They are personal data,
 # they change when a network does, and changing them must not require a code
@@ -172,7 +175,7 @@ mcp.viafrei.de {
 #   2. `bash infra/edge/apply.sh`          (read-only check + diff)
 #   3. `bash infra/edge/apply.sh --apply`  (validate, then reload)
 #
-# DNS: `status.viafrei.de` must be a plain A/AAAA record, NEVER a
+# DNS: `admin.viafrei.de` must be a plain A/AAAA record, NEVER a
 # CDN-proxied one. `remote_ip` matches the DIRECT peer, so behind a proxy this
 # block would see the proxy's address and the restriction would silently become
 # "nobody" — or, if that range were ever listed, "everybody".
@@ -195,7 +198,7 @@ mcp.viafrei.de {
 # (STATUS_TRUSTED_PROXY_CIDR, viafrei's deploy/docker-compose.prod.yml) and
 # reads the LAST hop, the one written here. Nothing on that path is configured
 # in this repository; the only contract is: overwrite, never append.
-status.viafrei.de {
+admin.viafrei.de {
 	import /etc/caddy/viafrei-status-allow.conf
 	handle @allowed {
 		reverse_proxy 127.0.0.1:18190 {
@@ -205,6 +208,27 @@ status.viafrei.de {
 	}
 	handle {
 		respond 403
+	}
+}
+
+# The viafrei tenant's PUBLIC STATUS PAGE (viafrei repo issue #589, owner
+# 2026-10-11): status.viafrei.de, served to everybody by the SAME container as
+# the console above. The container routes by Host: this name reaches only the
+# public router, which holds no operations pool and answers a console path with
+# 404 — so making this block public exposes nothing the app does not already
+# refuse on its own. The two names stay two blocks rather than one with a
+# per-host matcher, so the allow-list import above can never be dropped by an
+# edit to this one.
+#
+# Load: the app renders each public document at most once a minute per
+# (route, language, source) and serves the cached body otherwise (viafrei's
+# packages/status/src/server/public-app.ts, BODY_CACHE_MS), so a burst of readers
+# costs the database one read. X-Forwarded-For is overwritten here for the same
+# reason as above: the app must never see a client-chosen address.
+status.viafrei.de {
+	reverse_proxy 127.0.0.1:18190 {
+		header_up Host {host}
+		header_up X-Forwarded-For {remote_host}
 	}
 }
 

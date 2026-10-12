@@ -18,16 +18,22 @@ cutover bound HTTPS before the block convention settled). It is beaconfolio's
 and is listed here so no future tenant claims it; new tenants keep all bindings
 inside their block.
 
-\*** 18190 is the viafrei status dashboard (viafrei repo issue #94). It is the
+\*** 18190 is the viafrei status container (viafrei repo issues #94, #560, #589),
+served under two names since viafrei 2.0: `status.viafrei.de` is the PUBLIC
+status page (no restriction; the container routes by Host and answers a console
+path there with 404), and `admin.viafrei.de` is the operations console — the
 one route on this host whose site block carries an IP restriction: the
-`status.viafrei.de` block matches `remote_ip` against an address list imported
+`admin.viafrei.de` block matches `remote_ip` against an address list imported
 from `/etc/caddy/viafrei-status-allow.conf` (root:caddy, 0640 — the addresses
 are personal data and this is a shared host) — a file outside every repository —
 and answers a bare `403` to everything else. Its DNS record must be a plain
 A/AAAA: `remote_ip` matches the direct peer, so a proxied record would make the
 matcher see the proxy and the restriction mean nothing. `viafrei.de` and `mcp.viafrei.de` are unaffected and stay public. Like
 every tenant port it is bound `127.0.0.1` only; the container behind it enforces
-the same list a second time (empty = deny all).
+the same list a second time (empty = deny all). `apply.test.sh` holds 18190 to exactly
+two routes: inside `admin.viafrei.de`'s `handle @allowed`, and the one bare
+`reverse_proxy` (Host passed, X-Forwarded-For overwritten) that is the whole of
+`status.viafrei.de`; a third route anywhere fails the gate.
 
 \** 5433 predates the block convention entirely (it is what `TEST_DATABASE_URL`
 and every doc in the repo point at). Registered so no tenant binds it; like all
