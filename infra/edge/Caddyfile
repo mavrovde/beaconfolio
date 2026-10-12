@@ -30,6 +30,14 @@ admin.beaconfolio.com {
 	}
 }
 
+# mavrov.de is the owner's personal domain and only REDIRECTS to beaconfolio.com — de-brand:canonical: the owner's personal domain, kept only as a redirect to the product
+# (owner, 2026-10-11). No upstream and no port: Caddy answers it itself, with a
+# certificate of its own obtained automatically (the DNS zone is at Hetzner and
+# points both names at this host). 301, path and query kept.
+mavrov.de, www.mavrov.de { # de-brand:canonical: the owner's personal domain, kept only as a redirect to the product
+	redir https://beaconfolio.com{uri} permanent
+}
+
 # --- Tenant: viafrei (ports.md block 18100–18199) ----------------------------
 # Plain-HTTP loopback upstreams: the tenant terminates nothing itself (no
 # self-signed hop, so no tls_insecure_skip_verify and no redirect-only port).
@@ -54,10 +62,19 @@ admin.beaconfolio.com {
 # :18181 still exists in the tenant's compose and still serves the old notice;
 # nothing routes to it. Retiring the port is a viafrei-repo change and belongs
 # with the v0.1.0 landing work.
-viafrei.de, www.viafrei.de {
+viafrei.de {
 	reverse_proxy 127.0.0.1:18180 {
 		header_up Host {host}
 	}
+}
+
+# www.viafrei.de REDIRECTS to the apex (viafrei repo, 2026-10-12). It used to
+# share the block above and serve the site itself, so Google indexed
+# https://www.viafrei.de/ as its own canonical page beside https://viafrei.de/de
+# (Search Console URL inspection, 2026-10-12) — a duplicate of the home page.
+# Permanent, path and query kept; the certificate for www stays automatic.
+www.viafrei.de {
+	redir https://viafrei.de{uri} permanent
 }
 
 # ACCESS LOG for mcp.viafrei.de ONLY (viafrei repo issue #438, that tenant's
