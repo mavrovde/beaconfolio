@@ -62,10 +62,19 @@ mavrov.de, www.mavrov.de {
 # :18181 still exists in the tenant's compose and still serves the old notice;
 # nothing routes to it. Retiring the port is a viafrei-repo change and belongs
 # with the v0.1.0 landing work.
-viafrei.de, www.viafrei.de {
+viafrei.de {
 	reverse_proxy 127.0.0.1:18180 {
 		header_up Host {host}
 	}
+}
+
+# www.viafrei.de REDIRECTS to the apex (viafrei repo, 2026-10-12). It used to
+# share the block above and serve the site itself, so Google indexed
+# https://www.viafrei.de/ as its own canonical page beside https://viafrei.de/de
+# (Search Console URL inspection, 2026-10-12) — a duplicate of the home page.
+# Permanent, path and query kept; the certificate for www stays automatic.
+www.viafrei.de {
+	redir https://viafrei.de{uri} permanent
 }
 
 # ACCESS LOG for mcp.viafrei.de ONLY (viafrei repo issue #438, that tenant's

@@ -693,7 +693,7 @@ caddy_scan() { # caddy_scan <file> -> the 28 fields read by `read -r` below
                 if (b == 1) {
                     if (depth == 0) {
                         site    = (hdr == "status.viafrei.de")
-                        landing = (hdr == "viafrei.de, www.viafrei.de")
+                        landing = (hdr == "viafrei.de")
                         mcp     = (hdr == "mcp.viafrei.de")
                         beacon  = (hdr == "beaconfolio.com, www.beaconfolio.com")
                         inblk = 1; fork_seen = 0; fork_fb = 0; ga = 0; fb = 0
@@ -884,6 +884,14 @@ contained "$gate_tot" "$gate_inside" \
 # be true of a file that had lost them.
 present "$s_landing" \
     && ok "viafrei.de still reverse-proxies 18180, unrestricted" || bad "the viafrei.de block changed"
+# www.viafrei.de is a REDIRECT to the apex (viafrei repo, 2026-10-12): it
+# served the site itself and Google indexed it as a second canonical home.
+# Asserted on the committed file, block by block: the www site exists, its
+# whole body is the one permanent redir, and it proxies nothing.
+www_body="$(awk '/^www\.viafrei\.de[[:space:]]*\{/{f=1;next} f&&/^\}/{exit} f{gsub(/^[[:space:]]+/,"");print}' "$SRC")"
+[ "$www_body" = "redir https://viafrei.de{uri} permanent" ] \
+    && ok "www.viafrei.de 301-redirects to https://viafrei.de{uri} and does nothing else" \
+    || bad "the www.viafrei.de block is not exactly one permanent redirect to the apex (got: ${www_body:-nothing})"
 present "$s_mcp" \
     && ok "mcp.viafrei.de still reverse-proxies 18187 unbuffered, unrestricted" || bad "the mcp.viafrei.de block changed"
 present "$s_beacon" \
@@ -1786,7 +1794,7 @@ fi
 # and the decoy that exposed the defect: a mutation of something ELSE must not
 # be readable as any of the above. It is caught, by its own assertion.
 awk '{ print }
-     /^viafrei\.de, www\.viafrei\.de \{$/ {
+     /^viafrei\.de \{$/ {
          print "\thandle * {"
          print "\t\trespond 403"
          print "\t}"
@@ -1821,7 +1829,7 @@ if mutate "roll_interval removed from the mcp access log" "$TMP/m17"; then
         "the mcp.viafrei.de access log lost its retention bound"
 fi
 
-awk '{ print } /^viafrei\.de, www\.viafrei\.de \{$/ { print "\tlog" }' "$SRC" > "$TMP/m17"
+awk '{ print } /^viafrei\.de \{$/ { print "\tlog" }' "$SRC" > "$TMP/m17"
 if mutate "a log directive planted in the viafrei.de block" "$TMP/m17"; then
     expect_fail "a second site that logs fails end to end, on the OTHER-LOG assertion" \
         "outside mcp.viafrei.de: another site would start writing an access log"
