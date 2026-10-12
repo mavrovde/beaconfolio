@@ -948,6 +948,12 @@ www_body="$(awk '/^www\.viafrei\.de[[:space:]]*\{/{f=1;next} f&&/^\}/{exit} f{gs
 [ "$www_body" = "redir https://viafrei.de{uri} permanent" ] \
     && ok "www.viafrei.de 301-redirects to https://viafrei.de{uri} and does nothing else" \
     || bad "the www.viafrei.de block is not exactly one permanent redirect to the apex (got: ${www_body:-nothing})"
+# mavrov.de / www.mavrov.de are a REDIRECT to beaconfolio.com (the owner's old
+# domain): the whole body is the one permanent redir, and it proxies nothing.
+mav_body="$(awk '/^mavrov\.de, www\.mavrov\.de[[:space:]]*\{/{f=1;next} f&&/^\}/{exit} f{gsub(/^[[:space:]]+/,"");print}' "$SRC")"
+[ "$mav_body" = "redir https://beaconfolio.com{uri} permanent" ] \
+    && ok "mavrov.de and www.mavrov.de 301-redirect to https://beaconfolio.com{uri} and do nothing else" \
+    || bad "the mavrov.de block is not exactly one permanent redirect to beaconfolio.com (got: ${mav_body:-nothing})"
 present "$s_mcp" \
     && ok "mcp.viafrei.de still reverse-proxies 18187 unbuffered, unrestricted" || bad "the mcp.viafrei.de block changed"
 present "$s_beacon" \
