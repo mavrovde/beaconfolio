@@ -9,7 +9,7 @@ tenant binds only `127.0.0.1:<port>` inside its allocated block, and the edge
 | Range         | Tenant        | In use today                                                                 |
 |---------------|---------------|------------------------------------------------------------------------------|
 | 18000–18099   | beaconfolio   | 18080 (proxy HTTP, redirect-only), 18443* (proxy HTTPS, the edge upstream)   |
-| 18100–18199   | viafrei       | 18180 (landing HTTP, PUBLIC), 18181 (retired preview root, nothing routes to it)****, 18187 (MCP Streamable HTTP, PUBLIC), 18190 (status dashboard)***, 18132 (Postgres, tooling) |
+| 18100–18199   | viafrei       | 18180 (landing HTTP, PUBLIC), 18181 (retired preview root, nothing routes to it)****, 18187 (MCP Streamable HTTP, PUBLIC), 18190 (status page + operations console, both IP-gated)***, 18132 (Postgres, tooling) |
 | 18200–18999   | *unallocated* | — claim the next free 100-block per tenant via PR against this file          |
 | 5433**        | beaconfolio   | Postgres (`127.0.0.1:5433`, compose `db` publish — local pytest + tooling)   |
 
@@ -19,21 +19,26 @@ and is listed here so no future tenant claims it; new tenants keep all bindings
 inside their block.
 
 \*** 18190 is the viafrei status container (viafrei repo issues #94, #560, #589),
-served under two names since viafrei 2.0: `status.viafrei.de` is the PUBLIC
-status page (no restriction; the container routes by Host and answers a console
-path there with 404), and `admin.viafrei.de` is the operations console — the
-one route on this host whose site block carries an IP restriction: the
-`admin.viafrei.de` block matches `remote_ip` against an address list imported
-from `/etc/caddy/viafrei-status-allow.conf` (root:caddy, 0640 — the addresses
-are personal data and this is a shared host) — a file outside every repository —
-and answers a bare `403` to everything else. Its DNS record must be a plain
-A/AAAA: `remote_ip` matches the direct peer, so a proxied record would make the
-matcher see the proxy and the restriction mean nothing. `viafrei.de` and `mcp.viafrei.de` are unaffected and stay public. Like
+served under two names since viafrei 2.0: `status.viafrei.de` is the status
+page and `admin.viafrei.de` is the operations console; the container routes by
+Host, so the two names still reach different routers (a console path on the
+status name answers 404). They are the two routes on this host whose site
+blocks carry an IP restriction, and both have exactly the same shape: the block
+matches `remote_ip` against an address list imported from
+`/etc/caddy/viafrei-status-allow.conf` (root:caddy, 0640 — the addresses are
+personal data and this is a shared host) — a file outside every repository —
+and answers a bare `403` to everything else. `status.viafrei.de` was public from
+viafrei 2.0 until 2026-10-13, when its owner closed it again ("Close the status
+panel by the ip white list again, it should be available only to our laptop").
+Both DNS records must be a plain A/AAAA: `remote_ip` matches the direct peer, so
+a proxied record would make the matcher see the proxy and the restriction mean
+nothing. `viafrei.de` and `mcp.viafrei.de` are unaffected and stay public. Like
 every tenant port it is bound `127.0.0.1` only; the container behind it enforces
-the same list a second time (empty = deny all). `apply.test.sh` holds 18190 to exactly
-two routes: inside `admin.viafrei.de`'s `handle @allowed`, and the one bare
-`reverse_proxy` (Host passed, X-Forwarded-For overwritten) that is the whole of
-`status.viafrei.de`; a third route anywhere fails the gate.
+the same list a second time (empty = deny all). `apply.test.sh` holds every
+route to 18190 inside the `handle @allowed` of one of those two blocks — at
+least one in each, none anywhere else — and asserts each block's door
+(import + `handle @allowed` + `handle { respond 4xx }`) separately; a public
+route to 18190 anywhere fails the gate.
 
 \** 5433 predates the block convention entirely (it is what `TEST_DATABASE_URL`
 and every doc in the repo point at). Registered so no tenant binds it; like all
