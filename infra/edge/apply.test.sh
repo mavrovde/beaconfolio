@@ -1836,9 +1836,12 @@ contained 0 0 0 \
 present 1 \
     && ok "(j) the present verdict accepts exactly 1" \
     || bad "(j) the present verdict rejects 1 — every route that must still be there would be red"
-present 0 || present 2 \
-    && bad "(j) the present verdict ACCEPTS 0 or 2: a missing block, or a second status.viafrei.de block, would pass" \
-    || ok "(j) and rejects 0 and 2"
+present 0 \
+    && bad "(j) the present verdict ACCEPTS 0: a missing block would pass" \
+    || ok "(j) and rejects 0"
+present 2 \
+    && bad "(j) the present verdict ACCEPTS 2: a second status.viafrei.de block would pass" \
+    || ok "(j) and rejects 2"
 door 1 1 1 \
     && ok "(j) the door verdict accepts import + gate + refusal" \
     || bad "(j) the door verdict rejects a complete door"
@@ -2034,7 +2037,7 @@ fi
 # the import MOVED rather than deleted: the grep that section 13 used to be
 # would have stayed green here, with the console open to everybody.
 { inblock 'admin.viafrei.de' '^[[:space:]]*import /etc/caddy/viafrei-status-allow[.]conf$' \
-    | awk '{ print } /^viafrei\.de \{$/ { print "    import /etc/caddy/viafrei-status-allow.conf" }'; } > "$TMP/m17"
+    | awk '{ print } /^viafrei\.de \{$/ { print "\timport /etc/caddy/viafrei-status-allow.conf" }'; } > "$TMP/m17"
 if mutate "the allow-list import moved from admin to the viafrei.de block" "$TMP/m17"; then
     expect_fail "a moved import fails end to end, on the ADMIN IMPORT and ADMIN DOOR assertions" \
         "admin.viafrei.de does not import its address list" \
@@ -2060,10 +2063,10 @@ fi
 # say so.
 awk '$0 == "status.viafrei.de {" {
          print
-         print "    reverse_proxy 127.0.0.1:18190 {"
-         print "        header_up Host {host}"
-         print "        header_up X-Forwarded-For {remote_host}"
-         print "    }"
+         print "\treverse_proxy 127.0.0.1:18190 {"
+         print "\t\theader_up Host {host}"
+         print "\t\theader_up X-Forwarded-For {remote_host}"
+         print "\t}"
          skip = 1; next
      }
      skip && /^}$/ { skip = 0 }
@@ -2078,7 +2081,7 @@ fi
 # a route to 18190 outside both gates, three spellings: a second directive
 # INSIDE the status block but outside its handle @allowed, a wildcard
 # catch-all site, and (above) another named site.
-awk '{ print } /^status\.viafrei\.de \{$/ { print "    reverse_proxy /console* 127.0.0.1:18190" }' "$SRC" > "$TMP/m17"
+awk '{ print } /^status\.viafrei\.de \{$/ { print "\treverse_proxy /console* 127.0.0.1:18190" }' "$SRC" > "$TMP/m17"
 if mutate "a 18190 directive in the status block outside its gate" "$TMP/m17"; then
     expect_fail "an ungated 18190 directive inside status.viafrei.de fails end to end, on the CONTAINMENT assertion and only that one" \
         "18190 is reachable outside the gate"

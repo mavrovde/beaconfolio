@@ -227,16 +227,16 @@ admin.viafrei.de {
 # one block can never drop the other's import. Host is passed through because
 # the router keys on it; X-Forwarded-For is overwritten for the reason above.
 status.viafrei.de {
-    import /etc/caddy/viafrei-status-allow.conf
-    handle @allowed {
-        reverse_proxy 127.0.0.1:18190 {
-            header_up Host {host}
-            header_up X-Forwarded-For {remote_host}
-        }
-    }
-    handle {
-        respond 403
-    }
+	import /etc/caddy/viafrei-status-allow.conf
+	handle @allowed {
+		reverse_proxy 127.0.0.1:18190 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle {
+		respond 403
+	}
 }
 
 # --- Second-tenant template (#338 AC: the dry-run example) -------------------

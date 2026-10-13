@@ -33,8 +33,10 @@ panel by the ip white list again, it should be available only to our laptop").
 Both DNS records must be a plain A/AAAA: `remote_ip` matches the direct peer, so
 a proxied record would make the matcher see the proxy and the restriction mean
 nothing. `viafrei.de` and `mcp.viafrei.de` are unaffected and stay public. Like
-every tenant port it is bound `127.0.0.1` only; the container behind it enforces
-the same list a second time (empty = deny all). `apply.test.sh` holds every
+every tenant port it is bound `127.0.0.1` only. For `admin.viafrei.de` the
+container behind it enforces the same list a second time (empty = deny all);
+`status.viafrei.de` reaches the app's public router, which reads no allow-list,
+so for that name this edge block is the only gate. `apply.test.sh` holds every
 route to 18190 inside the `handle @allowed` of one of those two blocks — at
 least one in each, none anywhere else — and asserts each block's door
 (import + `handle @allowed` + `handle { respond 4xx }`) separately; a public
