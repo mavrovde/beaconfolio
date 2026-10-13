@@ -104,7 +104,8 @@ while IFS= read -r lf; do
 done < <(awk '$1 == "output" && $2 == "file" { print $3 }' "$SRC")
 
 # AS THE SERVICE USER, and that is not decoration, twice over:
-#  * the admin.viafrei.de block imports /etc/caddy/viafrei-status-allow.conf, 0640
+#  * the admin.viafrei.de and status.viafrei.de blocks import
+#    /etc/caddy/viafrei-status-allow.conf, 0640
 #    root:caddy (measured 2026-09-21) — an ordinary user cannot read it, the
 #    service user can, through its group;
 #  * validate PROVISIONS the config, which opens every `output file` log. Run

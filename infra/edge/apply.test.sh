@@ -273,10 +273,12 @@ echo "== the committed Caddyfile's shape (viafrei #94) =="
 # The edge config is code, and its riskiest property cannot be seen by running
 # apply.sh: WHICH site blocks carry an IP restriction. viafrei's operations
 # console (admin.viafrei.de since viafrei 2.0; status.viafrei.de before it)
-# must be behind one; viafrei.de, mcp.viafrei.de and the public status page
-# status.viafrei.de must not be (that tenant's owner, 2026-09-19 and
-# 2026-10-11/12: the product and the status page stay public, the operational
-# surface does not). Files only — no caddy, no host, no network.
+# and, since 2026-10-13, its status page status.viafrei.de (public from viafrei
+# 2.0 until the owner closed it again: "Close the status panel by the ip white
+# list again, it should be available only to our laptop") must each be behind
+# one, in the same shape; viafrei.de and mcp.viafrei.de must not be (that
+# tenant's owner, 2026-09-19: the product stays public, the operational surface
+# does not). Files only — no caddy, no host, no network.
 
 # THE SCAN. One model, read by every assertion in sections 12, 14 and 15 —
 # there is no second scanner left in this file, and that is load-bearing rather
@@ -362,7 +364,7 @@ echo "== the committed Caddyfile's shape (viafrei #94) =="
 #     `unix/…` socket — the last two are valid Caddy and round 5 refused them
 #     while blaming a placeholder that was not there;
 #   * a heredoc (`<<`), whose body a scanner reads as configuration;
-#   * a `respond 4xx/5xx` outside the gated (admin) site whose matcher matches
+#   * a `respond 4xx/5xx` outside the two gated sites whose matcher matches
 #     EVERYTHING. A refusal that answers a matcher is not a site-wide door,
 #     but `handle *`, `route /*`, `handle_path /*` and a named matcher defined
 #     as `path /*` (or `path_regexp .*`) answer every request — they are the
@@ -414,7 +416,7 @@ echo "== the committed Caddyfile's shape (viafrei #94) =="
 # SUBSHELL, so ok/bad would print their line and lose the counter increment —
 # a red tick and exit 0. That is this file's own subject matter, from the
 # shell side.
-caddy_scan() { # caddy_scan <file> -> the 34 fields read by `read -r` below
+caddy_scan() { # caddy_scan <file> -> the 35 fields read by `read -r` below
     awk '
         # ---- the tokeniser: tk[1..ntok], tq[i]=1 if the token was quoted ----
         function tokenise(line,   i, c, L, start) {
@@ -603,7 +605,7 @@ caddy_scan() { # caddy_scan <file> -> the 34 fields read by `read -r` below
             if (d1 == "import") {
                 imports++
                 if (ntok == 2 && tk[2] == "/etc/caddy/viafrei-status-allow.conf") {
-                    if (site && depth == 1) imp = 1
+                    if (site && depth == 1) gimp[sk] = 1
                 } else if (ntok >= 2 && !tq[2]) {
                     # an in-file SNIPPET is not an unreadable file: its body is
                     # scanned by every rule here, ten lines up. Resolved at END
@@ -615,7 +617,7 @@ caddy_scan() { # caddy_scan <file> -> the 34 fields read by `read -r` below
             if (d1 == "respond" && ntok >= 2 && !matcher(2)) {
                 for (i = 2; i <= ntok; i++) if (!tq[i] && tk[i] ~ "^[45][0-9][0-9]$") doorline = 1
             }
-            if (site && fb && doorline) deny = 1
+            if (site && fb && doorline) gdeny[sk] = 1
             # a refusal inside a MATCHED block (`handle @hidden`, `route /x`)
             # answers that matcher, not the site; it is not a door of the kind
             # this rule looks for, exactly as an inline `respond /.env 404` is
@@ -637,7 +639,7 @@ caddy_scan() { # caddy_scan <file> -> the 34 fields read by `read -r` below
                         if (badtoken == "-") badtoken = tq[i] ? "<a quoted upstream>" : tk[i]
                         continue
                     }
-                    if (site       && tk[i] == "127.0.0.1:18190")       status_proxy = 1
+                    if (site       && tk[i] == "127.0.0.1:18190")       gproxy[sk]   = 1
                     if (landing    && tk[i] == "127.0.0.1:18180")       pub_landing  = 1
                     if (mcp        && tk[i] == "127.0.0.1:18187")       mcp_rp       = 1
                     if (beacon     && tk[i] == "https://127.0.0.1:18443") pub_beacon = 1
@@ -678,31 +680,12 @@ caddy_scan() { # caddy_scan <file> -> the 34 fields read by `read -r` below
                 if (d1 == "roll_interval" && ntok == 2 && tk[2] ~ /^[0-9]+h$/ && tk[2] + 0 >= 1 && tk[2] + 0 <= 24) ml_ri = 1
                 if (d1 == "roll_keep_for" && ntok == 2 && tk[2] ~ /^[0-9]+h$/ && tk[2] + 0 >= 1 && tk[2] + 0 <= 120) ml_kf = 1
             }
-            if (site && d1 == "header_up" && ntok == 3 && tk[2] == "X-Forwarded-For" && tk[3] == "{remote_host}") xff = 1
-            # ---- the PUBLIC status block (viafrei 2.0, #589): an ALLOW-LIST
-            # of exactly three line shapes plus closing braces. Every line of
-            # status.viafrei.de is one of
-            #     depth 1:  reverse_proxy 127.0.0.1:18190 {
-            #     depth 2:  header_up Host {host}
-            #     depth 2:  header_up X-Forwarded-For {remote_host}
-            #     depth 1/2: }
-            # and anything else -- a second directive, a matcher, a handle, an
-            # import, a quoted or multi-line token, a respond -- is counted in
-            # pub_bad. The line is compared as a whole, quoted tokens rendered
-            # as "" so a quoted spelling can never equal the bare one: this
-            # block is public, so "bare" is checked by shape, not inferred.
-            if (pub && ntok >= 1) {
-                pl = ""
-                for (i = 1; i <= ntok; i++)
-                    pl = pl (i > 1 ? " " : "") ((tq[i] || tml[i]) ? "\"\"" : tk[i])
-                if      (depth == 1 && pl == "reverse_proxy 127.0.0.1:18190 {")         pub_rp++
-                else if (depth == 2 && pl == "header_up Host {host}")                   pub_host++
-                else if (depth == 2 && pl == "header_up X-Forwarded-For {remote_host}") pub_xff++
-                else if ((depth == 1 || depth == 2) && pl == "}")                       { }
-                else pub_bad++
-            }
+            # per GATED block (sk = "a" admin, "s" status): each must carry its
+            # own, so one block cannot satisfy the assertion about the other.
+            if (site && d1 == "header_up" && ntok == 3 && tk[2] == "X-Forwarded-For" && tk[3] == "{remote_host}") gxff[sk] = 1
+            if (site && d1 == "header_up" && ntok == 3 && tk[2] == "Host" && tk[3] == "{host}") ghost[sk] = 1
             # ---- the port, from the RAW line, minus full-line comments ----
-            if (raw !~ /^[[:space:]]*#/ && raw ~ /18190/) { tot++; if (site && ga) inside++; if (pub) pubtot++ }
+            if (raw !~ /^[[:space:]]*#/ && raw ~ /18190/) { tot++; if (site && ga) { inside++; if (sk == "s") sinside++ } }
 
             # ---- structure, token by token, in order ----
             hdr = ""
@@ -716,15 +699,16 @@ caddy_scan() { # caddy_scan <file> -> the 34 fields read by `read -r` below
                 if (b == 3) { tokbrace++; if (badbrace == "-") badbrace = tk[i]; continue }
                 if (b == 1) {
                     if (depth == 0) {
-                        # admin.viafrei.de is the GATED console (the old
-                        # status.viafrei.de block, moved in viafrei 2.0);
-                        # status.viafrei.de is the PUBLIC page, judged by the
-                        # allow-list of line shapes above. A token after the
-                        # public block opening brace on the same line would
-                        # escape that allow-list, so it is pub_bad here.
-                        site    = (hdr == "admin.viafrei.de")
-                        pub     = (hdr == "status.viafrei.de")
-                        if (pub) { npub++; if (i < ntok) pub_bad++ }
+                        # The two GATED sites: admin.viafrei.de (the console,
+                        # moved from status.viafrei.de in viafrei 2.0) and
+                        # status.viafrei.de (the status page, public in 2.0,
+                        # gated again by the same allow-list since 2026-10-13,
+                        # owner). `site` is "a gated block"; `sk` says WHICH,
+                        # so every door/header latch below is kept per block
+                        # and one block can never satisfy the other one.
+                        site    = (hdr == "admin.viafrei.de" || hdr == "status.viafrei.de")
+                        sk      = (hdr == "status.viafrei.de") ? "s" : (site ? "a" : "")
+                        if (sk == "s") nst++
                         landing = (hdr == "viafrei.de")
                         mcp     = (hdr == "mcp.viafrei.de")
                         beacon  = (hdr == "beaconfolio.com, www.beaconfolio.com")
@@ -733,7 +717,7 @@ caddy_scan() { # caddy_scan <file> -> the 34 fields read by `read -r` below
                     } else {
                         if (mdepth < 0 && hdr ~ "^(handle|handle_path|route)[[:space:]]" \
                             && narrow(substr(hdr, index(hdr, " ") + 1))) mdepth = depth
-                        if (site && depth == 1 && hdr == "handle @allowed") { ga = 1; gseen = 1; gad = depth }
+                        if (site && depth == 1 && hdr == "handle @allowed") { ga = 1; ggate[sk] = 1; gad = depth }
                         if (site && depth == 1 && hdr == "handle")          { fb = 1; fbd = depth }
                         if (inblk && !site && depth == 1 && hdr == "handle") fork_fb = 1
                     }
@@ -747,7 +731,7 @@ caddy_scan() { # caddy_scan <file> -> the 34 fields read by `read -r` below
                     if (fb && depth <= fbd) fb = 0
                     if (depth == 0) {
                         if (inblk && fork_seen) { forks++; if (!fork_fb) forkbad++ }
-                        inblk = 0; site = 0; pub = 0; landing = 0; mcp = 0; beacon = 0
+                        inblk = 0; site = 0; sk = ""; landing = 0; mcp = 0; beacon = 0
                         ga = 0; fb = 0; fork_seen = 0; fork_fb = 0; mdepth = -1
                     }
                     hdr = ""; continue
@@ -765,15 +749,16 @@ caddy_scan() { # caddy_scan <file> -> the 34 fields read by `read -r` below
                       && ml_v4["request>client_ip"] && ml_v6["request>client_ip"] \
                       && ml_rqh && ml_rsh && ml_app_bad == 0 && ml_qd) ? 1 : 0
               mret = (ml_log && ml_ri && ml_kf) ? 1 : 0
-              print (tot+0), (inside+0), (imp+0), (gseen+0), (deny+0), \
+              print (tot+0), (inside+0), (gimp["a"]+0), (ggate["a"]+0), (gdeny["a"]+0), \
                     (range+0), (heredoc+0), (imports+0), (badimport+0), \
                     ((neg == 0 && depth == 0) ? 1 : 0), (nonliteral+0), \
                     (out_remote+0), (out_deny+0), (forks+0), (forkbad+0), \
-                    (tokbrace+0), (inq ? 1 : 0), (status_proxy+0), (xff+0), \
+                    (tokbrace+0), (inq ? 1 : 0), (gproxy["a"]+0), (gxff["a"]+0), \
                     (pub_landing+0), ((mcp_rp && mcp_fl) ? 1 : 0), (pub_beacon+0), \
                     mlog, mret, (olog+0), \
-                    (pubtot+0), (npub+0), (pub_rp+0), (pub_host+0), (pub_xff+0), (pub_bad+0), \
-                    badtoken, badbrace, 34 }' "$1" "$1"
+                    (sinside+0), (nst+0), (gimp["s"]+0), (ggate["s"]+0), (gdeny["s"]+0), \
+                    (ghost["s"]+0), (gxff["s"]+0), \
+                    badtoken, badbrace, 35 }' "$1" "$1"
 }
 
 # THE VERDICTS, as FUNCTIONS, and that is half of the vacuity problem. Round 4
@@ -783,44 +768,44 @@ caddy_scan() { # caddy_scan <file> -> the 34 fields read by `read -r` below
 # Named, they can be handed a losing tuple, and section 16 does that. Section
 # 17 then closes the last gap: that section 14 actually feeds the scan's
 # numbers INTO them, which `contained 1 1` hardcoded would satisfy just as well.
-contained() { # contained <total> <inside> <public> — every route to the port
-    # is inside admin.viafrei.de's handle @allowed, except EXACTLY ONE: the
-    # line in status.viafrei.de (viafrei 2.0, #589). At least one gated route,
-    # exactly one public mention, and nothing anywhere else -- so a third route
-    # (another site, a second directive, a catch-all) is red, and so is a file
-    # that lost either half.
-    [ "$2" -ge 1 ] && [ "$3" = 1 ] && [ "$1" = "$(( $2 + $3 ))" ]
+contained() { # contained <total> <admin inside> <status inside> — EVERY route
+    # to the port is inside the handle @allowed of one of the two gated blocks:
+    # admin.viafrei.de (the console) and status.viafrei.de (the status page,
+    # gated again since 2026-10-13, owner). At least one in EACH, and the two
+    # together are the whole file -- zero public routes. So a route anywhere
+    # else (another site, a directive outside a gate, a catch-all, the status
+    # block reverted to its public 2.0 shape) is red, and so is a file that lost
+    # either block's gated route.
+    [ "$2" -ge 1 ] && [ "$3" -ge 1 ] && [ "$1" = "$(( $2 + $3 ))" ]
 }
-public() {    # public <blocks> <proxy lines> <other lines> — status.viafrei.de is
-    # ONE block whose only directive is reverse_proxy 127.0.0.1:18190 { … }
-    [ "$1" = 1 ] && [ "$2" = 1 ] && [ "$3" = 0 ]
-}
-door() {      # door <imp> <gate> <deny> — the block positively refuses
+door() {      # door <imp> <gate> <deny> — the block positively refuses (asked
+    # once PER gated block: "at least one block has a door" is not the rule)
     [ "$1" = 1 ] && [ "$2" = 1 ] && [ "$3" = 1 ]
 }
 none() {      # none <count> — the "refused on sight" verdicts
     [ "$1" = 0 ]
 }
-present() {   # present <flag> — a route that must still be there
+present() {   # present <flag> — exactly 1: a route/latch that must still be there
     [ "$1" = 1 ]
 }
 
 read -r gate_tot gate_inside s_imp s_gate s_deny s_range s_heredoc s_imports \
         s_badimport s_balanced s_nonliteral s_remote s_outdeny s_forks s_forkbad \
         s_tokbrace s_openquote s_statusproxy s_xff s_landing s_mcp s_beacon s_mcplog s_mcpret s_otherlog \
-        s_pubtot s_npub s_pubrp s_pubhost s_pubxff s_pubbad \
+        s_sinside s_nst s_simp s_sgate s_sdeny s_shost s_sxff \
         s_badtoken s_badbrace s_nfields \
     <<< "$(caddy_scan "$SRC")"
-# 34 positional fields is a lot to keep in step, so the scan says how many it
+# 35 positional fields is a lot to keep in step, so the scan says how many it
 # wrote and this line checks it. A field added in the middle without updating
 # the reader would otherwise shift every variable after it silently.
-[ "${s_nfields:-}" = 34 ] \
-    && ok "the scan wrote all 34 fields the reader expects" \
+[ "${s_nfields:-}" = 35 ] \
+    && ok "the scan wrote all 35 fields the reader expects" \
     || bad "caddy_scan wrote a different number of fields (${s_nfields:-none}): every variable after the gap is shifted"
 
 # 12. the console route exists and points at the registered tenant port. It
 # moved from status.viafrei.de to admin.viafrei.de in viafrei 2.0 (owner,
-# 2026-10-11/12); status.viafrei.de is now the PUBLIC page (section 15b).
+# 2026-10-11/12); status.viafrei.de is the status page, gated by the same
+# allow-list since 2026-10-13 (section 15b).
 grep -q '^admin\.viafrei\.de {$' "$SRC" \
     && ok "the admin.viafrei.de site block exists" || bad "no admin.viafrei.de site block"
 present "$s_statusproxy" \
@@ -831,7 +816,9 @@ grep -q '18190' "$HERE/ports.md" \
 # 13. the matcher is IMPORTED, never written here: the addresses are personal
 # data, they change when a network does, and changing them must not be a PR.
 # Read from the scan, not grepped: a grep for the line would be satisfied by
-# the import moving into the PUBLIC block, which leaves the console ungated.
+# the import moving into a public block, which leaves the console ungated --
+# and since 2026-10-13 by status.viafrei.de's own import alone. Each gated
+# block's import is its own latch (section 15b asserts the status one).
 present "$s_imp" \
     && ok "admin.viafrei.de imports the allow-list from a file outside this repository" \
     || bad "admin.viafrei.de does not import its address list"
@@ -879,9 +866,9 @@ grep -q 'must exist BEFORE the first apply' "$SRC" \
     && ok "the file's braces balance, so the depth model has something true to model" \
     || bad "the Caddyfile's braces do not balance: every number below would be meaningless"
 none "$s_remote" \
-    && ok "remote_ip appears in NO site block but the admin one" \
-    || bad "remote_ip appears outside the admin site block ($s_remote line(s))"
-# `@allowed` need not be scoped to the admin block: a block MAY use the same
+    && ok "remote_ip appears in NO site block but the two gated ones (admin., status.)" \
+    || bad "remote_ip appears outside the two gated site blocks ($s_remote line(s))"
+# `@allowed` need not be scoped to the gated blocks: a block MAY use the same
 # address list to ROUTE rather than to refuse — a fork in the road, not a door
 # — provided it also carries a bare `handle {` fallback so nobody is turned
 # away. What must stay scoped is REFUSAL.
@@ -894,13 +881,13 @@ none "$s_remote" \
 # nothing to check" is an honest pass; a jump from 0 to 1 is a routing change
 # someone must have intended.
 none "$s_forkbad" \
-    && ok "@allowed outside the admin block only routes ($s_forks such block(s); each has an open fallback)" \
-    || bad "$s_forkbad block(s) match @allowed with no open fallback: they refuse visitors outside the admin block"
+    && ok "@allowed outside the two gated blocks only routes ($s_forks such block(s); each has an open fallback)" \
+    || bad "$s_forkbad block(s) match @allowed with no open fallback: they refuse visitors outside the two gated blocks"
 # Every spelling of a door, not one: 401, 404, 503 refuse a visitor exactly as
 # 403 does, and a rule naming a single code is a rule a typo walks past.
 none "$s_outdeny" \
     && ok "and neither does a 4xx/5xx refusal, quoted body or not" \
-    || bad "a respond 4xx/5xx appears outside the admin site block ($s_outdeny line(s))"
+    || bad "a respond 4xx/5xx appears outside the two gated site blocks ($s_outdeny line(s))"
 none "$s_nonliteral" \
     && ok "every reverse_proxy upstream is a literal address ([scheme://]host[:port], [::1]:port or unix/…)" \
     || bad "$s_nonliteral upstream(s) are not a literal address (first: $s_badtoken). A placeholder, {\$ENV}, a dynamic upstream or a port range resolves somewhere this file does not say: 127.0.0.1:{http.request.header.X-Up} lets the CALLER pick the port per request, and a {placeholder} filled by a map or a vars directive is decided by a table this scanner does not follow — legitimate Caddy, still an upstream nobody reading this file can name. The gate declines to certify it rather than guess. Accepted literals: [scheme://]host[:port], a bracketed IPv6 such as [::1]:18191, and unix/… sockets"
@@ -914,7 +901,7 @@ none "$s_heredoc" \
 # other than the allow-list file is present (0 of 0)" about a file that had
 # simply LOST the allow-list import, which names the wrong defect.
 if [ "$s_imports" -lt 1 ]; then
-    bad "the file imports nothing at all: admin.viafrei.de's allow-list import is gone"
+    bad "the file imports nothing at all: both gated blocks' allow-list imports are gone"
 elif none "$s_badimport"; then
     ok "every import is the allow-list file itself ($s_imports import(s)) — an imported file is not in this repository and no rule here can read it"
 else
@@ -923,19 +910,21 @@ fi
 door "$s_imp" "$s_gate" "$s_deny" \
     && ok "admin.viafrei.de imports the list, gates on @allowed, and its fallback is respond 4xx/5xx" \
     || bad "admin.viafrei.de does not positively refuse: import + handle @allowed + handle { respond 403 } is not all present (imp=$s_imp gate=$s_gate deny=$s_deny)"
-# The count is also the precondition: zero gated routes to 18190 means the
-# admin block no longer proxies the console at all, and zero public ones means
-# status.viafrei.de is gone -- changes nobody should make silently, and a rule
-# that passes on zero is the class this file keeps rediscovering.
+# The count is also the precondition: zero gated routes in admin.viafrei.de
+# means the console is no longer proxied at all, and zero in status.viafrei.de
+# means the status page is gone or no longer gated -- changes nobody should make
+# silently, and a rule that passes on zero is the class this file keeps
+# rediscovering.
 none "$s_tokbrace" \
     && ok "every brace in the file is either a whole-token { or } (quoted or not) or a balanced placeholder" \
     || bad "$s_tokbrace token(s) carry a brace that does not balance (first: $s_badbrace): Caddy reads that as text and opens no block, a scanner cannot tell where the block ended, and the gate declines to certify the file rather than guess"
 none "$s_openquote" \
     && ok "no quoted token is left open at end of file" \
     || bad "a quoted token is still open at end of file: everything after it is string, not configuration, and the gate declines to certify it"
-contained "$gate_tot" "$gate_inside" "$s_pubtot" \
-    && ok "every mention of 18190 in the whole file is inside admin.viafrei.de's handle @allowed ($gate_inside of $gate_tot) but exactly one, in status.viafrei.de ($s_pubtot)" \
-    || bad "18190 is reachable outside the gate and the one public route: $gate_inside of $gate_tot mention(s) are inside admin.viafrei.de's handle @allowed and $s_pubtot in status.viafrei.de (want >= 1 gated, exactly 1 public, none elsewhere)"
+s_ainside=$(( gate_inside - s_sinside ))
+contained "$gate_tot" "$s_ainside" "$s_sinside" \
+    && ok "every mention of 18190 in the whole file is inside a gated block's handle @allowed ($s_ainside in admin.viafrei.de's + $s_sinside in status.viafrei.de's = $gate_tot): zero public routes" \
+    || bad "18190 is reachable outside the gate: of $gate_tot mention(s), $s_ainside are inside admin.viafrei.de's handle @allowed and $s_sinside inside status.viafrei.de's (want >= 1 in each, none anywhere else)"
 # The public routes, asserted POSITIVELY: "no matcher anywhere else" would also
 # be true of a file that had lost them.
 present "$s_landing" \
@@ -985,24 +974,30 @@ present "$s_xff" \
     && ok "admin.viafrei.de pins header_up X-Forwarded-For {remote_host}" \
     || bad "admin.viafrei.de does not overwrite X-Forwarded-For"
 
-# 15b. the PUBLIC status page (viafrei repo #589, owner 2026-10-11/12). The
-# viafrei status container routes by Host: on status.viafrei.de it serves the
-# public page only and answers console paths with 404. So this block is public
-# ON PURPOSE, and the edge's whole job here is to be a bare pipe: ONE block,
-# ONE reverse_proxy to 127.0.0.1:18190, no matcher, no handle, no import, no
-# other directive -- anything else in it is a second route the container was
-# never asked about, and the scan's allow-list of line shapes counts it.
-# Host must be passed through (the container's router keys on it) and
-# X-Forwarded-For OVERWRITTEN for the reason section 15 gives.
-public "$s_npub" "$s_pubrp" "$s_pubbad" \
-    && ok "status.viafrei.de is one block, a bare reverse_proxy 127.0.0.1:18190 and nothing else" \
-    || bad "status.viafrei.de is not a bare reverse_proxy to 127.0.0.1:18190 (blocks=$s_npub proxy=$s_pubrp other lines=$s_pubbad)"
-[ "$s_pubhost" = 1 ] \
+# 15b. the status page status.viafrei.de (viafrei repo #589) is a GATED site
+# since 2026-10-13 (owner: "Close the status panel by the ip white list again,
+# it should be available only to our laptop"), in exactly the console's shape:
+# its OWN import of the allow-list, its OWN handle @allowed, its OWN
+# handle { respond 4xx }. Every latch is per block, so admin.viafrei.de's door
+# cannot stand in for this one -- "at least one block has a door" is not the
+# rule. The container still routes by Host (this name reaches only the public
+# router), so Host must be passed through, and X-Forwarded-For OVERWRITTEN for
+# the reason section 15 gives. The 18190 half is section 14's containment.
+present "$s_nst" \
+    && ok "there is exactly one status.viafrei.de site block" \
+    || bad "status.viafrei.de is not exactly one site block ($s_nst)"
+present "$s_simp" \
+    && ok "status.viafrei.de imports the same allow-list from a file outside this repository" \
+    || bad "status.viafrei.de does not import its address list"
+door "$s_simp" "$s_sgate" "$s_sdeny" \
+    && ok "status.viafrei.de imports the list, gates on @allowed, and its fallback is respond 4xx/5xx" \
+    || bad "status.viafrei.de does not positively refuse: import + handle @allowed + handle { respond 403 } is not all present in THAT block (imp=$s_simp gate=$s_sgate deny=$s_sdeny)"
+present "$s_shost" \
     && ok "status.viafrei.de passes header_up Host {host} (the container routes by Host)" \
-    || bad "status.viafrei.de does not pass header_up Host {host} exactly once ($s_pubhost)"
-[ "$s_pubxff" = 1 ] \
+    || bad "status.viafrei.de does not pass header_up Host {host}"
+present "$s_sxff" \
     && ok "status.viafrei.de pins header_up X-Forwarded-For {remote_host}" \
-    || bad "status.viafrei.de does not overwrite X-Forwarded-For exactly once ($s_pubxff)"
+    || bad "status.viafrei.de does not overwrite X-Forwarded-For"
 
 # Sections 16 and 17 are the suite examining ITSELF, and section 17 re-executes
 # this file against mutated copies of the Caddyfile. A child run stops here: it
@@ -1031,7 +1026,7 @@ vac_scan() { # vac_scan <file>; sets v_* in THIS shell -- no pipeline, no subshe
     read -r v_tot v_inside v_imp v_gate v_deny v_range v_heredoc v_imports \
             v_badimport v_balanced v_nonliteral v_remote v_outdeny v_forks v_forkbad \
             v_tokbrace v_openquote v_statusproxy v_xff v_landing v_mcp v_beacon v_mcplog v_mcpret v_otherlog \
-            v_pubtot v_npub v_pubrp v_pubhost v_pubxff v_pubbad \
+            v_sinside v_nst v_simp v_sgate v_sdeny v_shost v_sxff \
             v_badtoken v_badbrace v_nfields \
         <<< "$(caddy_scan "$1")"
 }
@@ -1715,12 +1710,48 @@ vac_scan "$TMP/vac-altern"
     && ok "(z) an alternation re-widening a narrow prefix is read as a door ($v_outdeny of 5), and a QUOTED catch-all path is the catch-all it spells" \
     || bad "(z) an alternation or a quoted catch-all bought the exemption: outdeny=$v_outdeny of 5, balanced=$v_balanced"
 
-# (pb) the PUBLIC block (viafrei 2.0, #589). The scan must count a line it does
-# not recognise inside status.viafrei.de -- a matcher, a quoted upstream, a
-# handle, an import, a second proxy -- and must NOT count the three lines it
-# allows. pb1 is the committed shape, so the other direction is proved on the
-# same scan rather than inferred from section 15b.
-cat > "$TMP/vac-pub1" <<'VACEOF'
+# (sb) the GATED status block (since 2026-10-13). Every latch is per block, so
+# the scan must keep status.viafrei.de's import, gate, door and headers apart
+# from admin.viafrei.de's -- in BOTH directions. sb1 is the committed shape
+# alone: everything counted for status, nothing for admin.
+cat > "$TMP/vac-st1" <<'VACEOF'
+status.viafrei.de {
+	import /etc/caddy/viafrei-status-allow.conf
+	handle @allowed {
+		reverse_proxy 127.0.0.1:18190 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle {
+		respond 403
+	}
+}
+VACEOF
+vac_scan "$TMP/vac-st1"
+[ "$v_nst" = 1 ] && [ "$v_simp" = 1 ] && [ "$v_sgate" = 1 ] && [ "$v_sdeny" = 1 ] && [ "$v_shost" = 1 ] && [ "$v_sxff" = 1 ] \
+    && [ "$v_sinside" = 1 ] && [ "$v_tot" = 1 ] && [ "$v_inside" = 1 ] \
+    && [ "$v_imp" = 0 ] && [ "$v_gate" = 0 ] && [ "$v_deny" = 0 ] && [ "$v_xff" = 0 ] && [ "$v_statusproxy" = 0 ] \
+    && [ "$v_remote" = 0 ] && [ "$v_outdeny" = 0 ] && [ "$v_forks" = 0 ] \
+    && ok "(sb1) the gated status block reads as import + gate + door + Host + X-Forwarded-For, its 18190 is gated, and none of it is credited to admin.viafrei.de" \
+    || bad "(sb1) the gated status block was misread: nst=$v_nst imp=$v_simp gate=$v_sgate deny=$v_sdeny host=$v_shost xff=$v_sxff sinside=$v_sinside tot=$v_tot inside=$v_inside | admin imp=$v_imp gate=$v_gate deny=$v_deny xff=$v_xff proxy=$v_statusproxy | remote=$v_remote outdeny=$v_outdeny forks=$v_forks"
+# sb2: a complete console beside status.viafrei.de REVERTED to its public 2.0
+# shape (one bare reverse_proxy). The console's door must not be read as the
+# status page's, and the containment verdict fed these numbers must say no.
+cat > "$TMP/vac-st2" <<'VACEOF'
+admin.viafrei.de {
+	import /etc/caddy/viafrei-status-allow.conf
+	handle @allowed {
+		reverse_proxy 127.0.0.1:18190 {
+			header_up Host {host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+	handle {
+		respond 403
+	}
+}
+
 status.viafrei.de {
 	reverse_proxy 127.0.0.1:18190 {
 		header_up Host {host}
@@ -1728,27 +1759,53 @@ status.viafrei.de {
 	}
 }
 VACEOF
-vac_scan "$TMP/vac-pub1"
-[ "$v_npub" = 1 ] && [ "$v_pubrp" = 1 ] && [ "$v_pubbad" = 0 ] && [ "$v_pubhost" = 1 ] && [ "$v_pubxff" = 1 ] && [ "$v_pubtot" = 1 ] && [ "$v_tot" = 1 ] && [ "$v_inside" = 0 ] \
-    && ok "(pb) the bare public block reads as one block, one proxy, Host + X-Forwarded-For, nothing else, and its 18190 is counted as PUBLIC, not gated" \
-    || bad "(pb) the bare public block was misread: npub=$v_npub rp=$v_pubrp bad=$v_pubbad host=$v_pubhost xff=$v_pubxff pubtot=$v_pubtot tot=$v_tot inside=$v_inside"
-cat > "$TMP/vac-pub2" <<'VACEOF'
+vac_scan "$TMP/vac-st2"
+[ "$v_imp" = 1 ] && [ "$v_gate" = 1 ] && [ "$v_deny" = 1 ] && [ "$v_nst" = 1 ] \
+    && [ "$v_simp" = 0 ] && [ "$v_sgate" = 0 ] && [ "$v_sdeny" = 0 ] && [ "$v_sinside" = 0 ] \
+    && [ "$v_shost" = 1 ] && [ "$v_sxff" = 1 ] && [ "$v_tot" = 2 ] && [ "$v_inside" = 1 ] \
+    && ok "(sb2) the public 2.0 status shape reads as NO import, NO gate, NO door and an ungated 18190, while the console beside it keeps its own" \
+    || bad "(sb2) the reverted status block was misread: status imp=$v_simp gate=$v_sgate deny=$v_sdeny sinside=$v_sinside host=$v_shost xff=$v_sxff | admin imp=$v_imp gate=$v_gate deny=$v_deny | tot=$v_tot inside=$v_inside"
+contained "$v_tot" "$(( v_inside - v_sinside ))" "$v_sinside" \
+    && bad "(sb2) the containment verdict ACCEPTS the reverted public status block" \
+    || ok "(sb2) and the containment verdict, fed the scan's numbers, rejects it"
+door "$v_simp" "$v_sgate" "$v_sdeny" \
+    && bad "(sb2) the status door verdict ACCEPTS the reverted public status block" \
+    || ok "(sb2) and the status door verdict rejects it"
+# sb3: a complete console beside a status block that keeps its import and its
+# gate but whose fallback does not refuse (it serves something else instead).
+# The console's respond 403 must not stand in for the missing one.
+cat > "$TMP/vac-st3" <<'VACEOF'
+admin.viafrei.de {
+	import /etc/caddy/viafrei-status-allow.conf
+	handle @allowed {
+		reverse_proxy 127.0.0.1:18190
+	}
+	handle {
+		respond 403
+	}
+}
+
 status.viafrei.de {
 	import /etc/caddy/viafrei-status-allow.conf
-	reverse_proxy /console* 127.0.0.1:18190
-	handle /x {
-		respond 200
+	handle @allowed {
+		reverse_proxy 127.0.0.1:18190
 	}
-	reverse_proxy "127.0.0.1:18190" {
-		header_up Host {host}
-		header_up +X-Forwarded-For {remote_host}
+	handle {
+		reverse_proxy 127.0.0.1:18180
 	}
 }
 VACEOF
-vac_scan "$TMP/vac-pub2"
-[ "$v_pubbad" = 6 ] && [ "$v_pubrp" = 0 ] && [ "$v_pubtot" = 2 ] && [ "$v_imp" = 0 ] \
-    && ok "(pb) an import, a matched proxy, a handle and the respond inside it, a quoted upstream and an appended X-Forwarded-For are each counted in the public block ($v_pubbad), and the import there does not count as the admin block's" \
-    || bad "(pb) the public block's extra lines were not all counted: bad=$v_pubbad rp=$v_pubrp pubtot=$v_pubtot imp=$v_imp"
+vac_scan "$TMP/vac-st3"
+[ "$v_deny" = 1 ] && [ "$v_simp" = 1 ] && [ "$v_sgate" = 1 ] && [ "$v_sdeny" = 0 ] && [ "$v_sinside" = 1 ] && [ "$v_inside" = 2 ] \
+    && ok "(sb3) a status block whose fallback serves instead of refusing has NO door, though the console beside it has one" \
+    || bad "(sb3) the console's refusal was credited to the status block: status imp=$v_simp gate=$v_sgate deny=$v_sdeny sinside=$v_sinside | admin deny=$v_deny inside=$v_inside"
+# sb4: two status.viafrei.de blocks are counted as two (the second would be
+# a second, unexamined set of latches for the same name).
+{ cat "$TMP/vac-st1"; printf '\n'; cat "$TMP/vac-st1"; } > "$TMP/vac-st4"
+vac_scan "$TMP/vac-st4"
+[ "$v_nst" = 2 ] \
+    && ok "(sb4) two status.viafrei.de blocks are counted as two ($v_nst)" \
+    || bad "(sb4) two status.viafrei.de blocks were not counted as two: nst=$v_nst"
 
 # (j) THE SECOND HALF, and the one round 4 was missing: the VERDICTS. Every
 # tick in section 14 is a comparison, and until these six lines existed no test
@@ -1756,38 +1813,35 @@ vac_scan "$TMP/vac-pub2"
 # `contained()` to `[ 1 = 1 ]`, or `none()` to `true`, and the suite goes red
 # HERE -- which is the only reason the ticks up there mean anything.
 contained 2 1 1 \
-    && ok "(j) the containment verdict accepts 1 gated + 1 public of 2" \
-    || bad "(j) the containment verdict rejects 1 gated + 1 public of 2 — it would reject the committed file"
+    && ok "(j) the containment verdict accepts 1 in admin + 1 in status of 2" \
+    || bad "(j) the containment verdict rejects 1 in admin + 1 in status of 2 — it would reject the committed file"
 contained 3 2 1 \
-    && ok "(j) and accepts 2 gated + 1 public of 3 (a nested gate, fixture i)" \
+    && ok "(j) and accepts 2 in admin + 1 in status of 3 (a nested gate, fixture i)" \
     || bad "(j) the containment verdict rejects a second GATED route"
 contained 3 1 1 \
-    && bad "(j) the containment verdict ACCEPTS a third route outside both: the deep-brace bypass passes on numbers alone" \
-    || ok "(j) and rejects 1 gated + 1 public of 3 — neuter it to [ 1 = 1 ] and this line goes red"
-contained 3 1 2 \
-    && bad "(j) the containment verdict ACCEPTS two public routes" \
-    || ok "(j) and rejects two public routes (exactly one may be public)"
-contained 2 2 0 \
-    && bad "(j) the containment verdict ACCEPTS a file with no public route: status.viafrei.de is gone" \
-    || ok "(j) and rejects a file whose public route is gone"
+    && bad "(j) the containment verdict ACCEPTS a third route outside both gates: the deep-brace bypass passes on numbers alone" \
+    || ok "(j) and rejects 1 + 1 gated of 3 — neuter it to [ 1 = 1 ] and this line goes red"
+contained 2 1 0 \
+    && bad "(j) the containment verdict ACCEPTS a status page whose route is outside its gate (the public 2.0 shape)" \
+    || ok "(j) and rejects 1 gated + 1 ungated status route of 2 (the public 2.0 shape)"
+contained 1 1 0 \
+    && bad "(j) the containment verdict ACCEPTS a file with no gated status route: status.viafrei.de is gone" \
+    || ok "(j) and rejects a file whose gated status route is gone"
 contained 1 0 1 \
-    && bad "(j) the containment verdict ACCEPTS a file with no gated route: the console is gone" \
-    || ok "(j) and rejects a file whose gated route is gone"
+    && bad "(j) the containment verdict ACCEPTS a file with no gated console route: the console is gone" \
+    || ok "(j) and rejects a file whose gated console route is gone"
 contained 0 0 0 \
     && bad "(j) the containment verdict ACCEPTS 0 of 0: a file that stopped proxying the dashboard at all" \
     || ok "(j) and rejects 0 of 0 — zero routes is not containment, it is a different file"
-public 1 1 0 \
-    && ok "(j) the public-shape verdict accepts one block, one proxy line, nothing else" \
-    || bad "(j) the public-shape verdict rejects the committed shape"
-public 1 1 1 \
-    && bad "(j) the public-shape verdict ACCEPTS an extra line in the public block" \
-    || ok "(j) and rejects an extra line in the public block"
-public 1 0 0 \
-    && bad "(j) the public-shape verdict ACCEPTS a public block with no proxy" \
-    || ok "(j) and rejects a public block with no proxy line"
-public 2 2 0 \
-    && bad "(j) the public-shape verdict ACCEPTS two status.viafrei.de blocks" \
-    || ok "(j) and rejects two status.viafrei.de blocks"
+present 1 \
+    && ok "(j) the present verdict accepts exactly 1" \
+    || bad "(j) the present verdict rejects 1 — every route that must still be there would be red"
+present 0 \
+    && bad "(j) the present verdict ACCEPTS 0: a missing block would pass" \
+    || ok "(j) and rejects 0"
+present 2 \
+    && bad "(j) the present verdict ACCEPTS 2: a second status.viafrei.de block would pass" \
+    || ok "(j) and rejects 2"
 door 1 1 1 \
     && ok "(j) the door verdict accepts import + gate + refusal" \
     || bad "(j) the door verdict rejects a complete door"
@@ -1942,62 +1996,101 @@ if mutate "X-Forwarded-For deleted from the admin block" "$TMP/m17"; then
         "admin.viafrei.de does not overwrite X-Forwarded-For"
 fi
 
-grep -vE 'respond[[:space:]].*[45][0-9][0-9]' "$SRC" > "$TMP/m17"
+# Each gated block's door, deleted in THAT block only: since 2026-10-13 both
+# blocks carry the same refusal, and each must be caught by its own assertion.
+inblock 'admin.viafrei.de' 'respond[[:space:]].*[45][0-9][0-9]' > "$TMP/m17"
 if mutate "the admin block's 403 deleted" "$TMP/m17"; then
-    expect_fail "admin losing its 403 fails end to end, on the DOOR assertion (door is WIRED to the scan)" \
+    expect_fail "admin losing its 403 fails end to end, on the ADMIN DOOR assertion (door is WIRED to the scan)" \
         "admin.viafrei.de does not positively refuse"
+fi
+
+inblock 'status.viafrei.de' 'respond[[:space:]].*[45][0-9][0-9]' > "$TMP/m17"
+if mutate "the status block keeps its import but loses its respond 403" "$TMP/m17"; then
+    expect_fail "status.viafrei.de losing its 403 (import kept) fails end to end, on the STATUS DOOR assertion and only that one — the console's door does not stand in for it" \
+        "status.viafrei.de does not positively refuse"
 fi
 
 inblock 'admin.viafrei.de' '^[[:space:]]*import /etc/caddy/viafrei-status-allow[.]conf$' > "$TMP/m17"
 if mutate "the admin block's allow-list import deleted" "$TMP/m17"; then
-    expect_fail "admin losing its import fails end to end, on the IMPORT and DOOR assertions (and the no-import-at-all precondition), nothing else" \
+    expect_fail "admin losing its import fails end to end, on the ADMIN IMPORT and ADMIN DOOR assertions, nothing else — status.viafrei.de's import does not stand in for it" \
+        "admin.viafrei.de does not import its address list" \
+        "admin.viafrei.de does not positively refuse"
+fi
+
+inblock 'status.viafrei.de' '^[[:space:]]*import /etc/caddy/viafrei-status-allow[.]conf$' > "$TMP/m17"
+if mutate "the status block's allow-list import deleted" "$TMP/m17"; then
+    expect_fail "status.viafrei.de losing its import fails end to end, on the STATUS IMPORT and STATUS DOOR assertions, nothing else — the console's import does not stand in for it" \
+        "status.viafrei.de does not import its address list" \
+        "status.viafrei.de does not positively refuse"
+fi
+
+grep -v '^[[:space:]]*import /etc/caddy/viafrei-status-allow[.]conf$' "$SRC" > "$TMP/m17"
+if mutate "both allow-list imports deleted" "$TMP/m17"; then
+    expect_fail "both blocks losing their imports fails end to end, on both IMPORT and both DOOR assertions and the no-import-at-all precondition" \
         "admin.viafrei.de does not import its address list" \
         "admin.viafrei.de does not positively refuse" \
+        "status.viafrei.de does not import its address list" \
+        "status.viafrei.de does not positively refuse" \
         "the file imports nothing at all"
 fi
 
 # the import MOVED rather than deleted: the grep that section 13 used to be
 # would have stayed green here, with the console open to everybody.
 { inblock 'admin.viafrei.de' '^[[:space:]]*import /etc/caddy/viafrei-status-allow[.]conf$' \
-    | awk '{ print } /^status\.viafrei\.de \{$/ { print "\timport /etc/caddy/viafrei-status-allow.conf" }'; } > "$TMP/m17"
-if mutate "the allow-list import moved from admin to the public block" "$TMP/m17"; then
-    expect_fail "a moved import fails end to end, on the IMPORT, DOOR and PUBLIC-SHAPE assertions" \
+    | awk '{ print } /^viafrei\.de \{$/ { print "\timport /etc/caddy/viafrei-status-allow.conf" }'; } > "$TMP/m17"
+if mutate "the allow-list import moved from admin to the viafrei.de block" "$TMP/m17"; then
+    expect_fail "a moved import fails end to end, on the ADMIN IMPORT and ADMIN DOOR assertions" \
         "admin.viafrei.de does not import its address list" \
-        "admin.viafrei.de does not positively refuse" \
-        "status.viafrei.de is not a bare reverse_proxy"
+        "admin.viafrei.de does not positively refuse"
 fi
 
 inblock 'status.viafrei.de' 'header_up X-Forwarded-For' > "$TMP/m17"
-if mutate "X-Forwarded-For deleted from the public block" "$TMP/m17"; then
-    expect_fail "the public block without X-Forwarded-For fails end to end, on the PUBLIC X-FORWARDED-FOR assertion and only that one" \
+if mutate "X-Forwarded-For deleted from the status block" "$TMP/m17"; then
+    expect_fail "the status block without X-Forwarded-For fails end to end, on the STATUS X-FORWARDED-FOR assertion and only that one" \
         "status.viafrei.de does not overwrite X-Forwarded-For"
 fi
 
 inblock 'status.viafrei.de' 'header_up Host' > "$TMP/m17"
-if mutate "Host deleted from the public block" "$TMP/m17"; then
-    expect_fail "the public block without Host fails end to end, on the PUBLIC HOST assertion and only that one" \
+if mutate "Host deleted from the status block" "$TMP/m17"; then
+    expect_fail "the status block without Host fails end to end, on the STATUS HOST assertion and only that one" \
         "status.viafrei.de does not pass header_up Host"
 fi
 
-# a third route to 18190, three spellings: a second directive INSIDE the
-# public block, a wildcard catch-all site, and (above) another named site.
-awk '{ print } /^status\.viafrei\.de \{$/ { print "\treverse_proxy /console* 127.0.0.1:18190" }' "$SRC" > "$TMP/m17"
-if mutate "a second 18190 directive in the public block" "$TMP/m17"; then
-    expect_fail "a second public directive to 18190 fails end to end, on CONTAINMENT and PUBLIC-SHAPE" \
+# THE OWNER'S DECISION OF 2026-10-13, as a mutant: status.viafrei.de reverted
+# to the public shape it had in viafrei 2.0 -- one bare reverse_proxy, Host and
+# X-Forwarded-For intact, no import, no gate, no door. The headers being
+# right must not make this green; the route is public, and three assertions
+# say so.
+awk '$0 == "status.viafrei.de {" {
+         print
+         print "\treverse_proxy 127.0.0.1:18190 {"
+         print "\t\theader_up Host {host}"
+         print "\t\theader_up X-Forwarded-For {remote_host}"
+         print "\t}"
+         skip = 1; next
+     }
+     skip && /^}$/ { skip = 0 }
+     !skip { print }' "$SRC" > "$TMP/m17"
+if mutate "status.viafrei.de reverted to its public 2.0 shape" "$TMP/m17"; then
+    expect_fail "the public 2.0 status block fails end to end, on CONTAINMENT, STATUS IMPORT and STATUS DOOR" \
         "18190 is reachable outside the gate" \
-        "status.viafrei.de is not a bare reverse_proxy"
+        "status.viafrei.de does not import its address list" \
+        "status.viafrei.de does not positively refuse"
+fi
+
+# a route to 18190 outside both gates, three spellings: a second directive
+# INSIDE the status block but outside its handle @allowed, a wildcard
+# catch-all site, and (above) another named site.
+awk '{ print } /^status\.viafrei\.de \{$/ { print "\treverse_proxy /console* 127.0.0.1:18190" }' "$SRC" > "$TMP/m17"
+if mutate "a 18190 directive in the status block outside its gate" "$TMP/m17"; then
+    expect_fail "an ungated 18190 directive inside status.viafrei.de fails end to end, on the CONTAINMENT assertion and only that one" \
+        "18190 is reachable outside the gate"
 fi
 
 { cat "$SRC"; printf '\n*.viafrei.de {\n\treverse_proxy 127.0.0.1:18190\n}\n'; } > "$TMP/m17"
 if mutate "a wildcard catch-all site to 18190" "$TMP/m17"; then
     expect_fail "a catch-all site to 18190 fails end to end, on the CONTAINMENT assertion and only that one" \
         "18190 is reachable outside the gate"
-fi
-
-awk '{ print } /^status\.viafrei\.de \{$/ { print "\tencode gzip" }' "$SRC" > "$TMP/m17"
-if mutate "an unrelated directive added to the public block" "$TMP/m17"; then
-    expect_fail "any other directive in the public block fails end to end, on the PUBLIC-SHAPE assertion only" \
-        "status.viafrei.de is not a bare reverse_proxy"
 fi
 
 # and the decoy that exposed the defect: a mutation of something ELSE must not
@@ -2010,7 +2103,7 @@ awk '{ print }
      }' "$SRC" > "$TMP/m17"
 if mutate "a catch-all door on the public landing" "$TMP/m17"; then
     expect_fail "a catch-all handle * door fails end to end, on the OUTSIDE-DOOR assertion" \
-        "a respond 4xx/5xx appears outside the admin site block"
+        "a respond 4xx/5xx appears outside the two gated site blocks"
 fi
 
 grep -v 'flush_interval' "$SRC" > "$TMP/m17"
