@@ -399,6 +399,147 @@ async def test_endpoint_serves_experience_newest_first(client: AsyncClient, db_s
     ]
 
 
+# --- Certification ordering (PR #497) ----------------------------------------
+#
+# Certifications are ordered in the SAME projection as the timeline, by the same
+# parser (`json_resume.month_sort_key`), so `/profile` and `resume.json` cannot
+# disagree. The German cases matter: the `de` profile is a separate upload and
+# nothing guarantees its months are English (review round 1, major 1).
+
+
+def _cert_names(view):
+    return [c.get("name") if isinstance(c, dict) else c for c in view["certifications"]]
+
+
+def test_certifications_are_newest_first_with_undated_last():
+    from app.api.profile import public_profile_view
+
+    view = public_profile_view(
+        {
+            "certifications": [
+                {"name": "undated-a"},
+                {"name": "nov-2023", "issueDate": "Nov 2023"},
+                {"name": "sep-2026", "issueDate": "Sep 2026"},
+                {"name": "undated-b", "issueDate": ""},
+                "not-a-dict",
+                {"name": "aug-2026", "issueDate": "Aug 2026"},
+                {"name": "demo-2025", "date": "2025-06-01"},
+            ]
+        }
+    )
+    assert _cert_names(view) == [
+        "sep-2026",
+        "aug-2026",
+        "demo-2025",
+        "nov-2023",
+        "undated-a",
+        "undated-b",
+        "not-a-dict",
+    ]
+
+
+def test_certification_german_month_names_are_dated():
+    from app.api.profile import public_profile_view
+
+    view = public_profile_view(
+        {
+            "certifications": [
+                {"name": "dez-2025", "issueDate": "Dez 2025"},
+                {"name": "undated", "issueDate": "bald"},
+                {"name": "maer-2026", "issueDate": "Mär 2026"},
+                {"name": "okt-2026", "issueDate": "Okt 2026"},
+                {"name": "maerz-2026-long", "issueDate": "März 2026"},
+                {"name": "mai-2026", "issueDate": "Mai 2026"},
+                {"name": "issued-sep-2026", "issueDate": "Issued Sep 2026"},
+            ]
+        }
+    )
+    assert _cert_names(view) == [
+        "okt-2026",
+        "issued-sep-2026",
+        "mai-2026",
+        "maer-2026",
+        "maerz-2026-long",
+        "dez-2025",
+        "undated",
+    ]
+
+
+def test_certifications_of_the_same_month_keep_their_upload_order():
+    from app.api.profile import public_profile_view
+
+    view = public_profile_view(
+        {
+            "certifications": [
+                {"name": "first", "issueDate": "Aug 2026"},
+                {"name": "newer", "issueDate": "Sep 2026"},
+                {"name": "second", "issueDate": "2026-08-30"},
+                {"name": "third", "issueDate": "Aug. 2026"},
+            ]
+        }
+    )
+    assert _cert_names(view) == ["newer", "first", "second", "third"]
+
+
+def test_a_year_only_certification_sorts_below_every_month_of_its_year():
+    from app.api.profile import public_profile_view
+
+    view = public_profile_view(
+        {
+            "certifications": [
+                {"name": "year-2025", "date": "2025"},
+                {"name": "dez-2024", "issueDate": "Dez 2024"},
+                {"name": "jan-2025", "issueDate": "Jan 2025"},
+            ]
+        }
+    )
+    assert _cert_names(view) == ["jan-2025", "year-2025", "dez-2024"]
+
+
+def test_certification_explicit_date_wins_over_issue_date_for_ordering():
+    """The entry carrying BOTH fields is ordered by `date` — the field the site
+    displays — so the list cannot look out of order (review round 1, minor 2)."""
+    from app.api.profile import public_profile_view
+
+    view = public_profile_view(
+        {
+            "certifications": [
+                {"name": "middle", "issueDate": "Jan 2025"},
+                {"name": "both", "date": "2020", "issueDate": "Sep 2026"},
+                {"name": "newest", "issueDate": "Mar 2026"},
+            ]
+        }
+    )
+    assert _cert_names(view) == ["newest", "middle", "both"]
+
+
+def test_non_list_certifications_are_left_untouched():
+    from app.api.profile import public_profile_view
+
+    assert public_profile_view({"certifications": "nope"})["certifications"] == "nope"
+
+
+async def test_endpoint_serves_certifications_newest_first(
+    client: AsyncClient, db_session
+):
+    await _seed(
+        db_session,
+        version="v1",
+        language="de",
+        data={
+            "name": "Testa",
+            "certifications": [
+                {"name": "alt", "issueDate": "Dez 2025"},
+                {"name": "neu", "issueDate": "Okt 2026"},
+            ],
+        },
+        is_active=True,
+    )
+    r = await client.get(URL, params={"lang": "de"})
+    assert r.status_code == 200
+    assert [c["name"] for c in r.json()["certifications"]] == ["neu", "alt"]
+
+
 # --- Projects: the NESTED public allowlist (#92) ------------------------------
 #
 # `projects` is hand-authored, not scraped, so an entry can carry anything the

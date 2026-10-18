@@ -429,11 +429,21 @@ sel_lacks "an importer diff does NOT select a Vitest project" "fe:public" import
 sel "an importer + docs diff selects both, still nothing heavier" \
     "docs importer pii" importer/core.py docs/a.md
 
+# --- scraper (PR #497) -------------------------------------------------------
+# Same shape as #417: unmapped meant the FULL round, and the full round has no
+# leg that runs `node --test` — slow AND blind.
+sel "a scraper diff selects the scraper leg and NOTHING heavier (PR #497)" \
+    "pii scraper" scraper/scrape-posts.js
+sel "the scraper's own tests select their leg (PR #497)" \
+    "pii scraper" scraper/decode-entities.test.js
+sel_lacks "a scraper diff does NOT select backend" "backend" scraper/scrape-linkedin.js
+sel_lacks "a scraper diff does NOT select a Vitest project" "fe:public" scraper/scrape-linkedin.js
+
 # --- fail-closed ------------------------------------------------------------
-sel "an UNMAPPED path selects ALL (fail closed)" "ALL" scraper/scrape-posts.js
+sel "an UNMAPPED path selects ALL (fail closed)" "ALL" proxy/nginx.conf
 sel "a new top-level directory selects ALL" "ALL" brand-new-thing/x.txt
 sel "ONE unmapped path in an otherwise docs-only diff still selects ALL" \
-    "ALL" docs/a.md scraper/scrape-posts.js
+    "ALL" docs/a.md proxy/nginx.conf
 sel "an EMPTY changed-file list selects ALL" "ALL" ""
 
 # --- deep/fast defaults (#404 review round 1, blocker 1) --------------------
@@ -878,7 +888,7 @@ else
   fails=$((fails + 1))
 fi
 
-R="$(mkstubfixture fix/allargv scraper/scrape-posts.js)"
+R="$(mkstubfixture fix/allargv proxy/nginx.conf)"
 got="$(observe_argv "$R" "$P origin HEAD")"
 if [ "$got" = "ARGV:" ]; then
   printf 'PASS  [%s]  an ALL round invokes the self-test WITHOUT --mutations\n' "$got"
@@ -897,7 +907,7 @@ else
   fails=$((fails + 1))
 fi
 
-R="$(mkstubfixture fix/allgate scraper/scrape-posts.js)"
+R="$(mkstubfixture fix/allgate proxy/nginx.conf)"
 got="$(observe_argv "$R" "$P origin HEAD" GATE)"
 if [ "$got" = "GATE:" ]; then
   printf 'PASS  [%s]  an ALL round runs the merge-gate cases WITHOUT mutations\n' "$got"
@@ -906,7 +916,7 @@ else
   fails=$((fails + 1))
 fi
 
-R="$(mkstubfixture fix/allstack scraper/scrape-posts.js)"
+R="$(mkstubfixture fix/allstack proxy/nginx.conf)"
 got="$(observe_argv "$R" "$P origin HEAD" STACK)"
 if [ "$got" = "STACK:" ]; then
   printf 'PASS  [%s]  an ALL round runs the stack-guard cases WITHOUT mutations\n' "$got"
@@ -931,7 +941,7 @@ e2e "a fully-qualified release branch scopes to the delta" \
 e2e "a feature branch whose NAME contains 'main' still scopes" \
     "docs pii" "$R" "$P origin HEAD:feature-main-nav"
 
-R="$(mkfixture fix/unmapped main scraper/scrape-posts.js)"
+R="$(mkfixture fix/unmapped main proxy/nginx.conf)"
 e2e "an unmappable path runs EVERYTHING (fail closed)" \
     "ALL" "$R" "$P origin HEAD"
 
@@ -1139,6 +1149,10 @@ mutate die "$LIBF" "the shared-edge files stop selecting the apply contract (#33
 # satisfies every negative assertion.
 mutate die "$LIBF" "importer paths stop selecting the importer suite (#417)" \
   'replace::  importer/*) echo importer ;;=>  importer/*) echo ;;'
+# PR #497: same reasoning as the importer mutant — selecting nothing for
+# scraper/** satisfies every "must not select X" case above.
+mutate die "$LIBF" "scraper paths stop selecting the scraper suite (PR #497)" \
+  'replace::  scraper/*) echo scraper ;;=>  scraper/*) echo ;;'
 mutate die "$LIBF" "an unobtainable git range reports success instead of failing" \
   'replace::  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 1=>  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || { echo docs/fake.md; return 0; }'
 mutate die "$LIBF" "rename detection hides the SOURCE path of a git mv (#388 blocker 1)" \

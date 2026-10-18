@@ -4,6 +4,7 @@ import { writeFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { extractPhotoUrl } from './extract-photo.js';
+import { decodeDeep } from './decode-entities.js';
 
 config();
 
@@ -283,7 +284,8 @@ async function main() {
       console.log(`  ${label}: +${n} entities`);
     }
 
-    const profile = buildProfile(included);
+    // Voyager returns some text HTML-escaped ("&amp;"); export plain text.
+    const profile = decodeDeep(buildProfile(included));
     writeFileSync(OUTPUT_FILE, JSON.stringify(profile, null, 2), 'utf-8');
     await downloadPhoto(page, included);
 

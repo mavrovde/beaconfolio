@@ -11,7 +11,13 @@ from app.database import get_db
 from app.logger import logger
 from app.models.profile_photo import ProfilePhoto
 from app.models.profile_snapshot import ProfileSnapshot
-from app.services.json_resume import JsonResume, ResumeContext, build_json_resume
+from app.services.json_resume import (
+    JsonResume,
+    ResumeContext,
+    build_json_resume,
+    certificate_date,
+    month_sort_key,
+)
 from app.services.rate_limit import SlidingWindowRateLimiter, rate_limit_dependency
 from app.services.readiness import is_undefined_table_error
 
@@ -82,21 +88,10 @@ PUBLIC_PROJECT_LINK_FIELDS = frozenset({"source", "demo"})
 # rather than in the Angular component fixes the site and the JSON Resume / CV
 # export together, because both read this one projection.
 TIMELINE_FIELDS = ("experience", "education")
+# Every date here is read by `json_resume.month_sort_key` — ONE parser for the
+# timeline and the certifications alike, English and German month names
+# included, so the site and `resume.json` cannot disagree on an order.
 
-_MONTHS = {
-    "jan": 1,
-    "feb": 2,
-    "mar": 3,
-    "apr": 4,
-    "may": 5,
-    "jun": 6,
-    "jul": 7,
-    "aug": 8,
-    "sep": 9,
-    "oct": 10,
-    "nov": 11,
-    "dec": 12,
-}
 # Only an EXPLICIT marker counts as ongoing. A merely missing end date is
 # ambiguous — treating it as "now" would float an undated entry to the top.
 _ONGOING = frozenset({"present", "current", "now", "heute", "aktuell"})
@@ -106,32 +101,18 @@ _ONGOING_KEY = (9999, 12)
 _UNDATED_KEY = (0, 0)
 
 
-def _month_year(value: object) -> tuple[int, int] | None:
-    """``"Mar 2025"`` -> ``(2025, 3)``; ``"1986"`` -> ``(1986, 0)``; else ``None``."""
-    if not isinstance(value, str):
-        return None
-    parts = value.strip().split()
-    if len(parts) == 2 and parts[1].isdigit():
-        month = _MONTHS.get(parts[0][:3].lower())
-        if month is not None:
-            return (int(parts[1]), month)
-    if len(parts) == 1 and parts[0].isdigit() and len(parts[0]) == 4:
-        return (int(parts[0]), 0)
-    return None
-
-
 def _timeline_sort_key(entry: object) -> tuple[int, int, int, int]:
     """Reverse-chronological key: ongoing first, then by end date, then start."""
     if not isinstance(entry, dict):
         return (*_UNDATED_KEY, *_UNDATED_KEY)
-    start = _month_year(entry.get("startDate")) or _UNDATED_KEY
+    start = month_sort_key(entry.get("startDate")) or _UNDATED_KEY
     raw_end = entry.get("endDate")
     if isinstance(raw_end, str) and raw_end.strip().lower() in _ONGOING:
         end = _ONGOING_KEY
     else:
         # No parseable end: fall back to the start so a still-dated entry is
         # placed by when it began rather than dumped at the bottom.
-        end = _month_year(raw_end) or start
+        end = month_sort_key(raw_end) or start
     return (*end, *start)
 
 
@@ -143,6 +124,26 @@ def _sorted_timeline(entries: object) -> object:
     # relative order the source gave them — a contractor role and the agency
     # that placed it routinely carry identical dates.
     return sorted(entries, key=_timeline_sort_key, reverse=True)
+
+
+def _certification_sort_key(entry: object) -> tuple[int, int]:
+    if not isinstance(entry, dict):
+        return _UNDATED_KEY
+    return month_sort_key(certificate_date(entry)) or _UNDATED_KEY
+
+
+def _sorted_certifications(entries: object) -> object:
+    """Certifications newest first, undated last.
+
+    The scraper stores them in LinkedIn's API order, which is not a date order
+    (19 older-before-newer inversions in a real 67-entry export). `sorted` is
+    stable, so entries of the same month — and all undated ones — keep the
+    order the upload gave them. A year-only date sorts below every month of
+    its year (see `month_sort_key`).
+    """
+    if not isinstance(entries, list):
+        return entries
+    return sorted(entries, key=_certification_sort_key, reverse=True)
 
 
 def _public_projects(entries: object) -> object:
@@ -189,6 +190,8 @@ def public_profile_view(data: object) -> dict:
     for field in TIMELINE_FIELDS:
         if field in view:
             view[field] = _sorted_timeline(view[field])
+    if "certifications" in view:
+        view["certifications"] = _sorted_certifications(view["certifications"])
     if "projects" in view:
         view["projects"] = _public_projects(view["projects"])
     contact = data.get("contact")

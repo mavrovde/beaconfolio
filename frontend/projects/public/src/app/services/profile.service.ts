@@ -1,7 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { catchError, shareReplay, switchMap } from 'rxjs/operators';
+import { catchError, map, shareReplay, switchMap } from 'rxjs/operators';
 import { LanguageService } from '@beaconfolio/shared';
 import { environment } from '../../environments/environment';
 import { Project } from '../projects-model/projects';
@@ -59,8 +59,34 @@ export interface Education {
 export interface Certification {
   name: string;
   issuer: string;
-  date: string;
+  /** Display date. The bundled demo profile writes it here directly. */
+  date?: string;
+  /** What the LinkedIn scraper writes (`"Sep 2026"`); copied into `date`. */
+  issueDate?: string;
   credentialUrl?: string;
+}
+
+/**
+ * Display-ready certification: `date` falls back to the scraper's `issueDate`
+ * (the CV template renders `date`). An explicit `date` wins when both are set —
+ * the backend orders by the same precedence (`json_resume.certificate_date`),
+ * so the badge shows the value the list is sorted by.
+ */
+export function displayCertification(cert: Certification): Certification {
+  return { ...cert, date: cert.date || cert.issueDate || '' };
+}
+
+/**
+ * Display-ready profile. ORDER is not decided here: the backend's
+ * `public_profile_view` sorts certifications (newest first, undated last,
+ * one date parser for English and German month names) for the site and
+ * `resume.json` alike. The bundled static fallback asset is rendered in the
+ * order it is written.
+ */
+export function normalizeProfile(profile: Profile): Profile {
+  return profile.certifications
+    ? { ...profile, certifications: profile.certifications.map(displayCertification) }
+    : profile;
 }
 
 export interface Language {
@@ -98,6 +124,7 @@ export class ProfileService {
           .get<Profile>(apiUrl)
           .pipe(catchError(() => this.http.get<Profile>(`${this.dataUrlBase}_${lang}.json`)));
       }),
+      map(normalizeProfile),
       shareReplay(1),
     );
   }

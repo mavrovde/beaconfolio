@@ -29,6 +29,7 @@ Design rules this module follows:
 """
 
 import re
+import unicodedata
 from collections.abc import Sequence
 from urllib.parse import urlparse
 
@@ -151,7 +152,9 @@ def normalize_date(value: object) -> str | None:
     ongoing role reads ("Present"/"Heute"), and JSON Resume's convention for
     ongoing is an ABSENT `endDate`.
     """
-    text = _text(value)
+    # NFC first: a decomposed umlaut ("Ma" + U+0308 + "r") is not a word
+    # character, so "Mär" would otherwise tokenize as "ma" and lose its month.
+    text = unicodedata.normalize("NFC", _text(value))
     if _ISO_DATE_RE.match(text):
         return text
     year = _YEAR_RE.search(text)
@@ -162,6 +165,31 @@ def normalize_date(value: object) -> str | None:
         if month is not None:
             return f"{year.group()}-{month:02d}"
     return year.group()
+
+
+def month_sort_key(value: object) -> tuple[int, int] | None:
+    """`(year, month)` for ORDERING a human date, or `None` when it is undated.
+
+    The ONE date parser behind every ordering of profile data: the timeline
+    sort and the certification sort in `app.api.profile.public_profile_view`
+    both key on it, and that projection feeds the site AND `resume.json`, so
+    the two can never order the same list differently. It is `normalize_date`
+    underneath, so it reads English and German month names ("Sep 2026",
+    "Sept. 2026", "Okt 2026", "Mär 2026", "März 2026"), ISO dates and prefixed
+    text ("Issued Sep 2026").
+
+    Precision rules, applied identically everywhere:
+
+    * a year-only date keys as month 0, so it sorts BELOW every month of the
+      same year and above everything earlier ("2025" < "Jan 2025");
+    * the day is ignored, so entries of the same month tie and a stable sort
+      keeps their source order.
+    """
+    text = normalize_date(value)
+    if text is None:
+        return None
+    year, _, rest = text.partition("-")
+    return (int(year), int(rest[:2]) if rest else 0)
 
 
 def full_date(value: object) -> str | None:
@@ -436,13 +464,25 @@ def build_languages(profile: dict) -> list[ResumeLanguage] | None:
     return languages or None
 
 
+def certificate_date(entry: dict) -> object:
+    """A certification's issue date. The bundled demo profile writes `date`;
+    the LinkedIn scraper writes `issueDate` ("Sep 2026"). An explicit `date`
+    wins when both are present: it is the field a person sets by hand, and it
+    is the one the site displays (the frontend fills `date` from `issueDate`
+    only when `date` is empty), so ordering and display read the same value."""
+    return entry.get("date") or entry.get("issueDate")
+
+
 def build_certificates(profile: dict) -> list[ResumeCertificate] | None:
+    # No sort here: order is decided once, in `public_profile_view`, which is
+    # what the endpoint passes in — the same way `experience`/`education`
+    # inherit their order.
     certificates = [
         ResumeCertificate(
             name=_optional(entry.get("name")),
             issuer=_optional(entry.get("issuer")),
             # `format: date` — full precision or nothing, see `full_date`.
-            date=full_date(entry.get("date")),
+            date=full_date(certificate_date(entry)),
             url=clean_url(entry.get("credentialUrl")),
         )
         for entry in _items(profile.get("certifications"))

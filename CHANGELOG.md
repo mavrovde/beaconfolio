@@ -270,6 +270,27 @@ All notable changes to this project will be documented in this file.
   the share itself ("Verified achievement from Coursera") instead of "LinkedIn Post". The
   re-derive keeps a stored non-empty title/summary when the new derivation could only offer the
   fallback, counted as `kept_over_fallback_title`/`kept_over_empty_summary`.
+- **Certifications show their dates, in date order, and profile text no longer shows `&amp;`.**
+  Three defects on one section, found when a newly earned certification sat out of order:
+  the CV template rendered `cert.date` while the LinkedIn scraper exports `issueDate`, so every
+  certification's date badge on the live site was EMPTY; the list was rendered in upload order,
+  which is LinkedIn's API order and not a date order (19 older-before-newer inversions in the
+  real 67-entry export); and Voyager returns some profile text HTML-escaped, so the About
+  section showed a literal `Engineer &amp; Architect`. Certifications are now ordered ONCE, in
+  the backend's `public_profile_view` — the projection that feeds both `GET /profile` (the
+  site) and `resume.json`, so the two cannot disagree: newest first, undated last, stable
+  within a month (LinkedIn's order breaks ties), and a year-only date sorts below every month
+  of its year. One parser (`json_resume.month_sort_key`) reads every profile date for ordering,
+  timeline included: English and German month names (`Okt`, `Mai`, `Dez`, `Mär`/`März`, also
+  decomposed umlauts), `Sept.`, ISO dates, year-only and prefixed text such as
+  `Issued Sep 2026`. An entry's `date` wins over `issueDate` when both are set, in the order
+  and on the badge alike. `ProfileService` only fills the displayed `date` from `issueDate`;
+  `resume.json` reads `issueDate` too (a coarse "Sep 2026" is still omitted there by design,
+  `format: date`). The profile scraper decodes HTML entities once, in one pass, before writing
+  the export (`scraper/decode-entities.js`), and the scraper's `node --test` suites now run in
+  CI (`Scraper Tests`) and in the pre-push gate (`scraper` leg) — before, no gate ran them.
+  The live profile was re-synced (67 certifications, including the new Claude Certified
+  Architect - Professional) with the same order and decoding applied.
 - **LinkedIn post images over 3 MB can be imported through the public host.** The importer's
   `POST /api/app/linkedin/import-post` takes a post image up to `IMPORT_MAX_IMAGE_MB` (10 MB),
   but the public `/api/app/` proxy location caps bodies at 3 MB, so a 3.8 MB feed image was

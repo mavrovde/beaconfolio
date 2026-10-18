@@ -58,6 +58,8 @@
 #               + scripts/verdict-heading-lib.test.sh (the grammar both verdict readers share)
 #   setup       setup.test.sh
 #   edge        infra/edge/apply.test.sh (the shared-edge apply contract, #338)
+#   importer    importer/tests (pytest, httpx mocked, #417)
+#   scraper     scraper/*.test.js (node --test, no browser, PR #497)
 #   hook:NAME   .claude/hooks/NAME.test.sh
 #   backend     backend pytest (-n auto, --cov-fail-under=100)
 #   lint        ruff check + ruff format --check + mypy + bandit
@@ -201,6 +203,12 @@ prepush_legs_for_path() {
   # measured prod incident onto exactly that blind spot.
   importer/*) echo importer ;;
 
+  # --- scraper: the LinkedIn scrapers' pure-function suites (PR #497) --------
+  # `node --test` over parse/extract/decode modules, ~0.2s, no browser and no
+  # network. Before this, `scraper/**` was unmapped: a scraper push paid the
+  # FULL round and ALL still never ran these tests — no leg covered them.
+  scraper/*) echo scraper ;;
+
   # --- documentation --------------------------------------------------------
   # CHANGELOG.md is the one doc whose defect lives in the MERGED result, not the
   # branch (#391) — it selects the merged-changelog lint on top of the docs leg.
@@ -220,10 +228,10 @@ prepush_legs_for_path() {
   .mcp.json) echo aiconfig ;;
 
   # --- ANYTHING ELSE: fail closed ------------------------------------------
-  # proxy/**, scraper/**, a brand-new top-level directory … none has a leg that
-  # can exercise it, none is ENUMERATED above, and guessing "nothing" is how a
-  # narrowed gate stops gating. (`importer/**` left this list in #417, when it
-  # gained a leg of its own.)
+  # proxy/**, a brand-new top-level directory … none has a leg that can
+  # exercise it, none is ENUMERATED above, and guessing "nothing" is how a
+  # narrowed gate stops gating. (`importer/**` left this list in #417 and
+  # `scraper/**` in PR #497, each when it gained a leg of its own.)
   *) prepush_unmapped_path ;;
   esac
 }

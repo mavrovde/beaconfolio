@@ -187,6 +187,43 @@ async def test_resume_is_built_from_the_projection_not_the_raw_snapshot(
     assert "phone" not in received["contact"]
 
 
+async def test_resume_and_profile_serve_certifications_in_one_order(
+    client: AsyncClient, db_session
+):
+    """`/profile` (the site) and `resume.json` read ONE projection, so they
+    order certifications identically — German months, a year/month tie and
+    undated entries included (PR #497 review round 1, major 1). Compared by
+    name: `resume.json` drops a coarse date by design (`format: date`)."""
+    certifications = [
+        {"name": "undated"},
+        {"name": "year-2025", "date": "2025"},
+        {"name": "dez-2025", "issueDate": "Dez 2025"},
+        {"name": "okt-2026", "issueDate": "Okt 2026"},
+        {"name": "jan-2025", "issueDate": "2025-01-15"},
+        {"name": "maer-2026", "issueDate": "Mär 2026"},
+    ]
+    await _seed(
+        db_session,
+        version="v1",
+        language="de",
+        data={"name": "Testa", "certifications": certifications},
+    )
+    expected = [
+        "okt-2026",
+        "maer-2026",
+        "dez-2025",
+        "jan-2025",
+        "year-2025",
+        "undated",
+    ]
+
+    site = (await client.get(f"{settings.api_prefix}/profile?lang=de")).json()
+    resume = (await client.get(URL, params={"lang": "de"})).json()
+
+    assert [c["name"] for c in site["certifications"]] == expected
+    assert [c["name"] for c in resume["certificates"]] == expected
+
+
 async def test_resume_never_exposes_non_public_profile_fields(
     client: AsyncClient, db_session
 ):
