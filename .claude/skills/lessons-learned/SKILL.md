@@ -2577,10 +2577,19 @@ bypass-trace comment had the same defect. `$HOME/.claude/merge-gate-bypass.log` 
 `PR_MERGE_GATE=0` merges of beaconfolio #467 and #468 typed with `-R` from another checkout.
 Neither PR carries the bypass comment #392 promises.
 
-**Fix.** The gate now captures the repository from `-R/--repo` (both before and after `pr merge`,
-spaced and `=` forms), a `GH_REPO=` prefix, or a pull URL. It passes `--repo` to every `gh` read
-(the PR, the branch lookup, the `Closes #NN` issues) and to the bypass comment. There is one case
-per spelling and one mutant per arm in `pre-merge-gate.test.sh`.
+**Fix.** The gate resolves the repository in gh's own precedence: a pull URL (it beats `-R`),
+then `-R/--repo` at the `gh`, `pr` or `merge` level in every pflag spelling (spaced, `=`, attached
+`-Rx`, or ending a short cluster `-dR x`/`-sdRx`), then `GH_REPO` (including into a `bash -c` or
+`eval` body). It passes `--repo` to every `gh` read and to the bypass comment. Where the text cannot
+show the repository (an earlier `cd`/`pushd`, an exported or bare `GH_REPO`, a `GH_HOST=` prefix),
+it denies unless the merge names its repository.
+
+**The first draft of this fix was itself the lesson.** It parsed only the spaced and `=` forms on
+the merge segment. #501's reviewer probed 20 spellings that gh accepts, and the gate allowed 13 of
+them. One of them, `gh pr -R x merge N`, was not recognised as a merge at all. **When you claim
+coverage of a grammar you don't own, enumerate the grammar's spellings from its parser (here
+pflag: attached values, clusters, persistent flags on parent commands), not from the spelling that
+bit you.** Every probe is now a case in `pre-merge-gate.test.sh`, with one mutant per rule.
 
 **The general rule.** When a check looks up the thing a command acts on, ask which **namespace**
 the command resolves it in: repository, kube context, AWS profile, git remote, Docker context,

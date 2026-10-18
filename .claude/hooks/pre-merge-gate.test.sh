@@ -7,7 +7,7 @@
 # Only 4 of 10 mutations bit. That is the exact fake-green class the retrospective
 # this hook came from is about, so every case here now asserts the DECISION
 # (parsed out of the JSON) and the mutation list below is part of the contract:
-# `bash pre-merge-gate.test.sh --mutations` re-runs them and must report 33 killed.
+# `bash pre-merge-gate.test.sh --mutations` re-runs them and must report 47 killed.
 set -u
 
 HOOK="${HOOK:-$(cd "$(dirname "$0")" && pwd)/pre-merge-gate.sh}"
@@ -569,6 +569,57 @@ GH_STUB_FOREIGN_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ✅ APPROVED' 'Closes #9
 GH_STUB_ISSUE_BODY="$AC_TICKED" GH_STUB_FOREIGN_ISSUE_BODY="$AC_UNTICKED" \
   run "Closes #NN is read in the merge's repository" deny "gh pr merge 284 -R mavrovde/other"
 
+# 4e. #501 REVIEW ROUND 1 — the reviewer's 20-spelling probe, one case each.
+#     Same fixture as 4d: the CWD's #284 APPROVED, mavrovde/other#284 unreviewed,
+#     so every spelling gh resolves to the OTHER repository must DENY. Seven
+#     already held; thirteen allowed. Each is pinned here.
+A284="$(rev 2026-09-06T10:00:00Z '## ✅ APPROVED')"
+#   the seven that held
+GH_STUB_PR_JSON="$A284" run "probe: spaced -R"                  deny "gh pr merge 284 -R mavrovde/other"
+GH_STUB_PR_JSON="$A284" run "probe: quoted --repo value"        deny "gh pr merge 284 --repo \"mavrovde/other\""
+GH_STUB_PR_JSON="$A284" run "probe: quoted GH_REPO prefix"      deny "GH_REPO=\"mavrovde/other\" gh pr merge 284"
+GH_STUB_PR_JSON="$A284" run "probe: env GH_REPO="               deny "env GH_REPO=mavrovde/other gh pr merge 284"
+GH_STUB_PR_JSON="$A284" run "probe: sudo GH_REPO="              deny "sudo GH_REPO=mavrovde/other gh pr merge 284"
+GH_STUB_PR_JSON="$A284" run "probe: timeout … -R"               deny "timeout 60 gh pr merge 284 -R mavrovde/other"
+GH_STUB_PR_JSON="$A284" run "probe: --body x -R"                deny "gh pr merge 284 --body x -R mavrovde/other"
+#   finding 1: a pull URL BEATS -R (gh 2.102.0, measured by the reviewer)
+GH_STUB_PR_JSON="$A284" run "probe: URL in other repo + -R cwd" deny "gh pr merge https://github.com/mavrovde/other/pull/284 -R mavrovde/beaconfolio"
+#   finding 2a: -R at the `pr` level — previously not a merge AT ALL
+GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
+  run "probe: gh pr -R <same repo> merge is still a merge"        deny "gh pr -R mavrovde/beaconfolio merge 284"
+GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
+  run "probe: gh pr --repo <same repo> merge --squash"             deny "gh pr --repo mavrovde/beaconfolio merge 284 --squash"
+GH_STUB_PR_JSON="$A284" run "probe: gh pr -R <other> merge"     deny "gh pr -R mavrovde/other merge 284"
+#   finding 2b/2c: attached value and short clusters
+GH_STUB_PR_JSON="$A284" run "probe: attached -R<repo>"          deny "gh pr merge 284 -Rmavrovde/other"
+GH_STUB_PR_JSON="$A284" run "probe: cluster -dR <repo>"         deny "gh pr merge 284 -dR mavrovde/other"
+GH_STUB_PR_JSON="$A284" run "probe: cluster -sdR<repo>"         deny "gh pr merge 284 -sdRmavrovde/other"
+GH_STUB_PR_JSON="$A284" run "probe: cluster before the number"  deny "gh pr merge -dR mavrovde/other 284"
+#   ...and a value flag EARLIER in the cluster owns the rest: `-bR` is a body of
+#   "R", so the merge stays in the CWD's repository (pflag semantics) — allow.
+GH_STUB_PR_JSON="$A284" run "probe: -bR is a body, not a repo"  allow "gh pr merge 284 -bR"
+GH_STUB_PR_JSON="$A284" run "probe: -bR<x> is a body of R<x>"   allow "gh pr merge 284 -bRmavrovde/other"
+#   a bare assignment: conservative, because GH_REPO may already be EXPORTED in
+#   the shell, in which case the assignment moves the repository gh reads.
+GH_STUB_PR_JSON="$A284" run_reason "probe: bare GH_REPO=; merge" "name the repository with -R" "GH_REPO=mavrovde/other; gh pr merge 284"
+#   finding 3/4: the repository moved outside the merge segment — fail CLOSED
+GH_STUB_PR_JSON="$A284" run_reason "probe: cd && merge"          "name the repository with -R" "cd /tmp/other && gh pr merge 284"
+GH_STUB_PR_JSON="$A284" run_reason "probe: (cd x && merge)"      "name the repository with -R" "(cd /tmp/other && gh pr merge 284)"
+GH_STUB_PR_JSON="$A284" run_reason "probe: pushd; merge"         "name the repository with -R" "pushd /tmp/other; gh pr merge 284"
+GH_STUB_PR_JSON="$A284" run_reason "probe: export GH_REPO= && merge" "name the repository with -R" "export GH_REPO=mavrovde/other && gh pr merge 284"
+GH_STUB_PR_JSON="$A284" run_reason "probe: GH_REPO=; export; merge" "name the repository with -R" "GH_REPO=mavrovde/other; export GH_REPO; gh pr merge 284"
+GH_STUB_PR_JSON="$A284" run_reason "probe: GH_HOST= prefix"      "name the repository with -R" "GH_HOST=ghe.example gh pr merge 284"
+GH_STUB_PR_JSON="$A284" run_reason "probe: cd inside bash -c"    "name the repository with -R" "bash -c 'cd /tmp/other && gh pr merge 284'"
+#   finding 3: the OUTER GH_REPO reaches the inner script
+GH_STUB_PR_JSON="$A284" run "probe: GH_REPO= bash -c merge"     deny "GH_REPO=mavrovde/other bash -c 'gh pr merge 284'"
+GH_STUB_PR_JSON="$A284" run "probe: GH_REPO= eval merge"        deny "GH_REPO=mavrovde/other eval 'gh pr merge 284'"
+#   positive controls: naming the repository on the merge clears the taint
+GH_STUB_PR_JSON='{"reviews":[],"comments":[],"body":""}' GH_STUB_FOREIGN_PR_JSON="$A284" \
+  run "control: cd && merge -R <approved repo> allows"          allow "cd /tmp/other && gh pr merge 284 -R mavrovde/other"
+GH_STUB_PR_JSON='{"reviews":[],"comments":[],"body":""}' GH_STUB_FOREIGN_PR_JSON="$A284" \
+  run "control: attached -R<approved repo> allows"              allow "gh pr merge 284 -Rmavrovde/other"
+GH_STUB_PR_JSON="$A284" run "control: an unrelated earlier segment does not taint" allow "git status && gh pr merge 284"
+
 # 5. Quoted prose is DATA (#204/#237) — the false-positive direction.
 GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
   run "phrase quoted in a comment body" allow "gh pr comment 284 --body 'do not gh pr merge 284 yet'"
@@ -813,8 +864,8 @@ PY
     'replace::[ "${#CMD}" -gt 24576 ]=>[ "${#CMD}" -gt 99999999 ]'
   mutate die "the command-prefix bypass stops being recognised" \
     "replace::PR_MERGE_GATE=0( |\$)'=>PR_MERGE_GATE=0_NEVER( |\$)'"
-  mutate die "value-taking gh flags dropped from the operand walk" \
-    'replace::-b|--body|-t|--subject|-F|--body-file|-A|--author-email|-R|--repo|--match-head-commit=>-b|--body|-t|--subject|--match-head-commit'
+  mutate die "value-taking merge flags dropped from the walker (a body value read as a repo)" \
+    'replace::pmg_flag "RbtFA"=>pmg_flag "R"'
   mutate die "branch operands no longer resolved (valid input fails closed)" \
     "replace::PR_NUM=\"\$(gh pr view \"\$UNQUOTED\"=>PR_NUM=\"\$(true \"\$UNQUOTED\""
   mutate die "argv_split replaced by IFS word-splitting (the round-5 regression)" \
@@ -828,18 +879,48 @@ PY
     'replace::[ -n "$MERGE_REPO" ] && REPO_ARGS=(--repo "$MERGE_REPO")=>:'
   mutate die "Closes #NN read in the CWD's repository" \
     'replace::gh issue view "$issue" ${REPO_ARGS[@]+"${REPO_ARGS[@]}"}=>gh issue view "$issue"'
-  mutate die "merge-level -R/--repo value not captured" \
-    'replace::case "$1" in -R|--repo) MERGE_REPO="${2:-}" ;; esac=>:'
-  mutate die "joined --repo=/-R= forms not captured" \
-    'replace::--repo=*|-R=*) MERGE_REPO="${1#*=}"; shift ;;=>--repo=*|-R=*) shift ;;'
-  mutate die "global gh -R/--repo not captured" \
-    'replace::--repo|-R) MERGE_REPO="${2:-}"; shift; shift || return 1 ;;=>--repo|-R) shift; shift || return 1 ;;'
-  mutate die "GH_REPO= prefix not captured" \
-    'replace::GH_REPO=*) MERGE_REPO=>GH_REPO_NEVER=*) MERGE_REPO='
+  # #501 review round 1: one mutant per arm of the pflag walker and the
+  # fail-closed context rule.
+  mutate die "--repo <x> not captured" \
+    'replace::--repo) MERGE_FLAG_REPO="$nx"; PMG_TAKE=2; return ;;=>--repo) PMG_TAKE=2; return ;;'
+  mutate die "--repo=<x> not captured" \
+    'replace::--repo=*) MERGE_FLAG_REPO="${a#--repo=}"; PMG_TAKE=1; return ;;=>--repo=*) PMG_TAKE=1; return ;;'
+  mutate die "short -R value never recorded (spaced, attached, cluster)" \
+    'replace::[ "$c" = "R" ] && MERGE_FLAG_REPO="$rest"=>:'
+  mutate die "an attached value is read from the NEXT word instead" \
+    'replace::if [ -z "$rest" ]; then rest="$nx"; PMG_TAKE=2; else PMG_TAKE=1; fi=>rest="$nx"; PMG_TAKE=2'
+  mutate die "short clusters not walked (only the first letter read)" \
+    'replace::for ((i = 0; i < ${#chars}; i++)); do=>for ((i = 0; i < 1; i++)); do'
+  mutate die "gh-level flags not walked" \
+    'replace::pmg_flag "R" "$1" "${2-}"   # gh level=>PMG_TAKE=0   # gh level'
+  mutate die "pr-level flags not walked (gh pr -R x merge is invisible again)" \
+    'replace::pmg_flag "R" "$1" "${2-}"   # pr level=>PMG_TAKE=0   # pr level'
+  mutate die "the operand walk stops at the number (a trailing -R is dropped)" \
+    'replace::[ -z "$MERGE_OPERAND" ] && MERGE_OPERAND="$1"; shift=>MERGE_OPERAND="$1"; break'
   mutate die "a pull URL's repository not derived" \
     'replace::http://*/pull/*|https://*/pull/*)=>NEVER-A-URL)'
-  mutate die "the operand walk stops at the number (a trailing -R is dropped)" \
-    'replace::*) [ -z "$MERGE_OPERAND" ] && MERGE_OPERAND="$1"; shift ;;=>*) MERGE_OPERAND="$1"; break ;;'
+  mutate die "-R beats a pull URL again (the round-1 guard restored)" \
+    'replace::      MERGE_FLAG_REPO="${MERGE_OPERAND#*://}"; MERGE_FLAG_REPO="${MERGE_FLAG_REPO%%/pull/*}" ;;=>      [ -z "$MERGE_FLAG_REPO" ] && { MERGE_FLAG_REPO="${MERGE_OPERAND#*://}"; MERGE_FLAG_REPO="${MERGE_FLAG_REPO%%/pull/*}"; } ;;'
+  mutate die "GH_REPO= prefix not captured" \
+    'replace::GH_REPO=*) MERGE_ENV_REPO=>GH_REPO_NEVER=*) MERGE_ENV_REPO='
+  mutate die "the outer GH_REPO dropped inside bash -c / eval" \
+    'replace::MERGE_ENV_REPO="$outer_env_repo"; MERGE_HOST_TAINT="$outer_host_taint"=>MERGE_ENV_REPO=""; MERGE_HOST_TAINT=0'
+  mutate die "the environment half reset at every depth" \
+    'replace::if [ "$PMG_INNER_DEPTH" -eq 0 ]; then MERGE_ENV_REPO=""; MERGE_HOST_TAINT=0; fi=>MERGE_ENV_REPO=""; MERGE_HOST_TAINT=0'
+  mutate die "GH_HOST= prefix does not taint" \
+    'replace::GH_HOST=*) MERGE_HOST_TAINT=1 ;;=>GH_HOST=*) : ;;'
+  mutate die "the context-shift deny removed" \
+    'replace::if [ "${MERGE_TAINTS[$MERGE_IDX]}" = 1 ] && [ -z "$MERGE_REPO" ]; then=>if false; then'
+  mutate die "cd/pushd/popd not noticed" \
+    'replace::    cd|pushd|popd) CTX_TAINT=1; return ;;=>    cd_NEVER) CTX_TAINT=1; return ;;'
+  mutate die "export of GH_REPO/GH_HOST not noticed" \
+    'replace::      case "$s" in *GH_REPO*|*GH_HOST*) CTX_TAINT=1 ;; esac; return ;;=>      return ;;'
+  mutate die "a bare GH_REPO= assignment not noticed" \
+    "replace::&& printf '%s' \"\$s\" | grep -Eq '(^| )GH_(REPO|HOST)='; then=>&& false; then"
+  mutate die "outer segments not checked for a context shift" \
+    'replace::    pmg_note_context_shift "$seg"=>    :'
+  mutate die "inner (bash -c) segments not checked for a context shift" \
+    'replace::      pmg_note_context_shift "$inner"=>      :'
   mutate die "the bypass comment goes to the CWD's repository" \
     'replace::[ -n "$repo" ] && repo_args=(--repo "$repo")=>:'
   mutate die "indirection (bash -c / eval / ssh) no longer inspected" \

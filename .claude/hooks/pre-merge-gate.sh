@@ -179,9 +179,81 @@ INSPECT_DEADLINE=$((START + PARSE_DEADLINE_SECONDS))
 # (#204/#237).
 # A quoted argument handed to bash -c / eval / ssh is a SCRIPT: split it like
 # the shell would and ask each inner command. Depth-bounded, like the sibling.
+# --- Which repository? (v1.17.0 retro, round 1 of #501) ----------------------
+# gh decides the repository a `gh pr merge N` acts on from, in order: a pull
+# URL operand (it beats -R; measured on gh 2.102.0), a -R/--repo flag in ANY
+# pflag spelling (spaced, `=`, attached `-Rx`, or ending a short cluster such as
+# `-dR x` / `-sdRx`) at the `gh`, `pr` or `merge` level, then GH_REPO, then the
+# CWD's git remote. The first draft of this fix parsed only the spaced/`=`
+# forms and let -R beat a URL; #501's review probe found 13 of 20 spellings
+# where gh merged a different PR from the one the gate read. The flag walker
+# below is the ONE model of those spellings. Anything that moves the repository
+# OUTSIDE the merge segment (an earlier cd/pushd, an exported or bare GH_REPO,
+# GH_HOST) cannot be modelled from the command text, so it fails CLOSED unless
+# the merge names its repository itself.
+MERGE_FLAG_REPO=""
+MERGE_ENV_REPO=""
+MERGE_HOST_TAINT=0
+CTX_TAINT=0
+
+# pmg_flag <value-letters> <arg> [<next>] — one pflag token. Sets PMG_TAKE to the
+# number of argv words it consumes (0 = not a flag) and MERGE_FLAG_REPO when the
+# token carries -R/--repo. <value-letters> are the short flags that take a value
+# at this level; in a cluster the FIRST value-taking letter owns the rest of the
+# token (or the next word), exactly as pflag reads `-sb msg` / `-sbmsg`.
+pmg_flag() {
+  local vals="$1" a="$2" nx="${3-}" chars c rest i
+  PMG_TAKE=0
+  case "$a" in
+    --repo) MERGE_FLAG_REPO="$nx"; PMG_TAKE=2; return ;;
+    --repo=*) MERGE_FLAG_REPO="${a#--repo=}"; PMG_TAKE=1; return ;;
+    --hostname|--body|--subject|--body-file|--author-email|--match-head-commit) PMG_TAKE=2; return ;;
+    --|-) PMG_TAKE=1; return ;;
+    --*) PMG_TAKE=1; return ;;
+    -?*) ;;
+    *) return ;;
+  esac
+  chars="${a#-}"
+  for ((i = 0; i < ${#chars}; i++)); do
+    c="${chars:i:1}"
+    case "$vals" in
+      *"$c"*)
+        rest="${chars:i+1}"; rest="${rest#=}"
+        if [ -z "$rest" ]; then rest="$nx"; PMG_TAKE=2; else PMG_TAKE=1; fi
+        [ "$c" = "R" ] && MERGE_FLAG_REPO="$rest"
+        return ;;
+    esac
+  done
+  PMG_TAKE=1
+}
+
+# pmg_note_context_shift <segment> — does this segment move the repository a
+# LATER `gh` resolves against? cd/pushd/popd (also inside `( … )`), an export of
+# GH_REPO/GH_HOST, or a bare assignment of either. Sets CTX_TAINT for the rest
+# of the command. Text-only by design: `source env.sh` is a named residual.
+pmg_note_context_shift() {
+  local s="$1" w
+  s="$(printf '%s' "$s" | tr '\n\t' '  ' | sed -E 's/^[[:space:](){!]+//')"
+  w="${s%% *}"
+  case "$w" in
+    cd|pushd|popd) CTX_TAINT=1; return ;;
+    export|declare|typeset|readonly|local)
+      case "$s" in *GH_REPO*|*GH_HOST*) CTX_TAINT=1 ;; esac; return ;;
+  esac
+  # A segment that is ONLY assignments (`GH_REPO=x; export GH_REPO; …`).
+  if printf '%s' "$s" | grep -Eq '^([A-Za-z_][A-Za-z0-9_]*=[^ ]*( |$))+$' \
+     && printf '%s' "$s" | grep -Eq '(^| )GH_(REPO|HOST)='; then
+    CTX_TAINT=1
+  fi
+}
+
 PMG_INNER_DEPTH=0
 inner_script_invokes_pr_merge() {
   local body="$1" line inner found=1 OLD="$IFS"
+  # The OUTER segment's environment reaches every inner command:
+  # `GH_REPO=x bash -c 'gh pr merge 284'` merges x#284 (v1.17.0 retro round 1 —
+  # the recursion used to reset the captured repo and read the CWD's #284).
+  local outer_env_repo="$MERGE_ENV_REPO" outer_host_taint="$MERGE_HOST_TAINT"
   [ "$PMG_INNER_DEPTH" -ge 3 ] && return 0        # cannot analyse further → gate
   PMG_INNER_DEPTH=$((PMG_INNER_DEPTH + 1))
   body="${body//$NL_SENTINEL/$'\n'}"
@@ -189,6 +261,8 @@ inner_script_invokes_pr_merge() {
     [ "$found" = 0 ] && break
     IFS=$'\n'
     for inner in $(quote_split "$line"); do
+      pmg_note_context_shift "$inner"
+      MERGE_ENV_REPO="$outer_env_repo"; MERGE_HOST_TAINT="$outer_host_taint"
       if segment_invokes_pr_merge "$inner"; then found=0; break; fi
     done
     IFS="$OLD"
@@ -207,8 +281,12 @@ segment_invokes_pr_merge() {
   # `gh pr merge 5 -R mavrovde/viafrei-bridge` was judged on beaconfolio's #5 (a
   # closed Dependabot PR). That direction denied; the other direction ALLOWS an
   # unreviewed merge whenever the CWD's PR #N happens to carry a covering
-  # APPROVE. Every `gh` read below is now pointed at this repository.
-  MERGE_REPO=""
+  # APPROVE. Every `gh` read below is now pointed at this repository. The
+  # spellings and precedence are modelled by pmg_flag (see its header).
+  MERGE_REPO=""; MERGE_FLAG_REPO=""
+  # The ENVIRONMENT half resets only at the top level: inside `bash -c` it is
+  # the outer segment's (restored per inner command by the caller).
+  if [ "$PMG_INNER_DEPTH" -eq 0 ]; then MERGE_ENV_REPO=""; MERGE_HOST_TAINT=0; fi
   # DENY, not "treat as merge" — see the twin comment in the peel loop.
   [ "$SECONDS" -ge "$INSPECT_DEADLINE" ] \
     && deny "command too large to analyse within budget — run the merge alone"
@@ -240,8 +318,11 @@ segment_invokes_pr_merge() {
     fi
     while [[ "$seg" =~ ^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+ ]]; do
       case "$seg" in
-        GH_REPO=*) MERGE_REPO="${seg%% *}"; MERGE_REPO="${MERGE_REPO#GH_REPO=}"
-                   MERGE_REPO="${MERGE_REPO//[\"\']/}" ;;
+        GH_REPO=*) MERGE_ENV_REPO="${seg%% *}"; MERGE_ENV_REPO="${MERGE_ENV_REPO#GH_REPO=}"
+                   MERGE_ENV_REPO="${MERGE_ENV_REPO//[\"\']/}" ;;
+        # GH_HOST moves the host the repository is resolved on; not modelled,
+        # so it fails closed unless the merge names its repository (-R / URL).
+        GH_HOST=*) MERGE_HOST_TAINT=1 ;;
       esac
       seg="${seg#* }"; changed=1
     done
@@ -318,43 +399,46 @@ segment_invokes_pr_merge() {
   set -- "${ARGV_SPLIT_RESULT[@]}"
   [ "${1:-}" = "gh" ] || return 1
   shift || return 1
+  # `gh` level: globals before the subcommand (`gh -R x pr merge`).
   while [ $# -gt 0 ]; do
-    case "$1" in
-      --repo|-R) MERGE_REPO="${2:-}"; shift; shift || return 1 ;;
-      --repo=*|-R=*) MERGE_REPO="${1#*=}"; shift ;;
-      --hostname) shift; shift || return 1 ;;
-      --hostname=*|-*) shift ;;
-      *) break ;;
-    esac
+    pmg_flag "R" "$1" "${2-}"   # gh level
+    [ "$PMG_TAKE" -eq 0 ] && break
+    shift "$PMG_TAKE" 2>/dev/null || return 1
   done
   [ "${1:-}" = "pr" ] || return 1
   shift
+  # `pr` level: -R is a PERSISTENT flag of `pr`, so `gh pr -R x merge N` is a
+  # merge. Requiring `merge` right after `pr` made that spelling invisible —
+  # a total bypass (#501 review round 1, finding 2a).
+  while [ $# -gt 0 ]; do
+    pmg_flag "R" "$1" "${2-}"   # pr level
+    [ "$PMG_TAKE" -eq 0 ] && break
+    shift "$PMG_TAKE" 2>/dev/null || return 1
+  done
   [ "${1:-}" = "merge" ] || return 1
   shift
   # The operand may sit after flags (`gh pr merge --squash 291`) or be absent
   # (merge the current branch's PR). Walk the rest the same way, consuming
-  # value-taking merge flags, and keep the FIRST bare operand.
+  # value-taking merge flags (-b -t -F -A, and -R), and keep the FIRST bare
+  # operand — but keep WALKING: `gh pr merge 284 -R x` puts the repository
+  # AFTER the number (the first draft of the v1.17.0 fix stopped there).
   MERGE_OPERAND=""
   while [ $# -gt 0 ]; do
-    case "$1" in
-      -b|--body|-t|--subject|-F|--body-file|-A|--author-email|-R|--repo|--match-head-commit) \
-        case "$1" in -R|--repo) MERGE_REPO="${2:-}" ;; esac
-        shift; shift || break ;;
-      --repo=*|-R=*) MERGE_REPO="${1#*=}"; shift ;;
-      -*) shift ;;
-      # Keep the FIRST bare operand, but keep WALKING: `gh pr merge 284 -R x`
-      # puts the repository AFTER the number, and stopping at the operand
-      # dropped it (the first draft of the v1.17.0 fix did exactly that).
-      *) [ -z "$MERGE_OPERAND" ] && MERGE_OPERAND="$1"; shift ;;
-    esac
+    pmg_flag "RbtFA" "$1" "${2-}"
+    if [ "$PMG_TAKE" -eq 0 ]; then
+      [ -z "$MERGE_OPERAND" ] && MERGE_OPERAND="$1"; shift
+    else
+      shift "$PMG_TAKE" 2>/dev/null || break
+    fi
   done
-  # A pull URL names its repository itself; an explicit -R still wins, as in gh.
-  if [ -z "$MERGE_REPO" ]; then
-    case "$MERGE_OPERAND" in
-      http://*/pull/*|https://*/pull/*)
-        MERGE_REPO="${MERGE_OPERAND#*://}"; MERGE_REPO="${MERGE_REPO%%/pull/*}" ;;
-    esac
-  fi
+  # A pull URL names its repository itself and BEATS -R, as gh does (measured on
+  # gh 2.102.0: `gh pr view <beaconfolio URL> -R mavrovde/viafrei-bridge`
+  # returns beaconfolio's PR). The first draft let -R win.
+  case "$MERGE_OPERAND" in
+    http://*/pull/*|https://*/pull/*)
+      MERGE_FLAG_REPO="${MERGE_OPERAND#*://}"; MERGE_FLAG_REPO="${MERGE_FLAG_REPO%%/pull/*}" ;;
+  esac
+  MERGE_REPO="${MERGE_FLAG_REPO:-$MERGE_ENV_REPO}"
   return 0
 }
 
@@ -365,6 +449,7 @@ MERGE_OPERANDS=()
 MERGE_UNKNOWABLE=()
 MERGE_REPO=""
 MERGE_REPOS=()
+MERGE_TAINTS=()
 OLD_IFS="$IFS"
 IN_HEREDOC_DELIM=""
 while IFS= read -r line; do
@@ -404,11 +489,14 @@ while IFS= read -r line; do
     [ "$SECONDS" -ge "$INSPECT_DEADLINE" ] \
       && deny "command too large to analyse within budget — run the merge alone"
     MERGE_OPERAND_UNKNOWABLE=0   # per-segment: `ls | xargs rm` must not taint a later merge
+    # BEFORE the merge test: `cd x && gh pr merge N` taints the merge after it.
+    pmg_note_context_shift "$seg"
     if segment_invokes_pr_merge "$seg"; then
       MERGE_SEG="$seg"
       MERGE_OPERANDS+=("$MERGE_OPERAND")
       MERGE_UNKNOWABLE+=("$MERGE_OPERAND_UNKNOWABLE")
       MERGE_REPOS+=("$MERGE_REPO")
+      if [ "$CTX_TAINT" = 1 ] || [ "$MERGE_HOST_TAINT" = 1 ]; then MERGE_TAINTS+=(1); else MERGE_TAINTS+=(0); fi
       MERGE_OPERAND=""; MERGE_OPERAND_UNKNOWABLE=0
     fi
   done
@@ -435,6 +523,13 @@ for MERGE_IDX in "${!MERGE_OPERANDS[@]}"; do
 MERGE_OPERAND="${MERGE_OPERANDS[$MERGE_IDX]}"
 MERGE_OPERAND_UNKNOWABLE="${MERGE_UNKNOWABLE[$MERGE_IDX]}"
 MERGE_REPO="${MERGE_REPOS[$MERGE_IDX]}"
+# FAIL CLOSED when the repository was moved somewhere the text cannot follow:
+# an earlier cd/pushd, an exported or bare GH_REPO, or a GH_HOST prefix — and the
+# merge itself names no repository (#501 review round 1, findings 3-4). A gate
+# that guessed the CWD here would read one PR while gh merged another.
+if [ "${MERGE_TAINTS[$MERGE_IDX]}" = 1 ] && [ -z "$MERGE_REPO" ]; then
+  deny "this command changes the directory or GH_REPO/GH_HOST before the merge, so the repository it merges in cannot be read from the text — name the repository with -R <owner/repo> on the merge itself"
+fi
 # Every gh read for THIS merge goes to the merge's own repository (see
 # segment_invokes_pr_merge). Empty = the CWD's repository, exactly as gh does.
 REPO_ARGS=()

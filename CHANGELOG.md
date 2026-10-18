@@ -20,10 +20,18 @@ All notable changes to this project will be documented in this file.
   `gh … view`, which resolves against the CURRENT directory's repository. So
   `gh pr merge 5 -R mavrovde/viafrei-bridge` was judged on beaconfolio's #5 (measured), and any
   merge whose CWD PR of the same number had a covering APPROVE would have been allowed. The gate
-  now takes the repository from `-R/--repo` (either side of `pr merge`, spaced or `=`), a `GH_REPO=`
-  prefix or a pull URL, and passes it to every read and to the bypass comment. That comment had
-  the same defect, which is why the two `PR_MERGE_GATE=0` merges of #467 and #468 left no trace on
-  either PR. Seven new cases and nine new mutants (lessons §86).
+  now models gh's own precedence. A pull URL comes first (it beats `-R`). Next is `-R/--repo` at
+  the `gh`, `pr` or `merge` level, in every pflag spelling: spaced, `=`, attached `-Rx`, or ending a
+  short cluster like `-dR x` or `-sdRx`. Then a `GH_REPO=` prefix, which also reaches a
+  `bash -c`/`eval` body. The repository is passed to every read and to the bypass comment. That
+  comment had the same defect, which is why the two `PR_MERGE_GATE=0` merges of #467 and #468 left
+  no trace on either PR.
+  - **The gate fails CLOSED where the text cannot say which repository gh will use.** That covers
+    an earlier `cd`/`pushd`/`(cd …)`, an exported or bare `GH_REPO`, or a `GH_HOST=` prefix. In each
+    case it denies with "name the repository with -R" unless the merge names its repository itself.
+  - `gh pr -R x merge N` used to be invisible to the gate entirely, even against the same
+    repository. #501's round-1 review probe found 13 of 20 spellings allowed by the first draft.
+  - Every probe spelling is now a case, with one mutant per rule (lessons §86).
 - **A non-`run-e2e` label can no longer cancel the summoned browser run.** GitHub keeps one PENDING
   run per concurrency group and cancels the older one when a new run is queued, whatever
   `cancel-in-progress` says. #499 was opened with four labels and its `run-e2e` run was cancelled
