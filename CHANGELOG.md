@@ -7,6 +7,8 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Placeholder for next release.
 
+## [1.17.1] - 2026-10-18
+
 ### Security
 - **Snyk Open Source:** `qs` 6.16.0 → 6.16.1 in `frontend/package-lock.json` (SNYK-JS-QS-20943482, High; an `express`/`body-parser` transitive, lockfile-only within `^6.16.0`).
 - **Sonar python:S8414 (BLOCKER):** `CORSMiddleware` is now the OUTERMOST middleware in `backend/app/main.py` (it was added before `ApiNoindexMiddleware`, and Starlette's last-added layer is outermost). Pinned by `backend/tests/test_cors_middleware_order.py`.
