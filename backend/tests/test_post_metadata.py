@@ -135,6 +135,11 @@ TITLE_CASES = [
         "I preview verified badges before sharing them",
     ),
     (
+        "review_my_achievement_is_not_badge_boilerplate",
+        "I review my verified achievement from Credly before posting it.",
+        "I review my verified achievement from Credly before posting it",
+    ),
+    (
         "third_person_badge_share_still_stripped",
         "View the verified credential on Example.\nShipping the platform",
         "Shipping the platform",
