@@ -58,7 +58,7 @@
                 @if (result.image_url) {
                   <div class="shrink-0">
                     <img [src]="result.image_url" [alt]="result.title" loading="lazy" decoding="async" width="64" height="64"
-                      class="w-16 h-16 rounded border border-terminal-dim object-cover">
+                      class="w-16 h-16 rounded border border-terminal-dim object-cover object-top">
                   </div>
                 }
                 <div>
@@ -114,8 +114,10 @@
               <!-- Image Preview in List -->
               @if (post.image_url) {
                 <div class="mt-2 pl-4 md:pl-0">
-                  <img [src]="post.image_url" [alt]="post.title" loading="lazy" decoding="async"
-                    class="max-h-32 rounded border border-terminal-dim opacity-80 hover:opacity-100 transition-opacity object-cover">
+                  <!-- Fixed 16:9 thumbnail cropped from the top, the same frame as the post page's
+                  cover, so a portrait upload no longer renders as a narrow tall sliver. -->
+                  <img [src]="post.image_url" [alt]="post.title" loading="lazy" decoding="async" width="228" height="128"
+                    class="post-thumb-image block h-32 w-auto max-w-full aspect-video rounded border border-terminal-dim opacity-80 hover:opacity-100 transition-opacity object-cover object-top">
                 </div>
               }
             </div>

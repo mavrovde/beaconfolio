@@ -361,6 +361,16 @@ All notable changes to this project will be documented in this file.
   inventory first.
 
 ### Fixed
+- **Post images are cropped to a fixed frame instead of being cut through the middle.** A
+  portrait upload (the reported Margaret Hamilton post's image is 480x596) was upscaled to the
+  full column width by `w-full h-auto` and then clipped by `max-h-[500px]` with a centred
+  `object-cover`, so the post page showed a blurry torso with the head cut off, and the blog list
+  showed the same image as a 103x128 sliver beside 16:9 cards. The post cover is now a 16:9 box
+  (`aspect-video object-cover object-top`) and the list thumbnail a 16:9 box 128px tall, both
+  cropped from the top where a face or headline usually sits, with `width`/`height` attributes
+  reserving the box before the image loads; the 64x64 search-result square gains the same top
+  anchor. Markup pinned in Vitest, rendered geometry pinned in a real browser by
+  `e2e/public/post-image-crop.spec.ts`.
 - **Derived post titles no longer stop at "vs." or "L.A.", badge-only posts get a real title, and
   `rederive-metadata` never downgrades a title to the fallback.** A prod dry run of
   `POST /linkedin/rederive-metadata` over 82 imported posts showed "Provincial Code vs" and
