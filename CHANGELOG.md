@@ -7,6 +7,13 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Placeholder for next release.
 
+### Security
+- **Snyk Open Source:** `qs` 6.16.0 → 6.16.1 in `frontend/package-lock.json` (SNYK-JS-QS-20943482, High; an `express`/`body-parser` transitive, lockfile-only within `^6.16.0`).
+- **Sonar python:S8414 (BLOCKER):** `CORSMiddleware` is now the OUTERMOST middleware in `backend/app/main.py` (it was added before `ApiNoindexMiddleware`, and Starlette's last-added layer is outermost). Pinned by `backend/tests/test_cors_middleware_order.py`.
+- **Snyk Container never uploaded a scan:** the `snyk/actions/docker` entrypoint appends `--sarif-file-output` only when `--file` is in the args, so `snyk.sarif` was never written and every leg logged "no valid SARIF … skipping upload" (the parse error was hidden by `2>/dev/null`). The flag is now passed explicitly, and a missing or invalid SARIF turns the job red instead of skipping.
+- **Snyk Container scanned the previous image:** it ran on `push` beside `deploy.yml`, so it tested the old `:latest` while the new images were still building. It now runs on `workflow_run` after a successful push-to-`main` `Prod Deployment` and scans the exact `sha-<commit>` tag that run published (cron and `workflow_dispatch` scan `:latest`).
+- **Container OS packages:** the image builds use `pull: true`; the Alpine runtime stages (proxy, admin) run `apk upgrade --no-cache` (zlib 1.3.2-r0 → r1, libexpat 2.8.5 → 2.9.0, measured in local builds); the Debian runtime stages (backend, public frontend) run `apt-get upgrade -y`. npm, npx and corepack are removed from the public SSR runtime image, which only runs `node` (Snyk flagged undici and others inside npm's own `node_modules`).
+
 ## [1.17.0] - 2026-10-18
 
 ### Security

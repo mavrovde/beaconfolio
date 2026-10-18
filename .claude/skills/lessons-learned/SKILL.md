@@ -2503,3 +2503,28 @@ to "feature off".
 
 **Don't.** Don't treat `check_compose_env.sh` passing as "the knob reaches prod". That lint proves
 the repo's compose files wire every documented `Settings` knob. It cannot see the host's copy.
+
+## 84. `snyk/actions/docker` with `sarif: true` writes NO SARIF for an image scan (post-v1.17.0)
+
+**What happened.** From #358 on, every `Snyk Container` leg went green and logged
+`no valid SARIF … skipping upload`, so the Security tab never received a single container scan.
+The run log shows why: the CLI ran as `snyk test --severity-threshold=high --docker <image>` with
+no output flag. The `snyk/snyk:docker` entrypoint (`docker-entrypoint.sh` in `snyk/snyk-images`)
+appends `--sarif-file-output=snyk.sarif` only when `--file` is among the args or `INPUT_FILE` is
+set. The action's `sarif: true` default is therefore a no-op for a plain image scan. The
+validation step hid the `FileNotFoundError` behind `2>/dev/null` and downgraded it to a warning,
+so the missing scan looked exactly like a clean one.
+
+The same workflow had a second, independent defect: it triggered on `push` beside `deploy.yml`,
+so it scanned the PREVIOUS `:latest` (deploy.yml moves `:latest` only after E2E).
+
+**Do this.**
+- Pass `--sarif-file-output=snyk.sarif` explicitly in `args`. Don't rely on the action's `sarif`
+  input.
+- Treat a missing or unparsable SARIF as RED. A scanner that produced no report is a broken
+  control, not a quiet one.
+- Scan the image the deploy actually published: `workflow_run` on `Prod Deployment`, filtered to
+  `conclusion == 'success' && event == 'push'`, targeting `sha-${{ github.event.workflow_run.head_sha }}`.
+
+**Don't.** Don't read a green scanner job as "scanned". Open the log and find the actual CLI
+command line, and check that the upload step ran.

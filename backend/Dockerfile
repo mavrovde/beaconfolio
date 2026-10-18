@@ -14,7 +14,7 @@ WORKDIR /app
 # (admin SQL export) + psql; `curl` kept for debugging/health probes.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y \
+    apt-get update && apt-get upgrade -y && apt-get install -y \
     libpq5 \
     postgresql-client \
     curl \

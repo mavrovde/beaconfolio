@@ -1,31 +1,49 @@
 # Snyk Container — image-layer CVE scanning for the FOUR real images this repo
 # publishes (adapted from the stock template by #358; the placeholder
 # `your/image-to-test` built a root Dockerfile that does not exist here).
-# Scans the published GHCR images post-push (cheaper and truer than rebuilding),
-# plus a weekly cron so newly disclosed CVEs surface between releases.
+# Scans the published GHCR images (cheaper and truer than rebuilding), plus a
+# weekly cron so newly disclosed CVEs surface between releases.
 name: Snyk Container
 
 on:
-  push:
-    branches: ["main"]
-    paths: ["backend/Dockerfile", "frontend/Dockerfile*", "proxy/**", ".github/workflows/snyk-container.yml"]
+  # AFTER publish, not beside it. This used to trigger on `push` to main, i.e.
+  # in parallel with deploy.yml — so it scanned the PREVIOUS `:latest` while the
+  # new images were still being built (deploy.yml moves `:latest` only after
+  # E2E passes). `workflow_run` fires once the deploy pipeline has finished, and
+  # the scan targets the exact `sha-<commit>` tag that run built and pushed.
+  workflow_run:
+    workflows: ["Prod Deployment"]
+    types: [completed]
+    branches: [main]
   schedule:
     - cron: '36 5 * * 5'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   snyk-container:
+    # Only a SUCCESSFUL push-to-main deploy run published images; a PR run of
+    # deploy.yml (verification-only, #208) or a red run has nothing to scan.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
     permissions:
       contents: read
       security-events: write
       actions: read
+      packages: read
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         service: [backend, frontend, admin-frontend, proxy]
+    env:
+      # workflow_run → the exact image that run published; cron/dispatch → the
+      # currently released `:latest`.
+      IMAGE: ghcr.io/${{ github.repository_owner }}/beaconfolio-${{ matrix.service }}:${{ github.event_name == 'workflow_run' && format('sha-{0}', github.event.workflow_run.head_sha) || 'latest' }}
     steps:
       - uses: actions/checkout@v7
       - name: Fail fast without a token
@@ -33,32 +51,55 @@ jobs:
           if [ -z "${{ secrets.SNYK_TOKEN }}" ]; then
             echo "::error::SNYK_TOKEN is not set — the scan cannot run."; exit 1
           fi
+      - name: Log in to GHCR (read)
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Pull the published image
-        run: docker pull ghcr.io/${{ github.repository_owner }}/beaconfolio-${{ matrix.service }}:latest
+        run: docker pull "$IMAGE"
       - name: Snyk Container test → SARIF
         uses: snyk/actions/docker@11b673cfb4b0dc0d860a1323caa199d54950dcce
-        continue-on-error: true   # findings are release-triage input (rule 8), not a build-breaker
+        continue-on-error: true   # findings (exit 1) are release-triage input (rule 8), not a build-breaker
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         with:
-          image: ghcr.io/${{ github.repository_owner }}/beaconfolio-${{ matrix.service }}:latest
-          args: --severity-threshold=high
+          image: ${{ env.IMAGE }}
+          # `--sarif-file-output` MUST be passed explicitly. The action's
+          # `sarif: true` input is NOT honoured for an image scan: the
+          # snyk/snyk:docker entrypoint appends `--sarif-file-output=snyk.sarif`
+          # only when `--file` is among the args (docker-entrypoint.sh in
+          # snyk/snyk-images). Without it the CLI never wrote a SARIF and every
+          # leg "skipped" the upload, so the Security tab never got a scan.
+          args: --severity-threshold=high --sarif-file-output=snyk.sarif
       - name: Verify the SARIF is present and well-formed
-        id: sarif
-        # PARSE it rather than test for the file: a scan that failed (image not
-        # published yet, token rejected) can leave a truncated or error-JSON
-        # body that the uploader rejects, turning a missing scan into a red
-        # pipeline. Validate, then skip with a warning if it is unusable.
+        # A scan that RAN (exit 0 = clean, exit 1 = findings) writes a SARIF.
+        # A MISSING or unparsable file means the scan itself failed (token
+        # rejected, image unreadable, CLI error) — a broken control, so this is
+        # RED, never a quiet skip (the old check hid the parse error behind
+        # 2>/dev/null and downgraded it to a warning).
         run: |
-          if python3 -c "import json,sys; d=json.load(open('snyk.sarif')); sys.exit(0 if d.get('runs') else 1)" 2>/dev/null; then
-            echo "ok=true" >> "$GITHUB_OUTPUT"
-            python3 -c "import json; d=json.load(open('snyk.sarif')); print(f\"::notice::${{ matrix.service }} SARIF OK — {sum(len(r.get('results',[])) for r in d['runs'])} finding(s)\")"
-          else
-            echo "ok=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::no valid SARIF for ${{ matrix.service }} — skipping upload (image published? SNYK_TOKEN valid?)"
-          fi
+          python3 - "${{ matrix.service }}" <<'PY'
+          import json, sys
+          service = sys.argv[1]
+          try:
+              with open("snyk.sarif", encoding="utf-8") as fh:
+                  data = json.load(fh)
+          except FileNotFoundError:
+              print(f"::error::{service}: snyk.sarif was not written - the Snyk scan failed; see the step above")
+              sys.exit(1)
+          except json.JSONDecodeError as exc:
+              print(f"::error::{service}: snyk.sarif is not valid JSON ({exc})")
+              sys.exit(1)
+          runs = data.get("runs") if isinstance(data, dict) else None
+          if not isinstance(runs, list) or not runs:
+              print(f"::error::{service}: snyk.sarif has no 'runs' - not a SARIF document")
+              sys.exit(1)
+          findings = sum(len(r.get("results") or []) for r in runs)
+          print(f"::notice::{service} SARIF OK - {findings} finding(s)")
+          PY
       - name: Upload SARIF (per image category)
-        if: steps.sarif.outputs.ok == 'true'
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: snyk.sarif

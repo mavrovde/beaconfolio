@@ -1,7 +1,9 @@
 FROM nginx:alpine
 
 # gettext provides envsubst, used by entrypoint.sh to render server_name from env.
-RUN apk add --no-cache openssl curl gettext
+# `apk upgrade` first: the base image lags the Alpine security repo (Snyk flagged
+# zlib/expat fixed upstream but not yet in nginx:alpine), so take OS fixes at build.
+RUN apk upgrade --no-cache && apk add --no-cache openssl curl gettext
 COPY nginx.conf /etc/nginx/nginx.conf
 
 # The site config is a TEMPLATE; entrypoint.sh renders it into conf.d at start so a

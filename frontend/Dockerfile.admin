@@ -19,8 +19,10 @@ RUN npm run build:shared && npm run build:admin
 # Production stage: static files served by nginx only (no Node process)
 FROM nginx:1.31-alpine
 
-# Clear default nginx assets and config
-RUN rm -rf /usr/share/nginx/html/* && rm -f /etc/nginx/conf.d/default.conf
+# Take Alpine OS security fixes the base image has not been rebuilt with yet
+# (Snyk flagged zlib/expat), then clear default nginx assets and config.
+RUN apk upgrade --no-cache \
+    && rm -rf /usr/share/nginx/html/* && rm -f /etc/nginx/conf.d/default.conf
 
 # Copy built admin SPA
 COPY --from=builder /app/dist/admin/browser /usr/share/nginx/html
