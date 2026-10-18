@@ -1,6 +1,7 @@
+from collections.abc import Sequence
 from datetime import datetime
 from math import ceil
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -547,7 +548,10 @@ async def get_similar_posts(
     )
 
     result = await db.execute(similar_query)
-    similar_posts = result.all()
+    # State the row shape: SQLAlchemy 2.1.4's AsyncSession.execute overloads collapse
+    # Select[Post, float] to Result[Post] (an upstream typing gap, the runtime rows are
+    # (Post, distance) pairs), which made mypy reject the unpacking below.
+    similar_posts = cast("Sequence[tuple[Post, float]]", result.all())
 
     return [
         SimilarPostResponse(

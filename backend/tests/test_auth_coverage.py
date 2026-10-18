@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
-from jose import JWTError
+from jwt import PyJWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -166,7 +166,7 @@ async def test_create_access_token_with_delta():
 
 @pytest.mark.asyncio
 async def test_decode_access_token_error():
-    with patch("jose.jwt.decode", side_effect=JWTError("Invalid token")):
+    with patch("jwt.decode", side_effect=PyJWTError("Invalid token")):
         result = decode_access_token("some_token")
         assert result is None
 

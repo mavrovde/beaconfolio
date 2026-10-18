@@ -297,8 +297,8 @@ async def _labels_for(
                 )
             )
         ).all()
-        for row_id, name, company in interaction_rows:
-            labels[row_id] = _display_label(name, company)
+        for row_id, interaction_name, interaction_company in interaction_rows:
+            labels[row_id] = _display_label(interaction_name, interaction_company)
     return labels
 
 

@@ -2,9 +2,9 @@ import secrets
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -111,7 +111,7 @@ def decode_access_token(token: str) -> dict | None:
             token, get_jwt_secret_key(), algorithms=[settings.jwt_algorithm]
         )
         return payload
-    except JWTError as e:
+    except jwt.PyJWTError as e:
         logger.warning(f"JWT decode error: {e}")
         return None
 

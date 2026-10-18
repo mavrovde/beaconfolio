@@ -24,6 +24,33 @@ All notable changes to this project will be documented in this file.
   (`Web:InputWithoutLabelCheck`, `Web:MouseEventWithoutKeyboardEquivalentCheck`). The internal
   `http://backend:8000` SSR origin is a compose-network-only hop and is justified in place
   (`S5332`).
+- **Seven open Dependabot alerts closed, in one pass instead of eight PRs.** Frontend lockfile:
+  `proxy-addr` 2.0.7 to 2.0.8 (critical, IPv4-mapped IPv6 trust-subnet spoofing), `piscina` 5.2.0 to
+  5.3.2 (critical, prototype-pollution gadget), `source-map-js` 1.2.1 to 1.2.2 (high, event-loop DoS),
+  `@angular/router` 22.1.6 to 22.2.3 (high, SSR numeric-URL DoS) and `ip-address` to a patched 10.7.x
+  (medium); `@modelcontextprotocol/sdk` is a transitive that resolves to a patched 1.31+ in the same
+  pass. **`python-jose` (critical, algorithm-confusion guard bypass) has no patched release, so it is
+  replaced, not bumped:** `app/services/auth.py` now uses PyJWT 2.15.1 (`jwt.PyJWTError` for
+  `JWTError`; the call shape is otherwise identical), and three new tests pin the advisory's class - an
+  unsigned `alg=none` token and an HS512-signed token are both rejected by the explicit
+  `algorithms=[...]` allow-list, and a valid token round-trips its claims. The same pass applies the
+  open Dependabot groups so none is left stranded: all `@angular/*` packages together (the exact-peer
+  rule, lessons section 14, which is why the 13-update group PR failed CI when only some moved),
+  `ng-packagr`, the frontend minor group (`express`, `jsdom`, `vitest`, `eslint`, `stylelint`,
+  `typescript-eslint`, Playwright, `@analogjs/vite-plugin-angular`, ...), the backend minor group
+  (`fastapi`, `uvicorn`, `python-dotenv`, `asyncpg`, `pgvector`, `alembic`, `cryptography`,
+  `google-genai`, `pytest-mock`, `ruff`) and the GitHub Actions group (`actions/setup-python` 7, Snyk
+  action pins). `linkedin-api` stays at 2.2.1 (rule 6).
+- **`sqlalchemy` 2.0.52 to 2.1.4** (owner-approved full upgrade). Its stricter typing surfaced two
+  things mypy had been unable to see: a reused loop variable in `services/engagement.py` (`company`
+  was `str` in one loop and `str | None` in the next) and `AsyncSession.execute` collapsing
+  `Select[Post, float]` to `Result[Post]` in the similar-posts query (stated once with a commented
+  `cast`). Measured: full backend suite 1331 passed, 7 skipped, 100.00% coverage; mypy, ruff and
+  bandit clean. Frontend: build of all three projects, 679 + 459 + 166 tests at 100% coverage, ESLint
+  and `npm ci` against the regenerated lockfile all pass.
+- **Not fixed, and why:** `npm audit` still reports `braces` (and `micromatch`/`fast-glob`/`globby`
+  above it) under `stylelint` - dev-only lint tooling that never ships, the advisory affects every
+  published `braces` version and npm's only suggested "fix" is downgrading `stylelint` to 7.7.0.
 
 ### Added
 - **Imported posts carry their real publication date to search engines.** Every public post
