@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 import { parsePost } from './parse-post.js';
+import { harvestPosts, assertExtracted, mergeExport, readExisting } from './collect-posts.js';
 
 config();
 
@@ -72,14 +73,6 @@ async function login(page, context) {
     throw new Error('Login timeout');
 }
 
-async function scrollPage(page, times = 5) {
-    for (let i = 0; i < times; i++) {
-        await page.evaluate(() => window.scrollBy(0, 1000));
-        // Randomized delay (800-1600ms) — gentler / less bot-like than a fixed cadence.
-        await page.waitForTimeout(800 + Math.floor(Math.random() * 800));
-    }
-}
-
 // Collect every image src under a set of locators (post media may have several).
 async function collectImageSrcs(item, selector) {
     const srcs = [];
@@ -103,77 +96,59 @@ async function getText(locator, timeout = 1000) {
     return '';
 }
 
-async function extractPosts(page) {
-    const posts = [];
+// LinkedIn serves hashed, rotating CSS classes, so the extractor anchors on the
+// stable hooks instead: the per-post analytics link (carries the activity URN),
+// `data-testid=expandable-text-box` (the body) and `role=listitem` (the card).
+const POST_ITEM = '[role="listitem"]';
+const POST_URN_LINK = 'a[href*="post-summary/urn:li:activity:"]';
 
-    // Find all post containers
-    // Look for the main blocks in the recent activity feed
-    const postLocators = await page.locator('.profile-creator-shared-feed-update__container').all();
-    console.log(`Found ${postLocators.length} potential post items`);
-
-    // Alternative fallback selector if the first one doesn't yield much
-    let itemsToProcess = postLocators;
-    if (itemsToProcess.length === 0) {
-        itemsToProcess = await page.locator('.feed-shared-update-v2').all();
-        console.log(`Fallback: Found ${itemsToProcess.length} feed update items`);
+// Browser glue around harvestPosts (the loop and its stop rules live in collect-posts.js,
+// where they are unit-tested): scroll, give the lazily appended cards a few seconds to
+// land, and press a "show more" control if the feed offers one.
+async function advanceFeed(page) {
+    await page.evaluate(() => window.scrollBy(0, 900));
+    await page.waitForTimeout(2000 + Math.floor(Math.random() * 800));
+    const showMore = page.getByRole('button', { name: /show more|load more/i }).first();
+    if (await showMore.count() > 0) {
+        await showMore.click({ timeout: 1000 }).catch(() => { });
+        await page.waitForTimeout(1500);
     }
+}
 
-    for (let i = 0; i < itemsToProcess.length && posts.length < MAX_POSTS; i++) {
-        const item = itemsToProcess[i];
+async function extractPosts(page, seen = new Set()) {
+    const posts = [];
+    const items = await page.locator(`${POST_ITEM}:has(${POST_URN_LINK})`).all();
+
+    for (const item of items) {
         try {
-            const raw = { urn: '', content: '', imageCandidates: [], authorImageUrl: null, time: '' };
+            const href = await item.locator(POST_URN_LINK).first().getAttribute('href', { timeout: 500 });
+            const urn = (href || '').match(/urn:li:activity:\d+/)?.[0] || '';
+            if (!urn || seen.has(urn)) continue;
 
-            // Expand truncated text ("see more") then read the post body.
-            try {
-                const seeMoreBtn = item.locator('.feed-shared-inline-show-more-text__see-more-less-toggle');
-                if (await seeMoreBtn.count() > 0) {
-                    const text = await getText(seeMoreBtn);
-                    if (text.toLowerCase().includes('more')) {
-                        await seeMoreBtn.click({ timeout: 1000 }).catch(() => { });
-                        await page.waitForTimeout(200);
-                    }
-                }
-                raw.content = await getText(item.locator('.update-components-text'));
-                if (!raw.content) {
-                    raw.content = await getText(item.locator('.feed-shared-update-v2__description-wrapper'));
-                }
-            } catch (e) {
-                console.log(`Text extraction failed for item ${i}`, e.message);
+            const raw = { urn, content: '', imageCandidates: [], authorImageUrl: null, time: '' };
+
+            // Expand a truncated body ("… more") then read it.
+            const more = item.locator('[data-testid="expandable-text-button"]').first();
+            if (await more.count() > 0) {
+                await more.click({ timeout: 1000 }).catch(() => { });
+                await page.waitForTimeout(200);
             }
+            raw.content = await getText(item.locator('[data-testid="expandable-text-box"]'), 2000);
 
-            // The author's avatar — captured ONLY so parsePost can exclude it (the
-            // old scraper mistook this profile photo for the post's image).
-            try {
-                const avatar = item.locator('.update-components-actor__avatar img').first();
-                if (await avatar.count() > 0) {
-                    raw.authorImageUrl = await avatar.getAttribute('src', { timeout: 500 });
-                }
-            } catch { }
+            // The author's avatar - captured ONLY so parsePost can exclude it.
+            raw.authorImageUrl = await item
+                .locator('figure img')
+                .first()
+                .getAttribute('src', { timeout: 500 })
+                .catch(() => null);
 
-            // The post's OWN media (there may be several).
-            raw.imageCandidates = await collectImageSrcs(
-                item,
-                '.update-components-image__image, .update-components-image img, .feed-shared-image img',
-            );
-
-            // URN (→ activity id, permalink and postedAt are derived in parsePost).
-            try {
-                raw.urn = (await item.getAttribute('data-urn', { timeout: 500 })) || '';
-            } catch { }
-
-            // Human-readable "time" string (kept alongside the derived ISO postedAt).
-            try {
-                const timeLocator = item.locator('.update-components-actor__sub-description .visually-hidden').first();
-                if (await timeLocator.count() > 0) {
-                    raw.time = await getText(timeLocator);
-                }
-            } catch { }
+            // The post's OWN media; parsePost drops avatars and de-duplicates.
+            raw.imageCandidates = await collectImageSrcs(item, 'img[src*="media.licdn.com/dms/image"]');
 
             const post = parsePost(raw);
             if (post) posts.push(post);
-
         } catch (e) {
-            console.log(`  Error extracting post ${i}: ${e.message}`);
+            console.log(`  Error extracting a post: ${e.message}`);
         }
     }
 
@@ -189,10 +164,12 @@ async function main() {
     console.log('LinkedIn Posts Scraper');
     console.log('===========================\n');
 
-    // Parse command line arguments for number of scrolls (default to 10)
+    // Command line: --scrolls=N caps the scroll loop (default 60); --replace writes only this
+    // run's posts instead of merging them into the existing posts_data.json.
     const scrollsArg = process.argv.find(arg => arg.startsWith('--scrolls='));
-    const numScrolls = scrollsArg ? parseInt(scrollsArg.split('=')[1], 10) : 10;
-    console.log(`Will perform ${numScrolls} scrolls to load posts.`);
+    const numScrolls = scrollsArg ? parseInt(scrollsArg.split('=')[1], 10) : 60;
+    const replace = process.argv.includes('--replace');
+    console.log(`Will scroll up to ${numScrolls} times to load posts.`);
 
     const isHeadless = process.env.HEADLESS !== 'false';
     const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
@@ -213,18 +190,31 @@ async function main() {
         await page.waitForTimeout(4000);
 
         console.log('Scrolling to load posts...');
-        await scrollPage(page, numScrolls);
+        const harvested = await harvestPosts({
+            extract: (seen) => extractPosts(page, seen),
+            advance: () => advanceFeed(page),
+            maxScrolls: numScrolls,
+            maxPosts: MAX_POSTS,
+            log: (step, total) => console.log(`  scroll ${step}: ${total} posts`),
+        });
+        // Never clobber the last good export with an empty one (a selector rot once
+        // silently replaced 25 posts with []).
+        assertExtracted(harvested);
 
-        const posts = await extractPosts(page);
-
+        const existing = readExisting(
+            existsSync(OUTPUT_FILE) ? readFileSync(OUTPUT_FILE, 'utf-8') : null,
+            { replace },
+        );
+        const posts = mergeExport(existing, harvested, { replace });
         writeFileSync(OUTPUT_FILE, JSON.stringify(posts, null, 2), 'utf-8');
 
         console.log('\n========== RESULT ==========');
-        console.log(`Extract ${posts.length} posts`);
+        console.log(`Extracted ${harvested.length} posts this run; ${posts.length} in the export${replace ? ' (replaced)' : ''}`);
         console.log(`\n✓ Saved to ${OUTPUT_FILE}`);
 
     } catch (e) {
         console.error('Error:', e.message);
+        process.exitCode = 1;
     } finally {
         await context.close();
     }
