@@ -482,3 +482,42 @@ def test_demo_profile_maps_to_a_schema_valid_resume(language):
     assert document["basics"]["name"]
     assert document["basics"]["label"]
     assert document["basics"]["location"]["city"]
+
+
+def test_certificates_are_newest_first_with_undated_last():
+    """The upload's order is LinkedIn's API order, not a date order."""
+    document = serialize(
+        {
+            "certifications": [
+                {"name": "undated"},
+                {"name": "old", "issueDate": "Nov 2023"},
+                {"name": "aug-a", "issueDate": "Aug 2026"},
+                {"name": "sep", "issueDate": "Sep 2026"},
+                {"name": "aug-b", "issueDate": "Aug 2026"},
+                {"name": "year", "date": "2025"},
+            ]
+        }
+    )
+    assert [c["name"] for c in document["certificates"]] == [
+        "sep",
+        "aug-a",
+        "aug-b",
+        "year",
+        "old",
+        "undated",
+    ]
+
+
+def test_scraper_issue_date_is_read_and_still_needs_full_precision():
+    document = serialize(
+        {
+            "certifications": [
+                {"name": "full", "issueDate": "2026-09-18"},
+                {"name": "coarse", "issueDate": "Sep 2026"},
+            ]
+        }
+    )
+    assert document["certificates"] == [
+        {"name": "full", "date": "2026-09-18"},
+        {"name": "coarse"},
+    ]

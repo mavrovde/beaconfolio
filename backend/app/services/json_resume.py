@@ -436,16 +436,34 @@ def build_languages(profile: dict) -> list[ResumeLanguage] | None:
     return languages or None
 
 
+def _certificate_date(entry: dict) -> object:
+    """The bundled demo profile writes `date`; the LinkedIn scraper writes
+    `issueDate` ("Sep 2026"). Either is the credential's issue date."""
+    return entry.get("date") or entry.get("issueDate")
+
+
 def build_certificates(profile: dict) -> list[ResumeCertificate] | None:
+    # Newest first, undated last. The upload's order is LinkedIn's API order,
+    # not a date order. `YYYY[-MM[-DD]]` compares correctly as text, and
+    # `sorted(reverse=True)` is still stable, so same-month entries keep the
+    # upload's relative order (matching the HTML CV's sort).
+    entries = _items(profile.get("certifications"))
+    dates = [normalize_date(_certificate_date(e)) for e in entries]
+    dated = sorted(
+        (e for e, d in zip(entries, dates, strict=True) if d),
+        key=lambda e: normalize_date(_certificate_date(e)) or "",
+        reverse=True,
+    )
+    undated = [e for e, d in zip(entries, dates, strict=True) if not d]
     certificates = [
         ResumeCertificate(
             name=_optional(entry.get("name")),
             issuer=_optional(entry.get("issuer")),
             # `format: date` — full precision or nothing, see `full_date`.
-            date=full_date(entry.get("date")),
+            date=full_date(_certificate_date(entry)),
             url=clean_url(entry.get("credentialUrl")),
         )
-        for entry in _items(profile.get("certifications"))
+        for entry in dated + undated
     ]
     return certificates or None
 
