@@ -67,7 +67,7 @@ describe('SeoService', () => {
         const titleSpy = vi.spyOn(titleService, 'setTitle');
         service.updateSeo({});
 
-        expect(titleSpy).toHaveBeenCalledWith('Mock Owner | Principal Software Engineer');
+        expect(titleSpy).toHaveBeenCalledWith('Mock Owner - Principal Software Engineer');
     });
 
     it('should set JSON-LD schema', () => {

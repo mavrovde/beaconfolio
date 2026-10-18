@@ -2,11 +2,17 @@ import { describe, it, expect } from 'vitest';
 import {
     buildAddress,
     buildAlumniOf,
+    buildCredentials,
     buildPersonSchema,
+    buildSameAs,
     buildSeeks,
     buildWorksFor,
     isOngoingRole,
+    MAX_CREDENTIALS,
+    personId,
+    toIsoDate,
 } from './person-schema';
+import { MAX_SCHEMA_SKILLS } from './identity';
 import { Experience, Profile } from '../services/profile.service';
 import { SiteConfig } from '../services/site-config.service';
 
@@ -167,11 +173,12 @@ describe('buildSeeks (open-to-work signal, #71 AC5)', () => {
 describe('buildPersonSchema', () => {
     it('assembles the enriched Person node from profile + site config', () => {
         expect(buildPersonSchema(FULL_PROFILE, FULL_SITE)).toEqual({
-            '@context': 'https://schema.org',
             '@type': 'Person',
+            '@id': 'https://example.com/#person',
             name: 'Jane Doe',
             jobTitle: 'Senior Software Engineer',
-            url: 'https://example.com',
+            url: 'https://example.com/',
+            image: 'https://example.com/api/app/profile/photo',
             description: 'Builds distributed systems.',
             sameAs: ['https://www.linkedin.com/in/jane/'],
             knowsAbout: ['Python', 'Angular'],
@@ -208,7 +215,7 @@ describe('buildPersonSchema', () => {
             { ...FULL_SITE, siteUrl: '', socialLinks: [], availability: 'not_looking' },
         );
 
-        expect(bare).toEqual({ '@context': 'https://schema.org', '@type': 'Person', name: 'Jane Doe' });
+        expect(bare).toEqual({ '@type': 'Person', name: 'Jane Doe' });
     });
 
     it('survives a raw uploaded profile whose optional arrays are missing entirely', () => {
@@ -220,5 +227,158 @@ describe('buildPersonSchema', () => {
         expect(schema.hasOccupation).toEqual({ '@type': 'Occupation', name: 'Engineer' });
         expect(schema.knowsAbout).toBeUndefined();
         expect(schema.sameAs).toBeUndefined();
+    });
+});
+
+describe('buildPersonSchema — search-entity hygiene', () => {
+    const LINKEDIN_PROFILE: Profile = {
+        ...FULL_PROFILE,
+        // The LinkedIn shape: role @ employer | skills | second role.
+        headline: 'Staff Engineer @ Acme | Go, Rust | Solutions Architect',
+        about: 'Ships Rust &amp; Go services.',
+        skills: Array.from({ length: 40 }, (_, i) => `Skill ${i}`).concat(['Rust', 'Go']),
+        contact: { email: 'x@example.com', linkedin: 'https://linkedin.com/in/jane' },
+        languages: [{ name: 'English', proficiency: 'native' }, { name: '', proficiency: '' }],
+        certifications: [
+            { name: 'Old Cert', issuer: 'Org A', issueDate: 'Jan 2020' },
+            { name: 'New Verified', issuer: 'Org B', issueDate: 'Aug 2026', credentialUrl: 'https://verify.example/1' },
+        ],
+    };
+
+    it('uses the SHORT role as jobTitle, never the whole headline', () => {
+        const schema = buildPersonSchema(LINKEDIN_PROFILE, FULL_SITE);
+        expect(schema.jobTitle).toBe('Staff Engineer');
+        expect(schema.hasOccupation?.name).toBe('Staff Engineer');
+    });
+
+    it('caps knowsAbout at the top skills, the ones the headline names first', () => {
+        const schema = buildPersonSchema(LINKEDIN_PROFILE, FULL_SITE);
+        expect(schema.knowsAbout).toHaveLength(MAX_SCHEMA_SKILLS);
+        // Both are named in headline AND about (score 3); the profile order breaks the tie.
+        expect(schema.knowsAbout?.slice(0, 2)).toEqual(['Rust', 'Go']);
+        expect(schema.hasOccupation?.skills).toEqual(schema.knowsAbout);
+    });
+
+    it('decodes the escaped about text into a plain description', () => {
+        expect(buildPersonSchema(LINKEDIN_PROFILE, FULL_SITE).description).toBe('Ships Rust & Go services.');
+    });
+
+    it('merges the profile LinkedIn URL into sameAs, deduplicated', () => {
+        const schema = buildPersonSchema(LINKEDIN_PROFILE, {
+            ...FULL_SITE,
+            socialLinks: ['https://www.linkedin.com/in/jane/', 'https://github.com/jane'],
+        });
+        expect(schema.sameAs).toEqual(['https://www.linkedin.com/in/jane/', 'https://github.com/jane']);
+    });
+
+    it('lists spoken languages and the verifiable credentials first', () => {
+        const schema = buildPersonSchema(LINKEDIN_PROFILE, FULL_SITE);
+        expect(schema.knowsLanguage).toEqual(['English']);
+        expect(schema.hasCredential?.map((c) => c.name)).toEqual(['New Verified', 'Old Cert']);
+    });
+
+    it('falls back to the configured owner name when the profile has none', () => {
+        expect(buildPersonSchema({ ...FULL_PROFILE, name: '' }, FULL_SITE).name).toBe('Jane Doe');
+    });
+
+    it('builds the stable id from the site URL, trailing slash or not', () => {
+        expect(personId('https://example.com/')).toBe('https://example.com/#person');
+        expect(buildPersonSchema(FULL_PROFILE, { ...FULL_SITE, siteUrl: 'https://example.com/' })['@id']).toBe(
+            'https://example.com/#person',
+        );
+    });
+});
+
+describe('toIsoDate', () => {
+    it.each([
+        ['Aug 2026', '2026-08'],
+        ['September 2025', '2025-09'],
+        ['Mai 2024', '2024-05'],
+        ['März 2023', '2023-03'],
+        ['2024', '2024'],
+        ['2024-05-01', '2024-05-01'],
+        ['Foo 2024', undefined],
+        ['soon', undefined],
+        ['', undefined],
+        [undefined, undefined],
+    ])('%j -> %j', (value, expected) => {
+        expect(toIsoDate(value)).toBe(expected);
+    });
+});
+
+describe('buildSameAs', () => {
+    it('keeps https only and drops duplicates that differ by case, www or slash', () => {
+        expect(
+            buildSameAs([
+                'https://GitHub.com/jane',
+                'https://www.github.com/jane/',
+                'http://insecure.example/jane',
+                'mailto:jane@example.com',
+                '',
+                undefined,
+                'https://linkedin.com/in/jane',
+            ]),
+        ).toEqual(['https://GitHub.com/jane', 'https://linkedin.com/in/jane']);
+    });
+
+    it('is undefined when nothing qualifies', () => {
+        expect(buildSameAs(['http://x.example', undefined])).toBeUndefined();
+    });
+});
+
+describe('buildCredentials', () => {
+    it('maps issuer, dates and a verifiable URL', () => {
+        expect(
+            buildCredentials([
+                {
+                    name: 'Cloud Architect',
+                    issuer: 'Example Institute',
+                    date: 'Jan 2024',
+                    expirationDate: 'Jan 2027',
+                    credentialUrl: 'https://verify.example/abc',
+                },
+            ]),
+        ).toEqual([
+            {
+                '@type': 'EducationalOccupationalCredential',
+                name: 'Cloud Architect',
+                credentialCategory: 'certificate',
+                recognizedBy: { '@type': 'Organization', name: 'Example Institute' },
+                dateCreated: '2024-01',
+                expires: '2027-01',
+                url: 'https://verify.example/abc',
+            },
+        ]);
+    });
+
+    it('omits what it cannot state: no issuer, no parsable date, no https URL', () => {
+        expect(
+            buildCredentials([{ name: 'Bare', issuer: '', date: 'someday', credentialUrl: 'http://x.example' }]),
+        ).toEqual([{ '@type': 'EducationalOccupationalCredential', name: 'Bare', credentialCategory: 'certificate' }]);
+    });
+
+    it('ranks verifiable first, then newest, and caps the list', () => {
+        const many = Array.from({ length: 15 }, (_, i) => ({
+            name: `Cert ${i}`,
+            issuer: 'Org',
+            issueDate: `${2010 + i}`,
+        }));
+        const ranked = buildCredentials([...many, { name: 'Verified', issuer: 'Org', credentialUrl: 'https://v.example' }]);
+        expect(ranked).toHaveLength(MAX_CREDENTIALS);
+        expect(ranked?.[0].name).toBe('Verified');
+        expect(ranked?.[1].name).toBe('Cert 14');
+    });
+
+    it('keeps the profile order between equally ranked credentials', () => {
+        const ranked = buildCredentials([
+            { name: 'First', issuer: 'Org', issueDate: '2024' },
+            { name: 'Second', issuer: 'Org', issueDate: '2024' },
+        ]);
+        expect(ranked?.map((c) => c.name)).toEqual(['First', 'Second']);
+    });
+
+    it('drops nameless entries and yields undefined for none', () => {
+        expect(buildCredentials([{ name: '', issuer: 'Org' }])).toBeUndefined();
+        expect(buildCredentials(undefined)).toBeUndefined();
     });
 });

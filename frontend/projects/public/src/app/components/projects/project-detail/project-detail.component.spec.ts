@@ -240,7 +240,22 @@ describe('ProjectDetailComponent', () => {
             image: 'assets/shot.png',
             keywords: 'Angular, FastAPI',
         });
-        expect(seo.setJsonLd).toHaveBeenCalledWith(
+        // One graph: the project node first, then its breadcrumb trail.
+        const graph = seo.setJsonLd.mock.calls[0][0] as { '@graph': Record<string, unknown>[] };
+        expect(graph['@graph'][1]).toEqual({
+            '@type': 'BreadcrumbList',
+            itemListElement: [
+                { '@type': 'ListItem', position: 1, name: 'Home', item: 'https://example.com/' },
+                { '@type': 'ListItem', position: 2, name: 'Projects', item: 'https://example.com/projects' },
+                {
+                    '@type': 'ListItem',
+                    position: 3,
+                    name: 'Beaconfolio',
+                    item: 'https://example.com/projects/beaconfolio',
+                },
+            ],
+        });
+        expect(graph['@graph'][0]).toEqual(
             expect.objectContaining({
                 '@type': 'SoftwareSourceCode',
                 name: 'Beaconfolio',
@@ -294,7 +309,7 @@ describe('ProjectDetailComponent', () => {
         await Promise.resolve();
 
         expect(seo.setJsonLd).toHaveBeenCalledTimes(1);
-        const node = seo.setJsonLd.mock.calls[0][0] as Record<string, unknown>;
+        const node = seo.setJsonLd.mock.calls[0][0]['@graph'][0] as Record<string, unknown>;
         expect(node['url']).toEqual('https://late.example/projects/beaconfolio');
     });
 
@@ -321,7 +336,10 @@ describe('ProjectDetailComponent', () => {
     // simply without claiming an absolute URL.
     it('still emits a node when no site URL is configured', async () => {
         const { seo } = await render('beaconfolio', PROJECTS, undefined, { siteUrl: '' });
-        const node = seo.setJsonLd.mock.calls[0][0] as Record<string, unknown>;
+        const graph = seo.setJsonLd.mock.calls[0][0] as { '@graph': Record<string, unknown>[] };
+        // No breadcrumb either: its items must be absolute, so it is omitted.
+        expect(graph['@graph']).toHaveLength(1);
+        const node = graph['@graph'][0];
         expect(node['name']).toEqual('Beaconfolio');
         expect(node['url']).toBeUndefined();
     });

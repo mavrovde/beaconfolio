@@ -51,6 +51,7 @@ describe('AppComponent', () => {
     brandAssets = { initialize: vi.fn(), apply: vi.fn() };
 
     mockSeoService = {
+      setLanguage: vi.fn(),
       schemaSubject: new BehaviorSubject<any>(null),
       get jsonLdSchema$() { return this.schemaSubject.asObservable(); }
     };
@@ -117,6 +118,12 @@ describe('AppComponent', () => {
     expect(iframe).not.toBeNull();
     expect(iframe.nativeElement.getAttribute('src'))
       .toBe('https://www.googletagmanager.com/ns.html?id=GTM-ABC1234');
+  });
+
+  // `<html lang>` / `og:locale` follow the rendered language: the root
+  // component pushes every language emission into SeoService.
+  it('pushes the rendered language into SeoService', () => {
+    expect(mockSeoService.setLanguage).toHaveBeenCalledWith('en');
   });
 
   it('should create the app', () => {

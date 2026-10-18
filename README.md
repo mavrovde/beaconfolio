@@ -88,11 +88,33 @@ generated from your runtime config and your live data — there is nothing to au
 |---|---|
 | `GET /llms.txt` | The [llmstxt.org](https://llmstxt.org) map of the site: who the owner is, the availability signal, and a curated link list (structured profile, CV, contact, blog posts) an assistant can follow. Rendered by SSR from `GET /api/app/config/site` + your published posts. |
 | `GET /api/app/profile/resume.json` | The whole candidate in ONE request as [JSON Resume](https://jsonresume.org) v1.0.0 — experience, education, skills, languages, certificates, references, plus `meta.availability` and `meta.contactUrl`. Built from the active profile version (admin → Profile Data), so an upload changes it immediately. It passes through the SAME public allowlist as the HTML profile, so it cannot expose a field the site does not already show. Validated in CI against the pinned schema with **format assertion on** (`uri`, `email`, `date`); a credential whose date is only a year keeps that year on the CV page but omits the schema's `date` field rather than inventing a day. |
-| `GET /robots.txt` | Names the AI crawlers explicitly (GPTBot, ClaudeBot, Google-Extended, PerplexityBot, Applebot-Extended, …). `AI_CRAWLER_POLICY=allow` (default) welcomes them; `search-only` welcomes the search and user-initiated agents (so answers can still cite the site) but gives the training crawlers `Disallow: /` (the backend accepts `search-only` now; the SSR `robots.txt` renders it once the frontend SEO PR #494 ships, and until then treats it as `allow`); `deny` gives **only** those agents `Disallow: /` and leaves classic search untouched. `/for/` (tailored recruiter links) and `/admin` are excluded for everyone — as path *prefixes*, deliberately. Under `deny`, robots.txt stops pointing crawlers at `/llms.txt`; the file itself is still served, because it is an on-demand map an assistant reads while helping a person, not a crawl permission. |
+| `GET /llms-full.txt` | The whole public profile — summary, experience with dates, skills, certifications, education, languages — plus excerpts of the 20 newest posts, as one clean Markdown file. Same data as the HTML; linked from `/llms.txt`. |
+| `GET /robots.txt` | Names 21 AI crawlers explicitly, each tagged by purpose — `training` (GPTBot, ClaudeBot, Google-Extended, Applebot-Extended, CCBot, …), `search` (OAI-SearchBot, Claude-SearchBot, PerplexityBot, DuckAssistBot, …) or `user` (ChatGPT-User, Claude-User, Perplexity-User, …). `AI_CRAWLER_POLICY=allow` (default) welcomes them; `search-only` welcomes the search and user-initiated agents (so answers can still cite the site) but gives the training crawlers `Disallow: /`; `deny` gives **only** those agents `Disallow: /` and leaves classic search untouched. Googlebot/Bingbot are never named. `/for/` (tailored recruiter links) and `/admin` are excluded for everyone — as path *prefixes*, deliberately. Under `deny`, robots.txt stops pointing crawlers at `/llms.txt`; the file itself is still served, because it is an on-demand map an assistant reads while helping a person, not a crawl permission. |
 
 Every page's `<head>` also carries `<link rel="alternate" type="application/json">` to the JSON
 Resume and `<link rel="describedby">` to `/llms.txt`, server-rendered so an agent finds them
 without executing JavaScript.
+
+### Search-engine metadata — what drives each output
+
+Nothing about the owner is written in code: every value below is COMPOSED by the pure builders in
+`frontend/projects/public/src/app/seo/` from the uploaded profile data and the runtime site config,
+and rendered into the server HTML.
+
+| Output | Composed from | Forker's knob |
+|---|---|---|
+| Home `<title>` — `"{name} - {role(s)} \| {city}"`, ≤60 chars, whole parts dropped to fit | profile `name`, `headline` (roles = first segment minus `@ employer`, plus later role-like segments), `location` | upload your profile; or `seo_title` in `/config/site` |
+| Meta description — whole sentences, plain text, ≤155 chars | name, roles, location, top skills, availability, your `about` | profile; `AVAILABILITY`; or `seo_description` |
+| `keywords` — roles, city, top 8 skills | profile `headline`, `location`, `skills` (skills named in your headline/about rank first) | profile; or `seo_keywords` |
+| `og:site_name`, `<meta name="author">` | `SITE_NAME`, `OWNER_NAME` | env |
+| `google-site-verification`, `msvalidate.01` | `google_site_verification`, `bing_site_verification` in `/config/site` | backend env (empty = no tag) |
+| JSON-LD `@graph`: `Person` (`{site}/#person`), `WebSite`, `ProfilePage`, `BlogPosting`, `BreadcrumbList` | profile (skills, certifications, education, languages, current role), `SOCIAL_LINKS`, `SITE_URL`, post data (`posted_at`) | profile + env |
+| "At a glance" block on the home page (visible text, EN/DE) | the same profile facts as sentences | profile |
+| `sitemap.xml` `<lastmod>` | profile JSON Resume `meta.lastModified`, posts' `updated_at` / `posted_at` | — |
+| `/{key}.txt` IndexNow key file | `INDEXNOW_KEY` on the **frontend** container (8–128 chars `[A-Za-z0-9-]`; empty = off) | root `.env` |
+
+The UI language is a client-side toggle on the same URLs, so the head carries the rendered
+`<html lang>` and `og:locale` and deliberately **no** `hreflang` alternates.
 
 ```bash
 curl https://<your-domain>/llms.txt

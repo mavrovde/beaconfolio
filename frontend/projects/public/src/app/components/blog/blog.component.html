@@ -56,7 +56,7 @@
               <div class="flex items-start gap-4">
                 @if (result.image_url) {
                   <div class="shrink-0">
-                    <img [src]="result.image_url" alt="Result Image"
+                    <img [src]="result.image_url" [alt]="result.title" loading="lazy" decoding="async" width="64" height="64"
                       class="w-16 h-16 rounded border border-terminal-dim object-cover">
                   </div>
                 }
@@ -100,7 +100,7 @@
               <div class="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
                 <span class="text-secondary shrink-0"> -rw-r--r-- 1 {{ (unixUser$ | async) ?? 'owner' }} users </span>
                 <span class="text-terminal-highlight shrink-0">
-                  {{ post.created_at | date }}
+                  {{ (post.posted_at || post.created_at) | date }}
                 </span>
                 <span
                   class="text-primary font-bold group-hover:underline decoration-dashed underline-offset-4 break-all flex flex-wrap items-center gap-2">
@@ -113,7 +113,7 @@
               <!-- Image Preview in List -->
               @if (post.image_url) {
                 <div class="mt-2 pl-4 md:pl-0">
-                  <img [src]="post.image_url" alt="Post Request Image"
+                  <img [src]="post.image_url" [alt]="post.title" loading="lazy" decoding="async"
                     class="max-h-32 rounded border border-terminal-dim opacity-80 hover:opacity-100 transition-opacity object-cover">
                 </div>
               }

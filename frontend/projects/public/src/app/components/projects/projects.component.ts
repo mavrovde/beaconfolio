@@ -1,4 +1,5 @@
-import { Component, Input, OnInit, inject } from '@angular/core';
+import { Component, DestroyRef, Input, OnInit, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { Observable, map } from 'rxjs';
@@ -7,6 +8,10 @@ import { TranslatePipe } from '@beaconfolio/shared';
 import { Profile, ProfileService } from '../../services/profile.service';
 import { RenderableProject, formatPeriod, toRenderableProjects } from '../../projects-model/projects';
 import { HeaderComponent } from '../header/header.component';
+import { SeoService } from '../../services/seo.service';
+import { SiteConfigService } from '../../services/site-config.service';
+import { rolesLabel } from '../../seo/identity';
+import { buildBreadcrumbs, toGraph } from '../../seo/graph';
 
 /**
  * The Projects showcase (#92) — a section on the home page and the `/projects`
@@ -26,6 +31,9 @@ import { HeaderComponent } from '../header/header.component';
 })
 export class ProjectsComponent implements OnInit {
     private profileService = inject(ProfileService);
+    private seoService = inject(SeoService);
+    private siteConfig = inject(SiteConfigService);
+    private destroyRef = inject(DestroyRef);
 
     /** False when embedded on the home page: no header, no page chrome. */
     @Input() standalone = true;
@@ -43,6 +51,27 @@ export class ProjectsComponent implements OnInit {
             this.projects$ = this.profileService
                 .getProfile()
                 .pipe(map((profile) => toRenderableProjects(profile?.projects)));
+            // The page declares ITSELF. Without this the SSR head kept the
+            // default `updateSeo({})` the config arrival applies — a canonical
+            // of `{site}/`, telling crawlers /projects is a duplicate of home
+            // while the sitemap listed it as its own URL (measured on the
+            // built SSR output). Head writes are DOM-level, zoneless-safe.
+            this.siteConfig.config$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((site) => {
+                const role = rolesLabel(site.ownerHeadline);
+                this.seoService.updateSeo({
+                    title: 'Projects',
+                    description: `Projects and case studies by ${site.ownerName}${role ? `, ${role}` : ''}.`,
+                    url: '/projects',
+                });
+                this.seoService.setJsonLd(
+                    toGraph([
+                        buildBreadcrumbs(site, [
+                            { name: 'Home', path: '/' },
+                            { name: 'Projects', path: '/projects' },
+                        ]),
+                    ]),
+                );
+            });
         }
     }
 

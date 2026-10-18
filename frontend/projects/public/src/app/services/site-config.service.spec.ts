@@ -66,6 +66,34 @@ describe('SiteConfigService', () => {
             ogImageUrl: 'https://cdn.example/card.png',
             fontCssUrl: 'https://fonts.example/css2?family=Inter',
             fontFamily: "'Inter', sans-serif",
+            googleSiteVerification: '',
+            bingSiteVerification: '',
+            seoTitle: '',
+            seoDescription: '',
+            seoKeywords: '',
+        });
+    });
+
+    // Search-engine ownership tokens and the optional SEO overrides: absent on
+    // an older backend (the parallel backend change adds them), so absent and
+    // empty both normalize to '' — and a present value is trimmed.
+    it('maps the optional verification and SEO-override fields, trimmed', () => {
+        let received: SiteConfig | undefined;
+        service.config$.subscribe((c) => (received = c));
+        httpMock.expectOne(url).flush({
+            ...DTO,
+            google_site_verification: ' g-token ',
+            bing_site_verification: 'B1NG',
+            seo_title: ' Custom title ',
+            seo_description: 'Custom description.',
+            seo_keywords: 'a, b',
+        });
+        expect(received).toMatchObject({
+            googleSiteVerification: 'g-token',
+            bingSiteVerification: 'B1NG',
+            seoTitle: 'Custom title',
+            seoDescription: 'Custom description.',
+            seoKeywords: 'a, b',
         });
     });
 
@@ -144,6 +172,8 @@ describe('SiteConfigService', () => {
         ['allow', 'allow'],
         ['DENY', 'deny'], // case-insensitive, like the backend's normalization
         ['sometimes', 'allow'], // a typo must never deindex the portfolio
+        ['search-only', 'search-only'], // training crawlers out, search + user in
+        ['SEARCH_ONLY', 'search-only'], // env-var spelling
     ])('normalizes ai_crawler_policy %s to %s', (wire, expected) => {
         let got: string | undefined;
         service.config$.subscribe((c) => (got = c.aiCrawlerPolicy));

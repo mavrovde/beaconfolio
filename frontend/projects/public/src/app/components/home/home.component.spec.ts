@@ -7,6 +7,7 @@ import { Profile, ProfileService } from '../../services/profile.service';
 import { SeoService } from '../../services/seo.service';
 import { SiteConfig, SiteConfigService } from '../../services/site-config.service';
 import { buildPersonSchema } from '../../seo/person-schema';
+import { buildProfilePage, buildWebSite, toGraph } from '../../seo/graph';
 import { LanguageService, provideSharedEnvironment } from '@beaconfolio/shared';
 import { HttpClientTestingModule } from '@angular/common/http/testing';
 import { of } from 'rxjs';
@@ -39,6 +40,9 @@ const MOCK_SITE: SiteConfig = {
 class MockProfileService {
   getProfile() {
     return of(MOCK_PROFILE);
+  }
+  getLastModified() {
+    return of(null);
   }
 }
 
@@ -99,7 +103,13 @@ describe('HomeComponent', () => {
     // Pin the WIRING, not just the call: asserting only `toHaveBeenCalled()` let a
     // hand-rolled minimal Person node pass the whole suite (#317 review round 1),
     // because `person-schema.ts` stays fully covered by its own spec either way.
-    expect(seoService.setJsonLd).toHaveBeenCalledWith(buildPersonSchema(MOCK_PROFILE, MOCK_SITE));
+    expect(seoService.setJsonLd).toHaveBeenCalledWith(
+      toGraph([
+        buildPersonSchema(MOCK_PROFILE, MOCK_SITE),
+        buildWebSite(MOCK_SITE, 'en'),
+        buildProfilePage(MOCK_SITE, { path: '/', name: 'Test - Headline | Loc', lang: 'en', dateModified: null }),
+      ])
+    );
   }));
 
   it('should attempt scrolling if fragment exists', fakeAsync(() => {

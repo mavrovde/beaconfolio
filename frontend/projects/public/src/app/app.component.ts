@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterOutlet } from '@angular/router';
 import { GoogleAnalyticsService } from './services/google-analytics.service';
 import { SeoService } from './services/seo.service';
-import { BrandAssetsService, ThemeService } from '@beaconfolio/shared';
+import { BrandAssetsService, LanguageService, ThemeService } from '@beaconfolio/shared';
 import { CookieConsentComponent } from './components/cookie-consent/cookie-consent.component';
 import { SystemStatsComponent } from './components/stats/stats.component';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -76,6 +76,7 @@ export class AppComponent implements OnInit {
   private themeService = inject(ThemeService);
   private brandAssets = inject(BrandAssetsService);
   private sanitizer = inject(DomSanitizer);
+  private languageService = inject(LanguageService);
 
   jsonLd$?: Observable<SafeHtml | null>;
 
@@ -100,6 +101,11 @@ export class AppComponent implements OnInit {
     // the one config read, during the render rather than after it.
     this.brandAssets.initialize();
     this.viewportScroller.setOffset([0, 80]);
+    // `<html lang>` + `og:locale` follow the RENDERED language. A DOM write
+    // through the injected document (SeoService), not a template binding, so
+    // no change-detection trigger is needed in the zoneless app; the root
+    // component lives as long as the app, so the subscription needs no teardown.
+    this.languageService.currentLang$.subscribe((lang) => this.seoService.setLanguage(lang));
 
     this.jsonLd$ = this.seoService.jsonLdSchema$.pipe(
       delay(0),

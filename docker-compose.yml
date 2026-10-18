@@ -264,6 +264,9 @@ services:
       - "4000"
     environment:
       - NODE_ENV=production
+      # IndexNow key file (per deployment): the SSR server serves GET /<key>.txt
+      # with the key as its body when this is a valid key; empty = feature off.
+      - INDEXNOW_KEY=${INDEXNOW_KEY:-}
     depends_on:
       - backend
     networks:

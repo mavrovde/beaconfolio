@@ -80,10 +80,14 @@ function setup(platform: 'browser' | 'server' = 'browser'): Harness {
   return { fixture, config$, post$, seo };
 }
 
-/** The one call the crawler actually sees. */
+/** The BlogPosting node of the one graph the crawler actually sees. */
 function schema(h: Harness): Record<string, any> {
   expect(h.seo.setJsonLd).toHaveBeenCalled();
-  return h.seo.setJsonLd.mock.calls.at(-1)![0] as Record<string, any>;
+  return postingOf(h.seo.setJsonLd.mock.calls.at(-1)![0]);
+}
+
+function postingOf(graph: Record<string, any>): Record<string, any> {
+  return graph['@graph'].find((node: Record<string, any>) => node['@type'] === 'BlogPosting');
 }
 
 describe('BlogPostComponent — JSON-LD identity vs site-config ordering (#459)', () => {
@@ -100,15 +104,16 @@ describe('BlogPostComponent — JSON-LD identity vs site-config ordering (#459)'
     const jsonLd = schema(h);
     expect(jsonLd['author']).toEqual({
       '@type': 'Person',
+      '@id': 'https://configured.example/#person',
       name: 'Configured Owner',
-      url: 'https://configured.example',
+      url: 'https://configured.example/',
     });
     expect(jsonLd['mainEntityOfPage']['@id']).toBe('https://configured.example/blog/ordered-post');
     // schema.org requires an absolute URI here; `DEFAULT_SITE_CONFIG.siteUrl` is ''.
     expect(new URL(jsonLd['mainEntityOfPage']['@id']).origin).toBe('https://configured.example');
     // No emission may ever carry the bundled placeholder.
     for (const [published] of h.seo.setJsonLd.mock.calls) {
-      expect(published['author'].name).not.toBe(DEFAULT_SITE_CONFIG.ownerName);
+      expect(postingOf(published)['author'].name).not.toBe(DEFAULT_SITE_CONFIG.ownerName);
     }
   });
 

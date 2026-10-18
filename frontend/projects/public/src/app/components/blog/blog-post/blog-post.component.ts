@@ -4,8 +4,16 @@ import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { BlogService, BlogPost } from '@beaconfolio/shared';
 import { Observable, switchMap, catchError, of, tap, map, startWith, combineLatest, firstValueFrom } from 'rxjs';
 import { HeaderComponent } from '../../header/header.component';
-import { SeoService } from '../../../services/seo.service';
+import { OG_IMAGE_PATH, SeoService } from '../../../services/seo.service';
 import { SiteConfigService, SiteConfig } from '../../../services/site-config.service';
+import {
+  absoluteUrl,
+  buildBlogPosting,
+  buildBreadcrumbs,
+  postPublishedAt,
+  toGraph,
+} from '../../../seo/graph';
+import { fullPostTitle, toMetaDescription } from '../../../seo/text';
 
 /**
  * View state for the blog-post page. A genuine "not found" (unknown slug → 404,
@@ -46,13 +54,13 @@ export interface BlogPostVm {
               @case ('found') {
                 <!-- Post Metadata -->
                 <div class="mb-8 space-y-2">
-                  <h1 class="text-2xl md:text-4xl font-bold text-primary mb-4">{{ vm.post!.title }}</h1>
+                  <h1 class="text-2xl md:text-4xl font-bold text-primary mb-4">{{ headline(vm.post!) }}</h1>
                   <div class="flex flex-wrap items-center gap-4 text-sm text-secondary">
                     <span class="flex items-center gap-2">
                       <span class="text-terminal-highlight">author:</span> {{ (unixUser$ | async) ?? 'owner' }}
                     </span>
                     <span class="flex items-center gap-2">
-                      <span class="text-terminal-highlight">date:</span> {{ vm.post!.created_at | date }}
+                      <span class="text-terminal-highlight">date:</span> {{ publishedAt(vm.post!) | date }}
                     </span>
                     <span class="flex items-center gap-2">
                       <span class="text-terminal-highlight">lang:</span> {{ vm.post!.language }}
@@ -71,7 +79,7 @@ export interface BlogPostVm {
                 <article class="prose prose-invert prose-p:text-primary prose-a:text-terminal-highlight prose-headings:text-primary prose-pre:bg-terminal-dim/20 prose-pre:border prose-pre:border-terminal-dim max-w-none">
                   @if (vm.post!.image_url) {
                     <div class="mb-8">
-                      <img [src]="vm.post!.image_url" [alt]="vm.post!.title" class="w-full h-auto rounded border border-terminal-dim shadow-lg object-cover max-h-[500px]">
+                      <img [src]="vm.post!.image_url" [alt]="headline(vm.post!)" decoding="async" fetchpriority="high" class="w-full h-auto rounded border border-terminal-dim shadow-lg object-cover max-h-[500px]">
                     </div>
                   }
                   <div [innerHTML]="vm.post!.content" class="whitespace-pre-wrap"></div>
@@ -205,32 +213,46 @@ export class BlogPostComponent implements OnInit {
     }
   }
 
+  /**
+   * The post's real headline. The importer stores a title cut with `…`; the
+   * full first line is recovered from the content (`seo/text.ts`), so neither
+   * the page nor its head shows a sentence that stops mid-word.
+   */
+  headline(post: BlogPost): string {
+    return fullPostTitle(post.title, post.content);
+  }
+
+  /** Original publication date (`posted_at`), falling back to `created_at`. */
+  publishedAt(post: BlogPost): string {
+    return postPublishedAt(post);
+  }
+
   private applySeo(post: BlogPost, site: SiteConfig): void {
+    const headline = this.headline(post);
+    const image = absoluteUrl(site, post.image_url);
+    const published = postPublishedAt(post);
     this.seoService.updateSeo({
-      title: post.title,
-      description: post.summary || post.content.substring(0, 160),
+      title: headline,
+      description: toMetaDescription(post.summary || post.content),
       url: `/blog/${post.slug}`,
       type: 'article',
-      keywords: post.tags?.join(', ')
+      image: image || undefined,
+      imageAlt: headline,
+      locale: post.language,
+      keywords: post.tags?.join(', '),
+      article: { publishedTime: published, modifiedTime: published, tags: post.tags },
     });
 
-    this.seoService.setJsonLd({
-      "@context": "https://schema.org",
-      "@type": "BlogPosting",
-      "headline": post.title,
-      "datePublished": post.created_at,
-      "author": {
-        "@type": "Person",
-        "name": site.ownerName,
-        "url": site.siteUrl
-      },
-      "description": post.summary || post.content.substring(0, 160),
-      "mainEntityOfPage": {
-        "@type": "WebPage",
-        "@id": `${site.siteUrl}/blog/${post.slug}`
-      },
-      "keywords": post.tags?.join(', ')
-    });
+    this.seoService.setJsonLd(
+      toGraph([
+        buildBlogPosting(post, site, absoluteUrl(site, site.ogImageUrl || OG_IMAGE_PATH)),
+        buildBreadcrumbs(site, [
+          { name: 'Home', path: '/' },
+          { name: 'Blog', path: '/blog' },
+          { name: headline, path: `/blog/${post.slug}` },
+        ]),
+      ]),
+    );
   }
 
   goBack() {

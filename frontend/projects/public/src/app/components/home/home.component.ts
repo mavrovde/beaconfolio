@@ -1,8 +1,10 @@
-import { Component, OnInit, PLATFORM_ID, inject } from '@angular/core';
+import { Component, DestroyRef, OnInit, PLATFORM_ID, inject } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule, ViewportScroller, isPlatformBrowser } from '@angular/common';
 import { ActivatedRoute } from '@angular/router';
-import { Observable } from 'rxjs';
+import { Observable, combineLatest } from 'rxjs';
 import { take } from 'rxjs/operators';
+import { LanguageService } from '@beaconfolio/shared';
 
 import { HeaderComponent } from '../header/header.component';
 import { HeroComponent } from '../hero/hero.component';
@@ -14,11 +16,14 @@ import { EducationComponent } from '../education/education.component';
 // import { RecommendationsComponent } from '../recommendations/recommendations.component';
 import { BlogComponent } from '../blog/blog.component';
 import { ContactComponent } from '../contact/contact.component';
+import { AtAGlanceComponent } from '../at-a-glance/at-a-glance.component';
 
 import { ProfileService, Profile } from '../../services/profile.service';
 import { SeoService } from '../../services/seo.service';
-import { SiteConfigService } from '../../services/site-config.service';
+import { SiteConfig, SiteConfigService } from '../../services/site-config.service';
 import { buildPersonSchema } from '../../seo/person-schema';
+import { buildProfilePage, buildWebSite, toGraph } from '../../seo/graph';
+import { IdentityInput, buildHomeDescription, buildHomeTitle, buildKeywords } from '../../seo/identity';
 
 @Component({
   selector: 'app-home',
@@ -27,6 +32,7 @@ import { buildPersonSchema } from '../../seo/person-schema';
     CommonModule,
     HeaderComponent,
     HeroComponent,
+    AtAGlanceComponent,
     AboutComponent,
     ExperienceComponent,
     ProjectsComponent,
@@ -45,6 +51,7 @@ import { buildPersonSchema } from '../../seo/person-schema';
       @if (profile$ | async; as profile) {
         <main class="pb-16">
           <app-hero [profile]="profile"></app-hero>
+          <app-at-a-glance [profile]="profile"></app-at-a-glance>
           <app-blog [standalone]="false"></app-blog>
           <!-- Other sections below -->
           <app-about [profile]="profile"></app-about>
@@ -66,12 +73,49 @@ export class HomeComponent implements OnInit {
   private seoService = inject(SeoService);
   private siteConfig = inject(SiteConfigService);
   private platformId = inject(PLATFORM_ID);
+  private languageService = inject(LanguageService);
+  private destroyRef = inject(DestroyRef);
 
   profile$: Observable<Profile> | null = null;
 
   ngOnInit() {
     this.profile$ = this.profileService.getProfile();
 
+    // Every SEO string is COMPOSED from the profile + runtime site config by
+    // the pure builders in `seo/identity.ts` (template product: nothing about
+    // the owner is written here). Re-composed when the language, the profile
+    // or the fragment changes; Title/Meta/JSON-LD are DOM-level writes, so
+    // this subscription is zoneless-safe without a CD trigger.
+    combineLatest([
+      this.profile$,
+      this.siteConfig.config$,
+      this.languageService.currentLang$,
+      this.route.fragment,
+      this.profileService.getLastModified(),
+    ])
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(([profile, site, lang, fragment, lastModified]) => {
+        if (profile) {
+          this.applySeo(profile, site, lang, fragment, lastModified);
+        }
+      });
+
+    if (isPlatformBrowser(this.platformId)) {
+      this.profile$.pipe(take(1)).subscribe((profile) => {
+        if (profile) {
+          this.initScrollLogic();
+        }
+      });
+    }
+  }
+
+  private applySeo(
+    profile: Profile,
+    site: SiteConfig,
+    lang: string,
+    fragment: string | null,
+    lastModified: string | null,
+  ): void {
     const sectionTitles: Record<string, string> = {
       'blog': 'Blog',
       'about': 'About',
@@ -80,35 +124,32 @@ export class HomeComponent implements OnInit {
       'education': 'Education',
       'contact': 'Contact'
     };
-
-    this.profile$.pipe(take(1)).subscribe((profile) => {
-      if (profile) {
-        this.route.fragment.subscribe((fragment) => {
-          let titleStr = 'Home';
-          if (fragment && sectionTitles[fragment]) {
-            titleStr = sectionTitles[fragment];
-          }
-
-          this.seoService.updateSeo({
-            title: titleStr,
-            description: profile.about || profile.headline || undefined,
-            keywords: `Software Development, ${profile.headline}, Cloud, AI, ${profile.skills.join(', ')}`
-          });
-        });
-
-        if (isPlatformBrowser(this.platformId)) {
-          this.initScrollLogic();
-        }
-
-        // JSON-LD url/sameAs come from the runtime site config (#65), never
-        // hardcoded; one-shot stream, bounded with take(1). The mapping —
-        // hasOccupation / worksFor / alumniOf / address / seeks (#71) — lives
-        // in the pure `buildPersonSchema`, so the component stays dumb.
-        this.siteConfig.config$.pipe(take(1)).subscribe((site) => {
-          this.seoService.setJsonLd(buildPersonSchema(profile, site));
-        });
-      }
+    const identity: IdentityInput = {
+      name: profile.name,
+      headline: profile.headline,
+      location: profile.location,
+      about: profile.about,
+      skills: profile.skills,
+      availability: site.availability,
+      lang,
+    };
+    const homeTitle = buildHomeTitle(identity, site);
+    const section = fragment ? sectionTitles[fragment] : undefined;
+    this.seoService.updateSeo({
+      ...(section ? { title: section } : { fullTitle: homeTitle }),
+      description: buildHomeDescription(identity, site),
+      keywords: buildKeywords(identity, site),
     });
+
+    // One graph: the Person (with the stable `{site}/#person` id every other
+    // page references), the WebSite it publishes and the ProfilePage about it.
+    this.seoService.setJsonLd(
+      toGraph([
+        buildPersonSchema(profile, site),
+        buildWebSite(site, lang),
+        buildProfilePage(site, { path: '/', name: homeTitle, lang, dateModified: lastModified }),
+      ]),
+    );
   }
 
   private initScrollLogic() {

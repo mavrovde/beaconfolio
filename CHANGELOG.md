@@ -42,6 +42,76 @@ All notable changes to this project will be documented in this file.
   without bumping `updated_at`).
 - **`X-Robots-Tag: noindex` on API JSON responses** — except the documented machine surface
   `/api/app/profile/resume.json` and every non-JSON response (post images stay indexable).
+- **Search-engine and answer-engine pass on the public app, every output composed from config
+  and profile data (template product: no owner string in code).** Pure builders in
+  `projects/public/src/app/seo/` (`identity.ts`, `text.ts`, `graph.ts`, `at-a-glance.ts`)
+  compose the head, the JSON-LD and the generated files; optional site-config fields
+  `seo_title` / `seo_description` / `seo_keywords` override the composed home values.
+  - **Home `<title>`** is `"{name} - {role(s)} | {city}"`, at most 60 characters, losing whole
+    parts (city, then the second role) rather than being word-cut. Measured on the built SSR
+    output against the live profile payload: `Home | {owner}` → `{owner} - Principal
+    Software Engineer | Aachen` (52 chars). Other titles are `"{page} | {owner}"` when that
+    fits, else the page name word-cut — never with an ellipsis. Blog headlines the importer
+    stored cut with `…` are recovered from the post content (live: `…in the AI…` → `…in the AI
+    Era?`) for the `<title>`, `og:title`, the H1 and `BlogPosting.headline`.
+  - **Double-escaped description fixed at the root.** The LinkedIn profile text arrives
+    HTML-escaped (`Engineer &amp; Architect`); Angular escapes once more, so the live head read
+    `&amp;amp;` and the About section showed a literal `&amp;`. `ProfileService` now decodes
+    character references at the one point profile data enters the app. Descriptions are plain
+    text, ≤155 chars, built from whole sentences (who/role/where, top skills, availability).
+  - **`keywords`** is the roles, the city and the top 8 skills — no longer the pipe-joined
+    headline plus all 77 skills.
+  - **Open Graph / Twitter:** `og:site_name`, `og:locale` (`en_US`/`de_DE`), `og:image:alt`,
+    `twitter:image:alt`, and `og:image:width`/`height` = 1200×630 for the bundled card only (its
+    PNG header is pinned by a spec). Blog posts: `og:type=article` with `article:published_time`,
+    `article:modified_time`, `article:author` and one `article:tag` per tag. `<meta name="author">`
+    and `robots: index, follow, max-image-preview:large, …` on indexable pages (noindex pages
+    still override it).
+  - **Search-engine ownership meta:** `google-site-verification` / `msvalidate.01` from the
+    optional `google_site_verification` / `bing_site_verification` site-config fields; absent or
+    empty = no tag.
+  - **JSON-LD is one `@graph` per page.** Home: `Person` (`@id` `{site}/#person`, `url`, absolute
+    `image`, `sameAs` = https social links + the profile LinkedIn URL deduplicated, short
+    `jobTitle`, top-25 `knowsAbout`, `knowsLanguage`, up to 10 `hasCredential`), `WebSite` and
+    `ProfilePage` (`dateModified` = the profile's JSON Resume `meta.lastModified`). Blog post:
+    `BlogPosting` (dates = `posted_at ?? created_at`, image or card, `inLanguage`, `wordCount`,
+    author/publisher by `@id`) + `BreadcrumbList`; blog index, project list and project detail
+    carry a `BreadcrumbList`. A not-found page clears the previous page's graph.
+  - **`<html lang>` / `og:locale` follow the rendered language.** Language is a client toggle on
+    the same URLs (no `/de/` routes), so NO `hreflang` alternates are emitted — they would claim
+    URLs that do not exist.
+  - **Visible "At a glance" block** on the home page (h2 + one h3 per question), composed from
+    the profile and availability in English or German — real text, deliberately no `FAQPage`
+    markup (Google restricts that rich result).
+  - **`/projects` declared its own head.** It inherited the default canonical `{site}/`, i.e.
+    told crawlers the page the sitemap lists is a duplicate of home; it now has its own title,
+    description, canonical, breadcrumb and one H1.
+  - **Sitemap:** `<lastmod>` for the static routes from data (profile date; newest post for
+    `/blog`; the newer of both for `/`), never the request time; post `<lastmod>` =
+    `updated_at`, else `posted_at ?? created_at`; posts newest-first; `<image:image>` for posts
+    with an image.
+  - **robots.txt:** the AI-crawler list is one `{agent, purpose}` table (21 agents, adding
+    Claude-SearchBot, Claude-User, Perplexity-User, DuckAssistBot, Amazonbot,
+    Meta-ExternalFetcher, MistralAI-User, Bytespider, cohere-ai) and understands a third policy,
+    `search-only` (search + user-requested fetchers allowed, training crawlers refused). Googlebot
+    and Bingbot are never named.
+  - **`/llms-full.txt`** — the whole public profile and excerpts of the 20 newest posts as clean
+    Markdown, linked from `/llms.txt`; `llms.txt` post titles no longer carry the importer's `…`
+    and are dated by publication.
+  - **IndexNow key file:** with `INDEXNOW_KEY` set (per deployment, forwarded to the frontend
+    container by both compose files; 8–128 chars `[A-Za-z0-9-]`), the SSR server serves
+    `GET /{key}.txt` → the key as `text/plain`. Unset = no route; invalid = no route + a startup
+    warning that does not echo the value.
+  - **Blog order follows the original publication** (`sort_by=published_at`, newest first) and
+    the list shows `posted_at ?? created_at` (backend #493).
+  - **Performance:** the render-blocking Font Awesome 6.4.0 stylesheet from cdnjs (102,025 bytes
+    of CSS plus a 150,124-byte webfont, measured) is gone — the public app used three glyphs,
+    now inline SVGs. The hero portrait (the likely LCP element) has `width`/`height` and
+    `fetchpriority="high"`; blog/project list images are `loading="lazy"`. The "main CSS loaded
+    twice" seen in the live HTML is Beasties' `<noscript>` fallback, not a second load — left as
+    is. The H1's shell prompt and cursor are `aria-hidden`; the role is part of the heading.
+    Initial JS grows 513.33 → 530.69 kB raw (131.29 → 137.11 kB transfer) for the builders, so
+    the public `initial` budget WARNING moves 520 → 540 kB (the error ceiling stays 1 MB).
 - **The shared edge writes an access log for `mcp.viafrei.de`, and only for that site.** The
   viafrei tenant needs to tell "slow before the app" from "slow in the app" for multi-second
   stalls (viafrei repo issue #438); Caddy's JSON access line carries `duration` and `status`.
@@ -79,9 +149,8 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - **`AI_CRAWLER_POLICY` accepts `search-only`** besides `allow`/`deny` (`config.py`
   `_normalize_ai_crawler_policy`; an unknown value still falls back to `allow`), and
-  `GET /api/app/config/site` passes it through. The backend half only: `robots.txt` honours
-  `search-only` once the frontend SEO PR (#494) is deployed — until then the current frontend
-  folds any value other than `deny` to `allow`, the safe direction. #494 merges after this PR.
+  `GET /api/app/config/site` passes it through, and the SSR `robots.txt` (#494, same release)
+  renders it: training crawlers `Disallow: /`, search and user-requested agents allowed.
   Compose comments and `.env.example` list the three values.
 - **A LinkedIn re-import no longer overwrites a summary a human edited**, and now upgrades a title
   or summary that is still untouched machine output. Explicitly passed `title`/`summary` always

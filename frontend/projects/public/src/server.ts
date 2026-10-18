@@ -6,7 +6,8 @@ import {
 } from '@angular/ssr/node';
 import express from 'express';
 import { join } from 'node:path';
-import { renderLlmsTxt } from './app/seo/llms-txt';
+import { indexNowKeyPath, resolveIndexNowKey } from './app/seo/indexnow';
+import { LLMS_FULL_PATH, renderLlmsFullTxt, renderLlmsTxt } from './app/seo/llms-txt';
 import {
   createJsonFetcher,
   renderRobotsTxt,
@@ -104,6 +105,28 @@ app.get('/llms.txt', (req, res, next) => {
     .then((body) => res.type('text/plain; charset=utf-8').send(body))
     .catch(next);
 });
+
+app.get(LLMS_FULL_PATH, (req, res, next) => {
+  renderLlmsFullTxt(fetchJson, requestOrigin(req.headers, req.protocol))
+    .then((body) => res.type('text/plain; charset=utf-8').send(body))
+    .catch(next);
+});
+
+/**
+ * IndexNow key file — `/{INDEXNOW_KEY}.txt`, body = the key, text/plain.
+ * Per deployment (env), never a committed constant; unset = no route. Like
+ * the files above it is registered BEFORE the static handler, and the static
+ * bundle has no `*.txt` at its root, so nothing can shadow it.
+ */
+const indexNow = resolveIndexNowKey(process.env['INDEXNOW_KEY']);
+if (indexNow.warning) {
+  console.warn(indexNow.warning);
+}
+if (indexNow.key) {
+  app.get(indexNowKeyPath(indexNow.key), (_req, res) => {
+    res.type('text/plain; charset=utf-8').send(indexNow.key);
+  });
+}
 
 app.get('/sitemap.xml', (req, res, next) => {
   renderSitemapXml(fetchJson, requestOrigin(req.headers, req.protocol))

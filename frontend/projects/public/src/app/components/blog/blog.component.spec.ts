@@ -299,7 +299,8 @@ describe('BlogComponent', () => {
     // Re-create the component with 'server' instead of an object to trigger SSR logic path
     const serverComponent = makeServerComponent();
     serverComponent.loadPosts();
-    expect(blogServiceSpy.getPosts).toHaveBeenCalledWith(true, null, null, 1, 10);
+    // Ordered by ORIGINAL publication (posted_at ?? created_at), as on LinkedIn.
+    expect(blogServiceSpy.getPosts).toHaveBeenCalledWith(true, null, null, 1, 10, 'published_at');
   });
 
   it('should fall back to using static posts when SSR blogService.getPosts fails', async () => {

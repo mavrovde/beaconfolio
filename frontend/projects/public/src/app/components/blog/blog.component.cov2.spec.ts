@@ -8,7 +8,7 @@ import { of, throwError, ReplaySubject, firstValueFrom } from 'rxjs';
 import { createInInjectionContext, MockTranslatePipe } from '@beaconfolio/shared/testing';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { SeoService } from '../../services/seo.service';
-import { SiteConfigService, SiteConfig } from '../../services/site-config.service';
+import { DEFAULT_SITE_CONFIG, SiteConfigService, SiteConfig } from '../../services/site-config.service';
 import { provideTestBrand } from '@beaconfolio/shared/testing';
 
 describe('BlogComponent (cov2 branch coverage)', () => {
@@ -108,7 +108,7 @@ describe('BlogComponent (cov2 branch coverage)', () => {
 
   // Line 46 false branch: standalone=false skips SEO update
   it('should skip SEO update when not standalone', () => {
-    const seoSpy = { updateSeo: vi.fn() };
+    const seoSpy = { updateSeo: vi.fn(), setJsonLd: vi.fn() };
     const c = makeServerComponent({ seo: seoSpy });
     c.standalone = false;
     c.ngOnInit();
@@ -119,7 +119,7 @@ describe('BlogComponent (cov2 branch coverage)', () => {
 
   it('composes SEO off the config stream — nothing is applied before the config arrives (#255 blocker 1)', () => {
     const late = new ReplaySubject<SiteConfig>(1);
-    const seoSpy = { updateSeo: vi.fn() };
+    const seoSpy = { updateSeo: vi.fn(), setJsonLd: vi.fn() };
     const c = makeServerComponent({ seo: seoSpy, siteConfig: { config$: late } });
     c.standalone = true;
     c.ngOnInit();
@@ -134,8 +134,39 @@ describe('BlogComponent (cov2 branch coverage)', () => {
     }));
   });
 
+  it('composes the blog description from the configured role, and a breadcrumb graph', () => {
+    const late = new ReplaySubject<SiteConfig>(1);
+    const seoSpy = { updateSeo: vi.fn(), setJsonLd: vi.fn() };
+    const c = makeServerComponent({ seo: seoSpy, siteConfig: { config$: late } });
+    c.standalone = true;
+    c.ngOnInit();
+    late.next({ ...DEFAULT_SITE_CONFIG, siteUrl: 'https://x.example', ownerName: 'Jane Doe',
+                ownerHeadline: 'Staff Engineer @ Acme' });
+    expect(seoSpy.updateSeo).toHaveBeenCalledWith(expect.objectContaining({
+      description: 'Articles and professional reflections by Jane Doe, Staff Engineer.',
+      keywords: 'Blog, Jane Doe, Staff Engineer',
+    }));
+    const graph = seoSpy.setJsonLd.mock.calls[0][0];
+    expect(graph['@graph'][0]['itemListElement'].map((i: any) => i.item)).toEqual([
+      'https://x.example/', 'https://x.example/blog',
+    ]);
+  });
+
+  it('omits the role clause when the configured headline names none', () => {
+    const late = new ReplaySubject<SiteConfig>(1);
+    const seoSpy = { updateSeo: vi.fn(), setJsonLd: vi.fn() };
+    const c = makeServerComponent({ seo: seoSpy, siteConfig: { config$: late } });
+    c.standalone = true;
+    c.ngOnInit();
+    late.next({ ...DEFAULT_SITE_CONFIG, ownerName: 'Jane Doe', ownerHeadline: '' });
+    expect(seoSpy.updateSeo).toHaveBeenCalledWith(expect.objectContaining({
+      description: 'Articles and professional reflections by Jane Doe.',
+      keywords: 'Blog, Jane Doe',
+    }));
+  });
+
   it('falls back to the neutral default identity when no SiteConfigService is available', () => {
-    const seoSpy = { updateSeo: vi.fn() };
+    const seoSpy = { updateSeo: vi.fn(), setJsonLd: vi.fn() };
     const c = makeServerComponent({ seo: seoSpy });
     c.standalone = true;
     c.ngOnInit();
@@ -241,6 +272,8 @@ describe('BlogComponent (cov2 branch coverage)', () => {
     );
     expect(postsCall).toBeTruthy();
     expect(postsCall[0] as string).toContain('tag=angular');
+    // "Load more" keeps the same order as page one: original publication first.
+    expect(postsCall[0] as string).toContain('sort_by=published_at');
   });
 
   // Line 229 + 234: sharePost non-browser branch uses https://beaconfolio.com and skips both browser branches

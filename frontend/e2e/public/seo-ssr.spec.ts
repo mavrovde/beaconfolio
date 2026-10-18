@@ -18,6 +18,16 @@ async function siteConfig(request: APIRequestContext) {
     };
 }
 
+/** Every schema.org node in the server-rendered HTML, `@graph` envelopes flattened. */
+function jsonLdNodes(html: string): Record<string, unknown>[] {
+    const blocks = [...html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)];
+    expect(blocks.length, 'no JSON-LD block in the server-rendered HTML').toBeGreaterThan(0);
+    return blocks.flatMap(([, raw]) => {
+        const parsed = JSON.parse(raw) as Record<string, unknown>;
+        return (parsed['@graph'] as Record<string, unknown>[] | undefined) ?? [parsed];
+    });
+}
+
 test.describe('SEO & SSR Verification', () => {
     // 1. robots.txt — generated from SITE_URL, still welcoming the AI crawlers
     test('should serve a config-driven robots.txt with AI bot rules', async ({ request }) => {
@@ -141,8 +151,15 @@ test.describe('SEO & SSR Verification', () => {
         expect(html).toContain('<app-root');
         expect(html).toContain(owner_name);
 
-        // Verify Meta Tags are in the initial HTML (Proof of SSR)
-        expect(html).toContain(`<title>Home | ${owner_name}</title>`);
+        // Verify Meta Tags are in the initial HTML (Proof of SSR). The home
+        // title is COMPOSED from the profile ("{name} - {role} | {city}"), so
+        // only its invariants are asserted: it names the owner, it is not the
+        // old literal "Home | …", and it fits a search result.
+        const title = html.match(/<title>([^<]*)<\/title>/)?.[1] ?? '';
+        expect(title).toContain(owner_name);
+        expect(title.startsWith('Home |')).toBe(false);
+        expect(title.length).toBeLessThanOrEqual(60);
+        expect(html).not.toContain('&amp;amp;');
         expect(html).toContain('description');
         expect(html).toContain('og:title');
         expect(html).toContain('twitter:card');
@@ -159,13 +176,15 @@ test.describe('SEO & SSR Verification', () => {
         const { site_url, availability } = await siteConfig(request);
         const html = await (await request.get('/')).text();
 
-        const match = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
-        expect(match, 'no JSON-LD block in the server-rendered HTML').not.toBeNull();
-        const person = JSON.parse(match![1]) as Record<string, unknown>;
-
-        expect(person['@context']).toBe('https://schema.org');
-        expect(person['@type']).toBe('Person');
-        expect(person['url']).toBe(site_url);
+        const nodes = jsonLdNodes(html);
+        const person = nodes.find((node) => node['@type'] === 'Person')!;
+        expect(person, 'no Person node').toBeTruthy();
+        // One graph: the Person plus the WebSite and ProfilePage that reference it.
+        expect(nodes.map((node) => node['@type'])).toEqual(
+            expect.arrayContaining(['Person', 'WebSite', 'ProfilePage']),
+        );
+        expect(person['@id']).toBe(`${site_url}/#person`);
+        expect(person['url']).toBe(`${site_url}/`);
         for (const field of ['hasOccupation', 'knowsAbout', 'alumniOf', 'worksFor', 'address']) {
             expect(person[field], `Person.${field} missing`).toBeTruthy();
         }
@@ -203,6 +222,12 @@ test.describe('SEO & SSR Verification', () => {
                 `<meta name="twitter:image" content="${site_url}/assets/og-image.png">`,
             );
             expect(html).toMatch(/<meta name="description" content="[^"]+">/);
+            // Open Graph completeness: the bundled card with its real size.
+            expect(html).toMatch(/<meta property="og:site_name" content="[^"]+">/);
+            expect(html).toMatch(/<meta property="og:locale" content="(en_US|de_DE)">/);
+            expect(html).toContain('<meta property="og:image:width" content="1200">');
+            expect(html).toContain('<meta property="og:image:height" content="630">');
+            expect(html).toContain('max-image-preview:large');
             // #252 AC4: the machine-readable surfaces are advertised in the
             // SERVER-rendered head, on every route.
             expect(html).toContain(
@@ -213,6 +238,16 @@ test.describe('SEO & SSR Verification', () => {
             );
         });
     }
+
+    // 5b. llms-full.txt — the whole profile as Markdown, linked from llms.txt
+    test('should serve llms-full.txt and link it from llms.txt', async ({ request }) => {
+        const { site_url } = await siteConfig(request);
+        const full = await request.get('/llms-full.txt');
+        expect(full.ok()).toBe(true);
+        expect(full.headers()['content-type']).toContain('text/plain');
+        expect(await full.text()).toMatch(/^# .+/);
+        expect(await (await request.get('/llms.txt')).text()).toContain(`(${site_url}/llms-full.txt)`);
+    });
 
     // 6. The OG image must actually exist — it did not before #71
     test('should serve the referenced Open Graph image', async ({ request }) => {

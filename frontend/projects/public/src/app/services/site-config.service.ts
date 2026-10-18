@@ -4,6 +4,7 @@ import { Observable, of } from 'rxjs';
 import { catchError, map, shareReplay } from 'rxjs/operators';
 import { environment } from '../../environments/environment';
 import { Brand, THEME_DEFAULT, normalizeTheme } from '@beaconfolio/shared';
+import { normalizeAiCrawlerPolicy } from '../seo/sitemap';
 
 /**
  * Site identity (#65) — everything the public app shows about its owner.
@@ -35,7 +36,7 @@ export interface SiteConfig {
     /** Owner's job-search state (#271): 'open' | 'listening' | 'not_looking'.
      *  GUARANTEED here — the projection normalizes an absent wire value. */
     availability: string;
-    /** AI-crawler policy (#252): 'allow' | 'deny'. Consumed by the SSR
+    /** AI-crawler policy (#252): 'allow' | 'deny' | 'search-only'. Consumed by the SSR
      *  robots.txt; exposed here so the browser app reads ONE config shape. */
     aiCrawlerPolicy: string;
     /** The chosen preset theme (#339), one of THEME_PRESETS. GUARANTEED to be
@@ -52,6 +53,17 @@ export interface SiteConfig {
     ogImageUrl: string;
     fontCssUrl: string;
     fontFamily: string;
+    /** Search-engine ownership tokens. OPTIONAL — absent on a backend that
+     *  predates them and on hand-built test configs; '' or absent = no meta.
+     *  Rendered as `google-site-verification` / `msvalidate.01`. */
+    googleSiteVerification?: string;
+    bingSiteVerification?: string;
+    /** Optional hand-written overrides for the COMPOSED home title,
+     *  description and keywords (`seo/identity.ts`). Absent or '' = compose
+     *  from the profile, which is the default and the recommended setting. */
+    seoTitle?: string;
+    seoDescription?: string;
+    seoKeywords?: string;
 }
 
 /** Backend wire shape (snake_case, see backend/app/api/site_config.py). */
@@ -83,6 +95,12 @@ interface SiteConfigDto {
     brand_og_image_url?: string;
     brand_font_css_url?: string;
     brand_font_family?: string;
+    /** ABSENT on a backend that predates them — normalized to ''. */
+    google_site_verification?: string;
+    bing_site_verification?: string;
+    seo_title?: string;
+    seo_description?: string;
+    seo_keywords?: string;
 }
 
 /**
@@ -106,6 +124,11 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
     ogImageUrl: '',
     fontCssUrl: '',
     fontFamily: '',
+    googleSiteVerification: '',
+    bingSiteVerification: '',
+    seoTitle: '',
+    seoDescription: '',
+    seoKeywords: '',
 };
 
 /**
@@ -170,10 +193,10 @@ export class SiteConfigService {
                         : DEFAULT_SITE_CONFIG.availability,
                 // Only 'deny' turns the AI crawlers away; absent/unknown means
                 // allow, matching the backend's own normalization (#252).
-                aiCrawlerPolicy:
-                    dto.ai_crawler_policy?.toLowerCase() === 'deny'
-                        ? 'deny'
-                        : DEFAULT_SITE_CONFIG.aiCrawlerPolicy,
+                // `search-only` (training crawlers refused, search + user
+                // fetchers allowed) is the third value; the ONE normalizer is
+                // shared with the SSR robots.txt so the two never disagree.
+                aiCrawlerPolicy: normalizeAiCrawlerPolicy(dto.ai_crawler_policy),
                 // Absent (older backend) OR unknown both normalize (#339) —
                 // see `normalizeTheme` for why passing an unknown name through
                 // is worse than ignoring it.
@@ -187,6 +210,11 @@ export class SiteConfigService {
                 ogImageUrl: dto.brand_og_image_url?.trim() ?? '',
                 fontCssUrl: dto.brand_font_css_url?.trim() ?? '',
                 fontFamily: dto.brand_font_family?.trim() ?? '',
+                googleSiteVerification: dto.google_site_verification?.trim() ?? '',
+                bingSiteVerification: dto.bing_site_verification?.trim() ?? '',
+                seoTitle: dto.seo_title?.trim() ?? '',
+                seoDescription: dto.seo_description?.trim() ?? '',
+                seoKeywords: dto.seo_keywords?.trim() ?? '',
             })),
             catchError(() => of(DEFAULT_SITE_CONFIG)),
             shareReplay(1)

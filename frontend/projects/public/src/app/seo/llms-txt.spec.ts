@@ -5,7 +5,7 @@ import { JsonFetcher, SitemapPost, SsrSiteConfig } from './sitemap';
 const CONFIG_PATH = '/api/app/config/site';
 /** llms.txt reads ONE bounded page — `page_size` is the printed cap, not 100. */
 const postsPath = (page: number) =>
-    `/api/app/posts?published_only=true&page=${page}&page_size=${LLMS_TXT_MAX_POSTS}`;
+    `/api/app/posts?published_only=true&page=${page}&page_size=${LLMS_TXT_MAX_POSTS}&sort_by=published_at&sort_order=desc`;
 
 const fetcherFor = (routes: Record<string, unknown>): JsonFetcher =>
     vi.fn(async (path: string) => {
@@ -98,7 +98,8 @@ describe('buildLlmsTxt', () => {
 
     it('lists published posts by title with their date, falling back to the slug', () => {
         const txt = buildLlmsTxt(siteConfig(), [
-            { slug: 'vector-search', title: 'Vector search', lastmod: '2026-02-03' },
+            // The PUBLICATION date is printed, not the last-change `lastmod`.
+            { slug: 'vector-search', title: 'Vector search', lastmod: '2026-05-05', published: '2026-02-03T10:00:00Z' },
             { slug: 'untitled-post' },
         ]);
 
@@ -124,7 +125,7 @@ describe('buildLlmsTxt', () => {
         await renderLlmsTxt(fetchJson, 'http://localhost');
 
         expect(fetchJson).toHaveBeenCalledWith(
-            `/api/app/posts?published_only=true&page=1&page_size=${LLMS_TXT_MAX_POSTS}`,
+            `/api/app/posts?published_only=true&page=1&page_size=${LLMS_TXT_MAX_POSTS}&sort_by=published_at&sort_order=desc`,
         );
         // config + ONE post page, not one page per hundred posts in the blog.
         expect(fetchJson).toHaveBeenCalledTimes(2);
