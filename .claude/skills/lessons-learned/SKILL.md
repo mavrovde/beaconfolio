@@ -2473,3 +2473,33 @@ and needed no test edits.
 **Mutation note.** "Commit even on a dry run" is an EQUIVALENT mutant when the dry run never
 assigns — a commit with nothing dirty writes nothing. Mutate the assignment and the commit
 together, or the survivor tells you nothing.
+
+## 83. The rollout ships IMAGES, not the compose file — a new env var never reaches prod by itself (v1.17.0)
+
+**What happened.** #493 added `BEACONFOLIO_GOOGLE_SITE_VERIFICATION` … `BEACONFOLIO_SEO_KEYWORDS`
+and #494 added `INDEXNOW_KEY` to `docker-compose.prod.yml`. Both merged, both pipelines were green,
+and `Roll Out To Prod Host` rolled the new images. On the live site the IndexNow key file still
+returned **404**: `INDEXNOW_KEY` was in the host's `.env`, but the frontend container did not have
+it. The reason was that `/opt/beaconfolio/docker-compose.prod.yml` on the host was the copy from
+2026-10-12. The rollout job runs `docker compose -f docker-compose.prod.yml pull/up` against
+**whatever compose file is already on the host**. It never copies the repo's version. A green
+pipeline therefore proves the new images are running and says nothing about whether the
+environment those images expect reached the container.
+
+**How it was found.** By checking the live behaviour (`GET /<key>.txt`), not the pipeline. The
+diff `host compose ↔ origin/main` was small (12 lines: the five SEO knobs and `INDEXNOW_KEY`, all
+defaulting to empty). That is exactly why nothing broke loudly: every missing variable fell back
+to "feature off".
+
+**Do this.**
+- After merging anything that touches `docker-compose.prod.yml`, diff the host copy against `main`:
+  `ssh beaconfolio-dev 'cat /opt/beaconfolio/docker-compose.prod.yml' | diff - <(git show origin/main:docker-compose.prod.yml)`.
+- Sync it the non-destructive way: back up first (`cp -p … .bak-<date>`), `install` it with the
+  same owner (root) and mode 644, validate with `docker compose … config -q`, then
+  `up -d --no-deps backend frontend` (or whichever services read the new variables). Never `down`;
+  the host is shared (see the `ssh-deploy` skill).
+- Verify with the feature itself (here, the key file returning 200 `text/plain` with the key as its
+  body), not with `docker compose ps`.
+
+**Don't.** Don't treat `check_compose_env.sh` passing as "the knob reaches prod". That lint proves
+the repo's compose files wire every documented `Settings` knob. It cannot see the host's copy.

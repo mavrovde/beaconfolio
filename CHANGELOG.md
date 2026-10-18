@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Placeholder for next release.
+
+## [1.17.0] - 2026-10-18
+
 ### Security
 - **Every SonarCloud vulnerability and bug under `frontend/` is fixed at its source (#494).** No
   Angular sanitizer bypass remains: the JSON-LD block is written into `<head>` through
@@ -417,6 +422,16 @@ All notable changes to this project will be documented in this file.
   inventory first.
 
 ### Fixed
+- **Post images are cropped to a fixed frame instead of being cut through the middle.** A
+  portrait upload (the reported Margaret Hamilton post's image is 480x596) was upscaled to the
+  full column width by `w-full h-auto` and then clipped by `max-h-[500px]` with a centred
+  `object-cover`, so the post page showed a blurry torso with the head cut off, and the blog list
+  showed the same image as a 103x128 sliver beside 16:9 cards. The post cover is now a 16:9 box
+  (`aspect-video object-cover object-top`) and the list thumbnail a 16:9 box 128px tall, both
+  cropped from the top where a face or headline usually sits, with `width`/`height` attributes
+  reserving the box before the image loads; the 64x64 search-result square gains the same top
+  anchor. Markup pinned in Vitest, rendered geometry pinned in a real browser by
+  `e2e/public/post-image-crop.spec.ts`.
 - **Derived post titles no longer stop at "vs." or "L.A.", badge-only posts get a real title, and
   `rederive-metadata` never downgrades a title to the fallback.** A prod dry run of
   `POST /linkedin/rederive-metadata` over 82 imported posts showed "Provincial Code vs" and
@@ -499,6 +514,18 @@ All notable changes to this project will be documented in this file.
   tag (the URN upsert does not rewrite `language`); search no longer depends on it. (The six
   mis-tagged prod rows were also corrected to `en` by hand.) `limit` is now bounded to 1-50 on
   this public endpoint (422 otherwise).
+- **Every second Vitest run of the same checkout failed with "Cannot find module
+  `/@id/__x00__virtual:angular:jit:style:inline;…`".** Vitest 5 enables `fsModuleCache` by
+  default and serves a component's transform from `node_modules/.vitest-cache` on the next run;
+  the cached `blog-post.component.ts` imports the Analog plugin's virtual inline-style module,
+  which the plugin registers only while it transforms that file, so the import cannot resolve.
+  CI saw it as a failed teardown RETRY (`run_frontend_suites.sh` reruns in the same job, i.e.
+  with a warm cache), which turned a tolerated flake into a red job. `fsModuleCache: false` in
+  all three `vitest.config.ts`; measured: two consecutive `test:coverage:public` runs, 939/939
+  both (before: run 2 failed 6 files).
+- **Errata for the derived-titles entry above:** the shipped `SENTENCE_ABBREVIATIONS` list
+  deliberately does NOT contain `etc.`, `usw.`, `no.`, `inc.` or `ltd.` — those routinely END a
+  sentence, so a "." after them still splits. The entry's "etc., … usw." examples are wrong.
 
 ## [1.16.0] - 2026-09-19
 
