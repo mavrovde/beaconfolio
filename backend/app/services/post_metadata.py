@@ -43,12 +43,14 @@ ELLIPSIS = "…"
 # list GENERIC — a phrase only one owner writes does not belong here.
 LINKEDIN_BOILERPLATE_PATTERNS: tuple[re.Pattern[str], ...] = (
     # Credly/Accredible-style badge shares: "View my verified achievement from X."
+    # The leading \b is load-bearing: without it "review"/"preview" matched
+    # and the rest of the sentence was deleted (PR #493 review, round 2).
     re.compile(
-        r"view my verified achievement (?:from|on) [^.!?\n]*[.!?]?", re.IGNORECASE
+        r"\bview my verified achievement (?:from|on) [^.!?\n]*[.!?]?", re.IGNORECASE
     ),
     # Badge shares worded in the third person / without "my".
     re.compile(
-        r"view (?:the )?verified (?:achievement|credential|badge)[^.!?\n]*[.!?]?",
+        r"\bview (?:the )?verified (?:achievement|credential|badge)[^.!?\n]*[.!?]?",
         re.IGNORECASE,
     ),
     # LinkedIn's own collapsed-text artefact when a scraped body was truncated.
@@ -154,6 +156,10 @@ def _strip_trailing_hashtags(text: str) -> str:
     linear in ``len(text)`` however many hashtags precede the end. A tag is
     ``#`` + a non-digit word character + ``[\\w-]*``; the tags may touch
     (``#a#b``) or follow a word directly (``word#tag``), as in the regex.
+
+    A tag containing a zero-width non-joiner between letters (Persian) is
+    not a ``[\\w-]`` run, so it is kept as text rather than stripped —
+    harmless, and the price of keeping ZWNJ orthography intact.
     """
     end = len(text)
     while end > 0 and text[end - 1].isspace():

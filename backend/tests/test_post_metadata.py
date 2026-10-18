@@ -122,6 +122,23 @@ TITLE_CASES = [
     ("plus_bullet_stripped", "+ Lessons from a migration", "Lessons from a migration"),
     ("degree_sign_kept", "30° in the server room", "30° in the server room"),
     ("degree_celsius_kept", "It was 25°C in Berlin", "It was 25°C in Berlin"),
+    # PR #493 review, round 2: the badge boilerplate must match "view" as a
+    # WORD — "review"/"preview" used to truncate the sentence ("How we re").
+    (
+        "review_is_not_badge_boilerplate",
+        "How we review verified credentials before granting access.",
+        "How we review verified credentials before granting access",
+    ),
+    (
+        "preview_is_not_badge_boilerplate",
+        "I preview verified badges before sharing them",
+        "I preview verified badges before sharing them",
+    ),
+    (
+        "third_person_badge_share_still_stripped",
+        "View the verified credential on Example.\nShipping the platform",
+        "Shipping the platform",
+    ),
     ("only_symbols_falls_back", "🎉🎉 #yay", DEFAULT_TITLE),
     ("empty_falls_back", "", DEFAULT_TITLE),
     ("whitespace_falls_back", "  \n\t ", DEFAULT_TITLE),
@@ -336,12 +353,14 @@ def test_trailing_strip_examines_each_character_a_bounded_number_of_times(
 
     followed_by_text = "#tag " * 4000 + "word"
     assert pm._strip_trailing_hashtags(followed_by_text) == followed_by_text
-    assert calls <= 2 * len(followed_by_text)
+    # Lower bound too: a version that never calls the helper (e.g. the old
+    # regex) would satisfy the upper bound with calls == 0.
+    assert len("word") <= calls <= 2 * len(followed_by_text)
 
     calls = 0
     all_tags = "Body " + "#tag " * 4000
     assert pm._strip_trailing_hashtags(all_tags) == "Body"
-    assert calls <= 2 * len(all_tags)
+    assert 4000 * len("tag") <= calls <= 2 * len(all_tags)
 
 
 def test_long_adversarial_body_derives_correctly():
