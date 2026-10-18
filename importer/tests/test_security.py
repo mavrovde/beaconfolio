@@ -57,7 +57,7 @@ def _image(body: bytes = b"IMG") -> httpx.Response:
 @pytest.mark.parametrize(
     "url",
     [
-        "http://media.licdn.com/dms/image/x.jpg",  # plain http
+        GOOD.replace("https:", "http:", 1),  # same URL, downgraded to plain http
         "https://media.licdn.com.evil.example/x.jpg",  # suffix lookalike
         "https://media.licdn.com@evil.example/x.jpg",  # userinfo trick
         "https://evil.example/https://media.licdn.com/x.jpg",
@@ -74,7 +74,9 @@ def test_off_origin_image_url_is_never_requested(tmp_path, url, caplog):
     ):
         assert core.download_image(client, url, _cfg(tmp_path)) is None
     assert seen == []  # no request at all, so the session cookie went nowhere
-    assert any("off https://media.licdn.com/" in r.getMessage() for r in caplog.records)
+    assert any(
+        "not on https://media.licdn.com" in r.getMessage() for r in caplog.records
+    )
 
 
 def test_allowed_image_is_fetched_with_the_session_cookie(tmp_path):
@@ -168,7 +170,7 @@ def test_from_env_confines_both_env_named_files(tmp_path, monkeypatch):
     with pytest.raises(UnsafePathError, match="POSTS_JSON"):
         Config.from_env()
     monkeypatch.setenv("POSTS_JSON", "scraper/posts_data.json")
-    monkeypatch.setenv("IMPORT_STATE", "/tmp/overwrite-me.json")
+    monkeypatch.setenv("IMPORT_STATE", str(tmp_path.parent / "overwrite-me.json"))
     with pytest.raises(UnsafePathError, match="IMPORT_STATE"):
         Config.from_env()
 

@@ -62,8 +62,9 @@ All notable changes to this project will be documented in this file.
   importer only fetches post images from `https://media.licdn.com/` and checks every redirect hop
   by hand - the URL comes from scraped page content and the request carries the LinkedIn session
   cookie, so an unchecked URL was both an SSRF and a credential leak (Sonar S5144). `POSTS_JSON`/
-  `IMPORT_STATE` and the CHANGELOG fixer's path argument are confined to the working directory on
-  the resolved path (Snyk `python/PT`, Sonar S8707). Request- and export-supplied values are escaped
+  `IMPORT_STATE` are confined to the working directory on the resolved path, and the CHANGELOG
+  fixer only ever rewrites `./CHANGELOG.md` - its optional argument may name that file and nothing
+  else (Snyk `python/PT`, Sonar S8707). Request- and export-supplied values are escaped
   before they reach a log line (Sonar S5145, `app.logger.log_safe`). `?lang=` is mapped onto the
   module's own constant before it is put in the bundled-profile URL (Sonar S7044), the engagement
   trend bounds its own week count (Sonar S6680), and slug suffixes come from `secrets` (Sonar

@@ -134,14 +134,14 @@ def confine_to_workdir(raw: str, setting: str) -> Path:
     check is on the RESOLVED path, so ``scraper/../../etc`` cannot slip past a
     string test.
     """
-    workdir = Path.cwd().resolve()
-    resolved = (workdir / raw).resolve()
-    if not resolved.is_relative_to(workdir):
+    workdir = os.path.realpath(os.getcwd())
+    resolved = os.path.realpath(os.path.join(workdir, raw))
+    if not resolved.startswith(workdir + os.sep):
         raise UnsafePathError(
             f"{setting}={raw!r} resolves outside the working directory {workdir}; "
             "run the importer from the repository root with a path inside it"
         )
-    return resolved.relative_to(workdir)
+    return Path(os.path.relpath(resolved, workdir))
 
 
 def default_state_path(api_url: str) -> Path:
@@ -241,15 +241,12 @@ def _retry(fn: Callable[[], httpx.Response], cfg: Config) -> httpx.Response:
 # LinkedIn SESSION COOKIE — so an unchecked URL is both an SSRF (any internal
 # host the importer can reach) and a credential leak to whoever it names
 # (CWE-918). Every real export uses this origin (31 of 31 images measured).
-# The trailing "/" pins the host: "https://media.licdn.com@evil/" and
-# "https://media.licdn.com.evil/" do not match.
-IMAGE_URL_PREFIX = "https://media.licdn.com/"
-# Redirects are followed by hand so each hop is checked against the prefix.
+# The check is on the PARSED scheme and hostname, so "https://media.licdn.com@evil/"
+# (hostname "evil") and "https://media.licdn.com.evil/" do not pass.
+IMAGE_URL_SCHEMES = ("https",)
+IMAGE_URL_HOSTS = ("media.licdn.com",)
+# Redirects are followed by hand so each hop is checked against the allowlist.
 _MAX_IMAGE_REDIRECTS = 3
-
-
-def _allowed_image_url(url: str) -> bool:
-    return url.startswith(IMAGE_URL_PREFIX)
 
 
 def download_image(
@@ -264,9 +261,14 @@ def download_image(
     # the shared client, so it cannot ride along to any other request.
     headers = {"Cookie": f"li_at={cfg.li_at}"} if cfg.li_at else None
     for _ in range(_MAX_IMAGE_REDIRECTS + 1):
-        if not _allowed_image_url(url):
+        parsed = urlparse(url)
+        if (
+            parsed.scheme not in IMAGE_URL_SCHEMES
+            or parsed.hostname not in IMAGE_URL_HOSTS
+        ):
             log.warning(
-                "image URL off %s, skipping: %s", IMAGE_URL_PREFIX, _log_safe(url)
+                "image URL not on https://media.licdn.com, skipping: %s",
+                _log_safe(url),
             )
             return None
         try:
