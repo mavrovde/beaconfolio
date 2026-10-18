@@ -310,8 +310,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# API JSON is the material pages are rendered from, not a search result —
+# see app/robots_header.py for what is exempt and why.
+app.add_middleware(ApiNoindexMiddleware, api_prefix=settings.api_prefix)
 # CORS allowlist comes from config (#65): ``cors_origins`` already existed in
 # Settings but this list was hardcoded — the setting silently did nothing.
+#
+# ORDER MATTERS: Starlette's ``add_middleware`` prepends, so the LAST one added
+# is the OUTERMOST. CORS must be outermost (Sonar python:S8414) so it answers a
+# preflight before any other middleware runs and decorates every response the
+# inner layers produce — keep this the final ``add_middleware`` call.
+# Pinned by tests/test_cors_middleware_order.py.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
@@ -319,9 +328,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# API JSON is the material pages are rendered from, not a search result —
-# see app/robots_header.py for what is exempt and why.
-app.add_middleware(ApiNoindexMiddleware, api_prefix=settings.api_prefix)
 
 app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(posts_router, prefix=settings.api_prefix)

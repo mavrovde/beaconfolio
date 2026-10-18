@@ -19,8 +19,15 @@ RUN npm run build:shared && npm run build:public
 # Production stage with nginx
 FROM node:26-slim
 
-# Install nginx and clear default config
-RUN apt-get update && apt-get install -y nginx && rm -rf /var/lib/apt/lists/* && rm -f /etc/nginx/sites-enabled/default
+# Take Debian security updates, install nginx and clear default config.
+# Then REMOVE npm/npx/corepack: the runtime only ever runs `node` (see CMD), and
+# npm's own bundled node_modules (undici, …) were the bulk of Snyk's findings
+# for this image — shipping a package manager to prod is pure attack surface.
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends nginx \
+    && rm -rf /var/lib/apt/lists/* && rm -f /etc/nginx/sites-enabled/default \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 
 # Clear default nginx assets
 RUN rm -rf /usr/share/nginx/html/*

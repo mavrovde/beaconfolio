@@ -681,6 +681,9 @@ jobs:
         with:
           context: ./backend
           push: true
+          # Re-resolve base images from the registry on every build so a patched
+          # upstream layer (Alpine/Debian security rebuild) is picked up.
+          pull: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-backend:sha-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -714,6 +717,7 @@ jobs:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: true
+          pull: true   # fresh base layers, see build-backend
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-frontend:sha-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -747,6 +751,7 @@ jobs:
           context: ./frontend
           file: ./frontend/Dockerfile.admin
           push: true
+          pull: true   # fresh base layers, see build-backend
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-admin-frontend:sha-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -783,6 +788,7 @@ jobs:
         with:
           context: ./proxy
           push: true
+          pull: true   # fresh base layers, see build-backend
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-proxy:sha-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
