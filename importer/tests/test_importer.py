@@ -2,8 +2,10 @@
 
 import json
 from pathlib import Path
+from urllib.parse import parse_qs
 
 import httpx
+import pytest
 
 from importer import core
 from importer.core import (
@@ -74,6 +76,96 @@ def test_detect_language():
     assert detect_language("Das ist für mich nicht gut") == "de"
     assert detect_language("This is english") == "en"
     assert detect_language("", default="en") == "en"
+
+
+# English posts shaped like the six real ones the old single-hit heuristic
+# tagged "de" (ids 9, 66, 70, 71, 79, 80): each carries exactly the isolated
+# German-looking token that tripped it.
+_ENGLISH_WITH_GERMAN_TOKENS = [
+    # "MIT" matched \bmit\b case-insensitively (both Margaret Hamilton posts).
+    "Today we honor Margaret Hamilton. As director of the Software Engineering "
+    "Division of the MIT Instrumentation Lab for Apollo, she coined the term.",
+    # an umlaut in a city name
+    'What if the interface to Germany\'s transport data was simply a '
+    'conversation? Ask "Cheapest E10 in Köln?" and it is ranked by price.',
+    # "der" + "ß" in a quoted name
+    "Aachen, AI, and the systems we underestimate. The plaque read: Karl der "
+    "Große. With my German at the time, my only idea was that it is old.",
+    # an umlaut in a court name
+    "On March 10, the Munich District Court (Landgericht München I) issued a "
+    "landmark ruling that the disclaimers protecting businesses are not enough.",
+    # the English verb "die"
+    "Hyped consumer apps are born and die by the hundreds, but cloud bills and "
+    "the people who pay them remain with us for years.",
+    # mostly English with a short German quote: the German hits are real, but
+    # English outnumbers them, so English wins.
+    "Proud to announce: Wir sind jetzt auch in Köln! The team and I are excited "
+    "to be there for you.",
+]
+
+
+@pytest.mark.parametrize("text", _ENGLISH_WITH_GERMAN_TOKENS)
+def test_english_post_with_isolated_german_token_stays_english(text):
+    assert detect_language(text) == "en"
+    # Decisive English evidence beats a German default, too.
+    assert detect_language(text, default="de") == "en"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Heute habe ich einen neuen Artikel über Softwarearchitektur und KI "
+        "geschrieben. Es geht um die Frage, wie wir Systeme bauen, die auch in "
+        "zehn Jahren noch wartbar sind.",
+        "Ich freue mich sehr!",
+        "Große Neuigkeiten: wir sind jetzt auch in Köln und München vertreten.",
+    ],
+)
+def test_genuine_german_is_still_detected(text):
+    assert detect_language(text) == "de"
+    assert detect_language(text, default="en") == "de"
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Danke an alle",  # too short to classify
+        "Ich bin hier",  # German, but under the minimum word count
+        "Kubernetes Terraform Grafana und",  # a single German hit is not enough
+        # two German hits, but under the minimum share of the text
+        "Kubernetes, Terraform, Grafana, Prometheus, Ansible, Docker, Helm, "
+        "ArgoCD, Vault, Consul, Nomad, Packer, Jenkins, Gradle, Maven, Spark, "
+        "Kafka, Flink, Redis, Postgres und Elastic und Kibana",
+        "Köln",  # one umlaut word is not evidence
+        "Kubernetes Terraform Grafana Prometheus Ansible",  # no function words
+    ],
+)
+def test_short_or_ambiguous_text_returns_default(text):
+    assert detect_language(text, default="en") == "en"
+    assert detect_language(text, default="de") == "de"
+
+
+def test_import_redetects_language_ignoring_stale_scraper_tag(tmp_path):
+    """An export written by the old scraper heuristic carries a wrong "de";
+    the importer must send what the CONTENT says, not the stale tag."""
+    sent = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request.content.decode("utf-8", "replace"))
+        return httpx.Response(200, json={"id": 1, "slug": "s", "created": True})
+
+    post = {
+        "urn": "urn:li:activity:71",
+        "content": _ENGLISH_WITH_GERMAN_TOKENS[0],
+        "postedAt": "2026-07-01T10:00:00Z",
+        "language": "de",
+    }
+    cfg = _cfg(tmp_path, posts=[post])
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        assert core.import_one(client, cfg, post, Ledger(cfg.state_path)) == "created"
+    assert len(sent) == 1
+    # No image -> a plain urlencoded form body.
+    assert parse_qs(sent[0])["language"] == ["en"]
 
 
 def test_fingerprint_stable_and_content_sensitive():

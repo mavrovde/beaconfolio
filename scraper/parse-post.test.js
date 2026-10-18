@@ -82,3 +82,41 @@ test('detectLanguage', () => {
   assert.equal(detectLanguage('This is an English post about engineering'), 'en');
   assert.equal(detectLanguage(''), 'en');
 });
+
+// The real shapes the old single-hit heuristic tagged "de": one isolated
+// German-looking token inside an English post. Mirrors importer/tests.
+test('detectLanguage keeps English posts with an isolated German token English', () => {
+  for (const text of [
+    'Today we honor Margaret Hamilton. As director of the Software Engineering ' +
+      'Division of the MIT Instrumentation Lab for Apollo, she coined the term.',
+    "What if the interface to Germany's transport data was simply a conversation? " +
+      'Ask "Cheapest E10 in Köln?" and it is ranked by price.',
+    'Aachen, AI, and the systems we underestimate. The plaque read: Karl der Große. ' +
+      'With my German at the time, my only idea was that it is old.',
+    'Hyped consumer apps are born and die by the hundreds, but cloud bills and the ' +
+      'people who pay them remain with us for years.',
+    'Proud to announce: Wir sind jetzt auch in Köln! The team and I are excited to ' +
+      'be there for you.',
+  ]) {
+    assert.equal(detectLanguage(text), 'en', text);
+    assert.equal(detectLanguage(text, 'de'), 'en', text);
+  }
+});
+
+test('detectLanguage still detects genuine German and defaults on thin evidence', () => {
+  assert.equal(detectLanguage('Ich freue mich sehr!'), 'de');
+  assert.equal(
+    detectLanguage('Große Neuigkeiten: wir sind jetzt auch in Köln und München vertreten.'),
+    'de',
+  );
+  for (const text of [
+    'Ich bin hier',
+    'Köln',
+    'Kubernetes Terraform Grafana und',
+    'Kubernetes, Terraform, Grafana, Prometheus, Ansible, Docker, Helm, ArgoCD, Vault, ' +
+      'Consul, Nomad, Packer, Jenkins, Gradle, Maven, Spark, Kafka, Flink, Redis, ' +
+      'Postgres und Elastic und Kibana',
+  ]) {
+    assert.equal(detectLanguage(text, 'xx'), 'xx', text);
+  }
+});

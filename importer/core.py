@@ -26,9 +26,38 @@ import httpx
 
 log = logging.getLogger("importer")
 
-_DE_HINT = re.compile(
-    r"[äöüß]|\b(und|der|die|das|nicht|mit|für|ich|auch|ist|eine)\b", re.I
+# Language heuristic (en/de). The previous one flipped a post to "de" on a
+# SINGLE hit of an umlaut or a German-looking word, and six English posts were
+# tagged German that way — by "MIT" (the institute), "Köln", "München",
+# "Karl der Große" and "born and die". So a lone token is never evidence here:
+# the text is tokenised, each side counts its own function words, and German
+# must win on volume AND density AND against the English counter-evidence.
+# Words that are common in BOTH languages ("in", "an", "so", "was", "will",
+# "also", "die", "hat") are deliberately absent from both lists; a word with an
+# umlaut/ß counts as German evidence only once per token, like any other word.
+# Keep in sync with scraper/parse-post.js detectLanguage().
+_WORD = re.compile(r"[^\W\d_]+")
+_DE_UMLAUT = re.compile(r"[äöüß]")
+_DE_STOPWORDS = frozenset(
+    "und der das den dem des ein eine einen einem einer nicht mit für ich auch "
+    "ist sind wird werden wurde sich wir sie er es zu von auf im zum zur bei aus "
+    "nach wie aber oder wenn noch nur schon sehr mehr mich mir uns unser unsere "
+    "diese dieser dieses man hier jetzt immer heute dass über kann können haben "
+    "habe gibt ohne durch vom bin bist seid eure euch ihr ihre".split()
 )
+_EN_STOPWORDS = frozenset(
+    "the and of to is that with for it this are you not be on as have but what "
+    "they we from by or at which can how why their our my your its has been "
+    "were would there when who than then just about into more one all".split()
+)
+# A text needs at least this many words before it is classified at all, at
+# least this many German function words, and a German share of at least this
+# much. Measured on the real 82-post export: the six mis-tagged English posts
+# score 0-2 German hits at 0.0-0.9% of their words (and 20-33% English hits);
+# a German paragraph of LinkedIn prose scores ~49%. 10% sits far from both.
+_MIN_WORDS = 4
+_MIN_HITS = 2
+_MIN_RATIO = 0.1
 _IMAGE_KEYS = ("content", "imageUrl", "imageUrls")
 
 
@@ -87,9 +116,21 @@ LEGACY_STATE_PATH = Path("importer/state.json")
 
 
 def detect_language(text: str, default: str = "en") -> str:
-    """Light en/de heuristic — the server keeps whatever we send."""
-    if text and _DE_HINT.search(text):
-        return "de"
+    """Robust en/de heuristic — the server keeps whatever we send.
+
+    Returns ``"de"`` or ``"en"`` only on decisive evidence (enough words, enough
+    function-word hits, a high enough share, and more hits than the other
+    language); anything short or ambiguous returns ``default``.
+    """
+    # lower(), not casefold(): casefold() turns "ß" into "ss" and loses it.
+    words = _WORD.findall((text or "").lower())
+    if len(words) < _MIN_WORDS:
+        return default
+    de_hits = sum(1 for w in words if w in _DE_STOPWORDS or _DE_UMLAUT.search(w))
+    en_hits = sum(1 for w in words if w in _EN_STOPWORDS)
+    for lang, hits, other in (("de", de_hits, en_hits), ("en", en_hits, de_hits)):
+        if hits >= _MIN_HITS and hits / len(words) >= _MIN_RATIO and hits > other:
+            return lang
     return default
 
 
@@ -188,8 +229,9 @@ def import_one(client: httpx.Client, cfg: Config, post: dict, ledger: Ledger) ->
     data = {
         "content": content,
         "urn": urn,
-        "language": post.get("language")
-        or detect_language(content, cfg.default_language),
+        # Always re-detected here: the scraper's own tag came from the old
+        # single-hit heuristic, so exports already on disk carry wrong "de"s.
+        "language": detect_language(content, cfg.default_language),
         "published": str(cfg.publish).lower(),
     }
     if post.get("postedAt"):

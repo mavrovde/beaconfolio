@@ -88,6 +88,15 @@ Only fields that still equal the PREVIOUS derivation (or are empty) change; anyt
 human edited is counted in `kept_human_title`/`kept_human_summary` and left alone.
 Slugs never change (they are published URLs). A second apply reports `changed: 0`.
 
+## Language of imported posts
+
+The importer always DETECTS each post's language from its text (`detect_language` in
+`core.py`); a `language` field in the scraper export is ignored, because exports written by
+the old single-hit heuristic carry wrong `de` tags. Detection counts function words: German
+needs ≥ 2 hits, ≥ 10 % of the words and more hits than English, otherwise the default
+(`IMPORT_DEFAULT_LANGUAGE`, `en`) applies. An existing row keeps its stored language — the
+URN upsert does not rewrite it — and search treats the language only as a preference.
+
 ## Test
 
 ```bash

@@ -55,15 +55,40 @@ export function cleanImageUrls(candidates, authorImageUrl) {
   return out;
 }
 
-/** Light language heuristic (en/de) — the importer can refine, but a sensible
- *  default helps the (slug, language) key and semantic-search filter. */
-export function detectLanguage(text) {
-  if (!text) return 'en';
-  const t = text.toLowerCase();
-  if (/[äöüß]/.test(t) || /\b(und|der|die|das|nicht|mit|für|ich|auch|ist|eine)\b/.test(t)) {
-    return 'de';
+// Language heuristic (en/de) — the SAME algorithm as importer/core.py
+// detect_language(); keep the two in sync. The old version flipped a post to
+// "de" on a single umlaut or German-looking word ("MIT", "Köln", "born and
+// die"), which tagged six English posts German. Now each language counts its
+// own function words over the tokenised text, and German must win on volume
+// (>= 2 hits), density (>= 10% of words) AND against the English count.
+const DE_STOPWORDS = new Set(
+  ('und der das den dem des ein eine einen einem einer nicht mit für ich auch ' +
+    'ist sind wird werden wurde sich wir sie er es zu von auf im zum zur bei aus ' +
+    'nach wie aber oder wenn noch nur schon sehr mehr mich mir uns unser unsere ' +
+    'diese dieser dieses man hier jetzt immer heute dass über kann können haben ' +
+    'habe gibt ohne durch vom bin bist seid eure euch ihr ihre').split(' '),
+);
+const EN_STOPWORDS = new Set(
+  ('the and of to is that with for it this are you not be on as have but what ' +
+    'they we from by or at which can how why their our my your its has been ' +
+    'were would there when who than then just about into more one all').split(' '),
+);
+const MIN_WORDS = 4;
+const MIN_HITS = 2;
+const MIN_RATIO = 0.1;
+
+export function detectLanguage(text, fallback = 'en') {
+  const words = (text || '').toLowerCase().match(/\p{L}+/gu) || [];
+  if (words.length < MIN_WORDS) return fallback;
+  const de = words.filter((w) => DE_STOPWORDS.has(w) || /[äöüß]/.test(w)).length;
+  const en = words.filter((w) => EN_STOPWORDS.has(w)).length;
+  for (const [lang, hits, other] of [
+    ['de', de, en],
+    ['en', en, de],
+  ]) {
+    if (hits >= MIN_HITS && hits / words.length >= MIN_RATIO && hits > other) return lang;
   }
-  return 'en';
+  return fallback;
 }
 
 /**
