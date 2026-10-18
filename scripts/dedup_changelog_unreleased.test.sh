@@ -14,6 +14,18 @@
 set -u
 
 SCRIPT="$(cd "$(dirname "$0")" && pwd)/dedup_changelog_unreleased.py"
+ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+# The script refuses any path outside its working directory (path-traversal
+# guard), so every fixture lives in — and the script runs from — one scratch
+# directory. BSD/macOS `mktemp` ignores TMPDIR, so the wrapper passes an
+# explicit template (portable across GNU and BSD) instead.
+WORK="$(cd "$(command mktemp -d)" && pwd -P)"
+trap 'rm -rf "$WORK"' EXIT
+mktemp() {
+  if [ "${1:-}" = "-d" ]; then command mktemp -d "$WORK/tmp.XXXXXX"
+  else command mktemp "$WORK/tmp.XXXXXX"; fi
+}
+cd "$WORK" || exit 1
 pass=0; fail=0
 ok()  { pass=$((pass+1)); printf '  ✓ %s\n' "$1"; }
 bad() { fail=$((fail+1)); printf '  ✗ %s\n     %s\n' "$1" "$2"; }
@@ -442,7 +454,7 @@ open(sys.argv[1], "w", encoding="utf-8", newline="").write(data)' "$f" "$_mode"
 done
 
 # --- 9. THE REAL FILE: running it on the repo's own CHANGELOG loses nothing -
-ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+# ($ROOT is computed at the top, before the cd into $WORK.)
 if [ -f "$ROOT/CHANGELOG.md" ]; then
   f="$(mktemp)"; cp "$ROOT/CHANGELOG.md" "$f"
   before_entries="$(grep -c '^- ' "$f")"
@@ -459,6 +471,32 @@ if [ -f "$ROOT/CHANGELOG.md" ]; then
   rm -f "$f"
 fi
 
+# --- 10. PATH GUARD: a path outside the working directory is never rewritten -
+# The argument is typed by an agent and the script REWRITES what it names
+# (Sonar pythonsecurity:S8707 / Snyk python/PT). Each spelling of "outside" —
+# a `..` hop, an absolute path, a symlink inside the tree pointing out — must
+# exit 2 and leave the target byte-identical. The fixture HAS a duplicate, so a
+# guard-less script would visibly change it.
+OUTSIDE="$(dirname "$WORK")/dedup-outside-$$.md"
+write_outside() {
+  printf '# Changelog\n\n## [Unreleased]\n\n### Added\n- **a** — x.\n\n### Added\n- **a** — x.\n\n## [1.0.0] - 2026-01-01\n- old\n' > "$OUTSIDE"
+}
+refused_untouched() { # path-as-given label
+  write_outside; cp "$OUTSIDE" "$OUTSIDE.orig"
+  out="$(python3 "$SCRIPT" "$1" 2>&1)"; rc=$?
+  if [ "$rc" -eq 2 ] && cmp -s "$OUTSIDE" "$OUTSIDE.orig" && printf '%s' "$out" | grep -q 'outside the working directory'; then
+    ok "path guard: $2 is refused (exit 2) and the file is untouched"
+  else
+    bad "path guard: $2 was not refused" "rc=$rc out=$out"
+  fi
+  rm -f "$OUTSIDE.orig"
+}
+refused_untouched "../$(basename "$OUTSIDE")" "a ../ hop"
+refused_untouched "$OUTSIDE" "an absolute path outside the tree"
+ln -s "$OUTSIDE" "$WORK/linked-CHANGELOG.md"
+refused_untouched "linked-CHANGELOG.md" "a symlink pointing out of the tree"
+rm -f "$WORK/linked-CHANGELOG.md" "$OUTSIDE"
+
 # ---------------------------------------------------------------------------
 # Mutation contract (#393): neuter ONE arm at a time in a COPY of the script
 # and require the pinned behaviour to break. Four of this repo's five
@@ -468,7 +506,7 @@ fi
 # ---------------------------------------------------------------------------
 if [ "${1:-}" = "--mutations" ]; then
   KILLED=0; SURVIVED=0; INVALID=0
-  MDIR="$(mktemp -d)"; trap 'rm -rf "$MDIR"' EXIT
+  MDIR="$(mktemp -d)"  # inside $WORK, removed by the top-level trap
   mutate() { # name needle replacement assert-fn
     local name="$1" needle="$2" repl="$3" assertfn="$4" M="$MDIR/mut.py"
     python3 - "$SCRIPT" "$M" "$needle" "$repl" <<'PY'
@@ -597,6 +635,18 @@ MD
 MD
     python3 "$1" "$g" >/dev/null 2>&1 && grep -q 'doc entry' "$g" && grep -qF '### Docs' "$g"; }
 
+  assert_confined() { # the guard refuses a ../ path and leaves the target untouched
+    local out="$(dirname "$WORK")/dedup-mut-outside-$$.md"
+    fix_dup "$out"; cp "$out" "$out.orig"
+    python3 "$1" "../$(basename "$out")" >/dev/null 2>&1; local rc=$?
+    cmp -s "$out" "$out.orig"; local same=$?
+    rm -f "$out" "$out.orig"
+    [ "$rc" -eq 2 ] && [ "$same" -eq 0 ]; }
+
+  mutate "path guard removed (a ../ argument rewrites a file outside the tree)" \
+    '    if not resolved.is_relative_to(workdir):
+        return None' '    if False:
+        return None' assert_confined
   mutate "entry dedup removed (a rebase-duplicated entry ships doubled)" \
     'if key in seen:' 'if False:' assert_dedup
   mutate "whole-entry key becomes first-line key (the documented first-draft bug)" \

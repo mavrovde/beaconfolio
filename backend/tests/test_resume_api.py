@@ -293,6 +293,28 @@ async def test_resume_404s_on_an_http_error_from_the_bundled_asset(
     assert (await client.get(URL)).status_code == 404
 
 
+@respx.mock
+async def test_resume_bundled_url_is_built_from_the_allowlist_only(
+    client: AsyncClient,
+):
+    """Only the module's own language constant may reach the bundled-asset URL.
+
+    `?lang=DE` is accepted and normalised; a path-shaped value is refused with
+    400 before any outbound request (respx would raise on an unmocked URL).
+    """
+    route = respx.get(_bundled_url("de")).mock(
+        return_value=httpx.Response(200, json={"name": "Bundled Jana"})
+    )
+    assert (await client.get(URL, params={"lang": "DE"})).status_code == 200
+    assert route.called
+    assert profile_api._validated_language("DE") is profile_api.SUPPORTED_LANGUAGES[1]
+
+    for hostile in ("en/../../admin", "../de", "en?x=1", "en%2F.."):
+        response = await client.get(URL, params={"lang": hostile})
+        assert response.status_code == 400
+    assert route.call_count == 1
+
+
 async def test_resume_is_public(client: AsyncClient, db_session):
     """No auth: the whole point is that an agent can read it unauthenticated."""
     await _seed(db_session, version="v1", language="en", data={"name": "Jane"})

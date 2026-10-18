@@ -12,26 +12,31 @@ from app.api import admin_sql
 
 
 @pytest.mark.asyncio
-async def test_execute_sql_no_rows_returned_commits(
+async def test_execute_sql_without_rows_never_commits(
     client: AsyncClient, db_session: AsyncSession
 ):
-    """A statement that does not return rows should commit and report success."""
-    # returns_rows == False forces the commit + "no rows returned" branch.
-    mock_result = MagicMock()
-    mock_result.returns_rows = False
+    """An empty result yields [] and the console NEVER commits — it rolls back.
 
-    with patch.object(db_session, "execute", AsyncMock(return_value=mock_result)):
-        with patch.object(db_session, "commit", AsyncMock()) as commit_mock:
-            response = await client.post(
-                "/api/app/admin/sql/execute",
-                json={"query": "UPDATE users SET username = username"},
-            )
+    Before the read-only console a row-less statement committed; the spy on the
+    session asserts the seam (what the session is asked to do), not the payload.
+    """
+    mock_result = MagicMock()
+    mock_result.fetchall.return_value = []
+
+    with (
+        patch.object(db_session, "execute", AsyncMock(return_value=mock_result)),
+        patch.object(db_session, "commit", AsyncMock()) as commit_mock,
+        patch.object(db_session, "rollback", AsyncMock()) as rollback_mock,
+    ):
+        response = await client.post(
+            "/api/app/admin/sql/execute",
+            json={"query": "SHOW server_version"},
+        )
 
     assert response.status_code == 200
-    assert response.json() == [
-        {"message": "Query executed successfully, no rows returned"}
-    ]
-    commit_mock.assert_awaited_once()
+    assert response.json() == []
+    commit_mock.assert_not_awaited()
+    rollback_mock.assert_awaited_once()
 
 
 @pytest.mark.asyncio

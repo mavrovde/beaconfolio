@@ -72,7 +72,7 @@ class DigestResult(BaseModel):
 
 @router.get("/engagement", response_model=EngagementSummary)
 async def get_engagement(
-    weeks: int = Query(default=8, ge=1, le=52),
+    weeks: int = Query(default=8, ge=1, le=engagement.MAX_TREND_WEEKS),
     limit: int = Query(default=20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
 ) -> EngagementSummary:

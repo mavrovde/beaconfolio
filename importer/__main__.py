@@ -7,7 +7,7 @@ import logging
 import sys
 import time
 
-from .core import Config, run
+from .core import Config, UnsafePathError, run
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -32,7 +32,11 @@ def main(argv: list[str] | None = None) -> int:
     overrides = {"dry_run": args.dry_run}
     if args.publish:
         overrides["publish"] = True
-    cfg = Config.from_env(**overrides)
+    try:
+        cfg = Config.from_env(**overrides)
+    except UnsafePathError as exc:
+        logging.error("refusing to start: %s", exc)
+        return 2
 
     if not cfg.token and not cfg.dry_run:
         logging.error(

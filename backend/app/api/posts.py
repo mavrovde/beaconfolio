@@ -1,7 +1,6 @@
-from collections.abc import Sequence
 from datetime import datetime
 from math import ceil
-from typing import Annotated, Any, cast
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -15,6 +14,7 @@ from app.models.post import Post
 from app.models.user import User
 from app.services.auth import get_current_admin_user, get_current_user_optional
 from app.services.embeddings import get_embedding
+from app.services.slugs import slug_suffix
 
 logger = get_logger(__name__)
 
@@ -502,9 +502,7 @@ async def create_post(
     except Exception:
         await db.rollback()
         # Handle unique constraint on slug potentially
-        import random
-
-        post.slug = f"{post_data.slug}-{random.randint(1000, 9999)}"
+        post.slug = f"{post_data.slug}-{slug_suffix()}"
         db.add(post)
         try:
             await db.commit()
@@ -547,11 +545,8 @@ async def get_similar_posts(
         .limit(limit)
     )
 
-    result = await db.execute(similar_query)
-    # State the row shape: SQLAlchemy 2.1.4's AsyncSession.execute overloads collapse
-    # Select[Post, float] to Result[Post] (an upstream typing gap, the runtime rows are
-    # (Post, distance) pairs), which made mypy reject the unpacking below.
-    similar_posts = cast("Sequence[tuple[Post, float]]", result.all())
+    similar_result = await db.execute(similar_query)
+    similar_posts = similar_result.all()
 
     return [
         SimilarPostResponse(
@@ -657,9 +652,7 @@ async def generate_post_endpoint(
         print(f"DEBUG: create_post exception caught: {e}")
         await db.rollback()
         # Handle unique constraint on slug potentially
-        import random
-
-        post.slug = f"{slug}-{random.randint(1000, 9999)}"
+        post.slug = f"{slug}-{slug_suffix()}"
         db.add(post)
         try:
             await db.commit()

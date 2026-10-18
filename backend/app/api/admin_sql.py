@@ -1,7 +1,9 @@
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -17,8 +19,44 @@ router = APIRouter(
 )
 
 
+# The console is a READ-ONLY query tool. Admin-authored SQL from the request
+# body is the feature, so the bound is not "which SQL" but "what the SQL can
+# do", enforced in three independent layers (any one alone leaves the database
+# unchanged):
+#   1. the statement must open with a read keyword: no COPY (it reaches the
+#      server filesystem and, as a superuser, `TO PROGRAM`), DO, CALL, SET,
+#      GRANT, VACUUM or any DDL/DML verb;
+#   2. it runs inside `SET TRANSACTION READ ONLY`, so PostgreSQL itself refuses
+#      every write the keyword check cannot see (`WITH x AS (DELETE ...) SELECT`,
+#      `EXPLAIN ANALYZE UPDATE ...`, `nextval()`), and refuses a switch back to
+#      read-write once the statement's snapshot is taken;
+#   3. the transaction is ALWAYS rolled back, so a session-level setting
+#      smuggled through a function (`set_config(..., false)`) cannot leak onto
+#      the pooled connection either.
+# asyncpg runs the statement as ONE prepared statement, so a chained
+# `SELECT 1; DROP TABLE users` is refused by the driver before layer 2.
+# Data changes go through the app's own endpoints or the restore path.
+READ_ONLY_KEYWORDS = frozenset({"select", "with", "explain", "show", "values", "table"})
+_LEADING_KEYWORD = re.compile(r"\s*([A-Za-z]+)")
+# A runaway read (an accidental cross join) must not pin a pool connection.
+STATEMENT_TIMEOUT_MS = 30_000
+
+
 class SqlQuery(BaseModel):
     query: str
+
+
+def _read_only_statement(query: str) -> str:
+    """Return ``query`` if it opens with a read keyword, else raise 400."""
+    match = _LEADING_KEYWORD.match(query)
+    keyword = match.group(1).lower() if match else ""
+    if keyword not in READ_ONLY_KEYWORDS:
+        allowed = ", ".join(sorted(k.upper() for k in READ_ONLY_KEYWORDS))
+        raise HTTPException(
+            status_code=400,
+            detail=f"The SQL console is read-only: a statement must start with {allowed}.",
+        )
+    return query
 
 
 @router.post("/execute", response_model=list[dict[str, Any]])
@@ -27,34 +65,26 @@ async def execute_sql(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    from sqlalchemy import text
-
+    statement = _read_only_statement(sql.query)
     try:
-        # User-supplied SQL is intentional for admin tool. Wait, we should also prevent exposing full SQLite/Postgres error traces.
-        # codeql[py/sql-injection]
-        result = await db.execute(text(sql.query))
-
-        # Handle queries that don't return rows (e.g., INSERT, UPDATE)
-        if not getattr(result, "returns_rows", True):
-            await db.commit()
-            return [{"message": "Query executed successfully, no rows returned"}]
-
-        # Convert rows to a list of dicts
+        await db.execute(text("SET TRANSACTION READ ONLY"))
+        await db.execute(text(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}"))
+        # Executing admin-authored SQL is this endpoint's purpose (admin-only
+        # router, see `dependencies=` above). It is bounded by the three layers
+        # in the module comment, so it can read but never change the database.
+        # deepcode ignore Sqli: admin-only console, read-only at the DB level (READ ONLY transaction, keyword allowlist, unconditional rollback)
+        result = await db.execute(text(statement))
+        # Every allowlisted statement returns rows (SHOW and EXPLAIN included).
         rows = result.fetchall()
-
-        # We need to map row data to dicts using keys() for robustness over _mapping
-        if rows:
-            keys = result.keys()
-            return [dict(zip(keys, row)) for row in rows]
-
-        return []
+        keys = list(result.keys())
+        return [dict(zip(keys, row)) for row in rows]
     except Exception as e:
         logger.exception("SQL execution error")
-        # Return generic 501 with a stripped error message if needed or just generic Error to prevent stack trace exposure
-        error_msg = str(e).split("\n")[0][
-            :200
-        ]  # Provide minimal info for frontend, omit stack traces
+        # First line only, capped: enough for the operator, no stack trace.
+        error_msg = str(e).split("\n")[0][:200]
         raise HTTPException(status_code=501, detail=f"SQL Execution Error: {error_msg}")
+    finally:
+        await db.rollback()
 
 
 def _get_db_url():

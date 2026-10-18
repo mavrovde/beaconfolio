@@ -393,6 +393,20 @@ async def test_weekly_trend_ignores_a_future_dated_event(db_session):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("weeks", [0, -1, engagement.MAX_TREND_WEEKS + 1, 10**9])
+async def test_weekly_trend_refuses_an_unbounded_window(db_session, weeks):
+    """The bucket loop is bounded by the function itself, not only by the route."""
+    with pytest.raises(ValueError, match="weeks must be between 1 and 52"):
+        await engagement.weekly_trend(db_session, weeks)
+
+
+@pytest.mark.asyncio
+async def test_weekly_trend_accepts_the_maximum_window(db_session):
+    trend = await engagement.weekly_trend(db_session, engagement.MAX_TREND_WEEKS)
+    assert len(trend) == engagement.MAX_TREND_WEEKS
+
+
+@pytest.mark.asyncio
 async def test_weekly_trend_windows_out_older_events(db_session):
     await _seed_event(db_session, "cv_request", age_days=60)
     trend = await engagement.weekly_trend(db_session, 2)

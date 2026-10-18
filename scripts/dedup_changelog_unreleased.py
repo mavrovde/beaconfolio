@@ -35,6 +35,11 @@ asked", never "silently dropped something":
     BYTE level (`cmp`, not a line-oriented string compare — that compare was
     blind to exactly the three differences named above).
   * A file with no `[Unreleased]` section is left untouched (exit 0, says so).
+  * It only ever touches a file INSIDE the working directory. The path is an
+    argument an agent types, and the script REWRITES what it names, so a `..`
+    hop, an absolute path elsewhere or a symlink out of the tree is refused
+    (exit 2, file untouched) — checked on the resolved path, not the string.
+    Run it from the repository root, as `/prep-pr` does.
 
 It is idempotent: running it twice changes nothing the second time. Verify after
 a rebase that the branch adds only its OWN entries:
@@ -45,6 +50,7 @@ a rebase that the branch adds only its OWN entries:
 
 import re
 import sys
+from pathlib import Path
 
 # Conventional order for the headings we know; anything else keeps its own
 # position AFTER these, rather than being dropped.
@@ -98,7 +104,21 @@ def rstrip_block(block):
     return out
 
 
-def main(path):
+def confine_to_workdir(raw):
+    """`raw` as a path relative to the working directory, or None if it escapes."""
+    workdir = Path.cwd().resolve()
+    resolved = (workdir / raw).resolve()
+    if not resolved.is_relative_to(workdir):
+        return None
+    return resolved.relative_to(workdir)
+
+
+def main(raw_path):
+    path = confine_to_workdir(raw_path)
+    if path is None:
+        print(f"{raw_path}: refusing — resolves outside the working directory "
+              f"{Path.cwd().resolve()}; run from the repository root", file=sys.stderr)
+        return 2
     # newline="" disables universal-newline translation on BOTH ends. Without
     # it, reading turns CRLF and lone CR into "\n" and the write-back makes that
     # permanent — so a released entry containing a lone \r came back changed,
