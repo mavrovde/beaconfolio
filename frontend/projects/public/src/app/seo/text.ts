@@ -27,7 +27,7 @@ const ENTITY = /&(#x[0-9a-f]+|#\d+|[a-z]+);/gi;
 
 function decodeOnce(value: string): string {
     return value.replace(ENTITY, (match, body: string) => {
-        if (body[0] === '#') {
+        if (body.startsWith('#')) {
             const hex = body[1] === 'x' || body[1] === 'X';
             const code = Number.parseInt(body.slice(hex ? 2 : 1), hex ? 16 : 10);
             // An out-of-range code point would make fromCodePoint throw; such a
@@ -57,13 +57,65 @@ export function decodeEntities(value: string): string {
     return decodeOnce(decodeOnce(value));
 }
 
+/** A `<` opens a tag only when a name, `/`, `!` or `?` follows it (HTML tokenizer rule). */
+const TAG_OPEN = /[a-z/!?]/i;
+
+/** Tags whose end is a text boundary: `<p>a</p><p>b</p>` must read `a b`, not `ab`. */
+const BOUNDARY_TAG = /^<(?:br|\/p|\/div|\/li|\/h[1-6])(?![a-z0-9])/i;
+
+/**
+ * Remove every tag from `value`, writing `boundary` where a block ended.
+ *
+ * A single left-to-right scan rather than a `/<[^>]*>/g` replace (CodeQL
+ * js/incomplete-multi-character-sanitization): one regex pass over
+ * `<scr<script>ipt>` leaves a fresh `<script>` behind, while this scan consumes
+ * EVERY tag opener it meets, so its output never contains a `<` followed by a
+ * tag-name character. An opener with no closing `>` runs to the end of the
+ * input, which is how a browser's tokenizer reads it too. A `<` that cannot
+ * open a tag (`a < b`, `<3`) is text and is kept. Linear in the input.
+ */
+export function stripTags(value: string, boundary = ' '): string {
+    let out = '';
+    // Removing a tag can butt a kept `<` against text that starts with a
+    // tag-name character (`<<b>b>` → `<` + `b>`); such a `<` is dropped
+    // as the text arrives, so the invariant holds for the OUTPUT, not just
+    // for each piece of the input.
+    const append = (text: string) => {
+        if (TAG_OPEN.test(text.charAt(0))) {
+            let end = out.length;
+            while (end > 0 && out[end - 1] === '<') {
+                end -= 1;
+            }
+            out = out.slice(0, end);
+        }
+        out += text;
+    };
+    let index = 0;
+    while (index < value.length) {
+        const open = value.indexOf('<', index);
+        if (open === -1) {
+            append(value.slice(index));
+            break;
+        }
+        if (!TAG_OPEN.test(value.charAt(open + 1))) {
+            append(value.slice(index, open + 1));
+            index = open + 1;
+            continue;
+        }
+        append(value.slice(index, open));
+        const close = value.indexOf('>', open + 1);
+        const end = close === -1 ? value.length : close + 1;
+        if (BOUNDARY_TAG.test(value.slice(open, end))) {
+            append(boundary);
+        }
+        index = end;
+    }
+    return out;
+}
+
 /** Markup → readable text: tags dropped, entities decoded, whitespace collapsed. */
 export function toPlainText(value: string | null | undefined): string {
-    const withoutTags = (value ?? '')
-        // Block-level boundaries become spaces so `<p>a</p><p>b</p>` is `a b`.
-        .replace(/<\s*(br|\/p|\/div|\/li|\/h[1-6])\b[^>]*>/gi, ' ')
-        .replace(/<[^>]*>/g, '');
-    return decodeEntities(withoutTags).replace(/\s+/g, ' ').trim();
+    return decodeEntities(stripTags(value ?? '')).replace(/\s+/g, ' ').trim();
 }
 
 /**
@@ -83,7 +135,47 @@ export function truncateAtWord(value: string, max: number): string {
     const slice = text.slice(0, max + 1);
     const lastSpace = slice.lastIndexOf(' ');
     const cut = lastSpace > 0 ? slice.slice(0, lastSpace) : text.slice(0, max);
-    return cut.replace(/[\s,;:|&–—-]+$/u, '');
+    return trimTrailingSeparators(cut);
+}
+
+/** `before + value` when `value` is non-empty, else `''` — an optional clause of a sentence. */
+export function affix(before: string, value: string): string {
+    return value ? before + value : '';
+}
+
+/** `a` / `an` for an English noun phrase, by its first letter. */
+export function indefiniteArticle(phrase: string): 'a' | 'an' {
+    return /^[aeiou]/i.test(phrase) ? 'an' : 'a';
+}
+
+/**
+ * `url` without its trailing slashes. A scan rather than `/\/+$/`, which an
+ * engine retries from every slash of a long run (Sonar S8786).
+ */
+export function trimTrailingSlashes(url: string): string {
+    let end = url.length;
+    while (end > 0 && url[end - 1] === '/') {
+        end -= 1;
+    }
+    return url.slice(0, end);
+}
+
+/** What a word-boundary cut may leave dangling at the end. */
+const TRAILING_SEPARATORS = new Set([',', ';', ':', '|', '&', '–', '—', '-']);
+
+/**
+ * `value` without its trailing run of whitespace and separators.
+ *
+ * A scan from the end, not an end-anchored `/[…]+$/` (Sonar S8786): an engine
+ * retries such a pattern from every start position inside a long run of the
+ * class, which is quadratic in the run length.
+ */
+function trimTrailingSeparators(value: string): string {
+    let end = value.length;
+    while (end > 0 && (TRAILING_SEPARATORS.has(value[end - 1]) || value[end - 1].trim() === '')) {
+        end -= 1;
+    }
+    return value.slice(0, end);
 }
 
 /**
@@ -110,8 +202,20 @@ export function toMetaDescription(value: string | null | undefined, max = 155): 
     return truncateAtWord(text, max);
 }
 
-/** A trailing `…` / `...` an upstream truncation appended, if any. */
-const TRAILING_ELLIPSIS = /\s*(…|\.\.\.)\s*$/u;
+/**
+ * `value` without a trailing `…` / `...` an upstream truncation appended, or
+ * `null` when it carries none. String operations rather than an end-anchored
+ * `/\s*(…|\.\.\.)\s*$/`, which backtracks over a long whitespace run (Sonar S8786).
+ */
+function withoutTrailingEllipsis(value: string): string | null {
+    const text = value.trimEnd();
+    for (const ellipsis of ['…', '...']) {
+        if (text.endsWith(ellipsis)) {
+            return text.slice(0, -ellipsis.length).trimEnd();
+        }
+    }
+    return null;
+}
 
 /**
  * The headline a post actually has, given the title the API stored.
@@ -125,15 +229,11 @@ const TRAILING_ELLIPSIS = /\s*(…|\.\.\.)\s*$/u;
  */
 export function fullPostTitle(title: string, content?: string | null): string {
     const clean = toPlainText(title);
-    if (!TRAILING_ELLIPSIS.test(clean)) {
+    const stem = withoutTrailingEllipsis(clean);
+    if (stem === null) {
         return clean;
     }
-    const stem = clean.replace(TRAILING_ELLIPSIS, '');
-    const firstLine = decodeEntities(
-        (content ?? '')
-            .replace(/<\s*(br|\/p|\/div|\/h[1-6])\b[^>]*>/gi, '\n')
-            .replace(/<[^>]*>/g, ''),
-    )
+    const firstLine = decodeEntities(stripTags(content ?? '', '\n'))
         .trim()
         .split('\n')[0]
         .replace(/\s+/g, ' ')

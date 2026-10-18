@@ -18,7 +18,7 @@
  */
 
 import { SSR_BACKEND_ORIGIN } from '../ssr-backend-origin';
-import { fullPostTitle } from './text';
+import { fullPostTitle, trimTrailingSlashes } from './text';
 
 /** Injected JSON fetcher, so the render functions are testable without network. */
 export type JsonFetcher = (path: string) => Promise<unknown>;
@@ -170,7 +170,7 @@ export function escapeXml(value: string): string {
 }
 
 export function stripTrailingSlash(url: string): string {
-    return url.trim().replace(/\/+$/, '');
+    return trimTrailingSlashes(url.trim());
 }
 
 /**
@@ -362,7 +362,13 @@ export async function fetchProfileLastmod(fetchJson: JsonFetcher): Promise<strin
 
 /** The newest of the given `YYYY-MM-DD` dates (ISO dates sort as strings). */
 function newest(dates: readonly (string | undefined)[]): string | undefined {
-    return dates.filter((date): date is string => Boolean(date)).sort().pop();
+    let latest: string | undefined;
+    for (const date of dates) {
+        if (date && (latest === undefined || date > latest)) {
+            latest = date;
+        }
+    }
+    return latest;
 }
 
 function staticLastmod(
@@ -378,7 +384,11 @@ function staticLastmod(
 }
 
 function absolute(base: string, url: string): string {
-    return /^https?:\/\//i.test(url) ? url : `${base}${url.startsWith('/') ? '' : '/'}${url}`;
+    if (/^https?:\/\//i.test(url)) {
+        return url;
+    }
+    const separator = url.startsWith('/') ? '' : '/';
+    return `${base}${separator}${url}`;
 }
 
 export function buildSitemapXml(

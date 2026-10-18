@@ -155,11 +155,12 @@ export class SeoService {
         this.noIndex = false;
         this.metaService.updateTag({ name: 'robots', content: INDEXABLE_ROBOTS });
         const pageName = toPlainText(data.title);
-        const fullTitle = data.fullTitle
-            ? data.fullTitle
-            : pageName
-              ? buildPageTitle(pageName, this.site.ownerName)
-              : this.baseTitle;
+        let fullTitle = this.baseTitle;
+        if (data.fullTitle) {
+            fullTitle = data.fullTitle;
+        } else if (pageName) {
+            fullTitle = buildPageTitle(pageName, this.site.ownerName);
+        }
         // The share title is the page's OWN name, untruncated: the brand
         // travels in og:site_name, and a social card has room a SERP lacks.
         const socialTitle = data.fullTitle || pageName || fullTitle;

@@ -1,4 +1,4 @@
-import { decodeEntities, toPlainText, truncateAtWord } from './text';
+import { affix, decodeEntities, indefiniteArticle, toPlainText, truncateAtWord } from './text';
 
 /**
  * The owner's search identity — title, description, keywords, short role —
@@ -45,12 +45,41 @@ export interface IdentityOverrides {
  * English and German, because the bundled demo profiles ship both; matched as
  * whole words, case-insensitively.
  */
-const ROLE_WORDS =
-    /\b(engineer|architect|developer|programmer|manager|lead|leader|consultant|scientist|designer|analyst|administrator|specialist|researcher|founder|co-founder|director|head|officer|owner|cto|ceo|cio|vp|freelancer|contractor|entwickler(in)?|ingenieur(in)?|architekt(in)?|berater(in)?|leiter(in)?|gr[üu]nder(in)?)\b/i;
+const ROLE_WORDS = new Set(
+    [
+        'engineer', 'architect', 'developer', 'programmer', 'manager', 'lead', 'leader',
+        'consultant', 'scientist', 'designer', 'analyst', 'administrator', 'specialist',
+        'researcher', 'founder', 'director', 'head', 'officer', 'owner', 'cto', 'ceo', 'cio',
+        'vp', 'freelancer', 'contractor',
+        // German, each with its feminine `-in` form.
+        ...['entwickler', 'ingenieur', 'architekt', 'berater', 'leiter', 'gründer', 'grunder'].flatMap(
+            (word) => [word, `${word}in`],
+        ),
+    ],
+);
+
+/**
+ * Whether `segment` contains a role word as a whole word. A word lookup, not
+ * one 30-way alternation (Sonar S5843); `co-founder` splits into `co` +
+ * `founder`, so it still counts.
+ */
+function isRole(segment: string): boolean {
+    return segment
+        .toLowerCase()
+        .split(/[^\p{L}\p{N}]/u)
+        .some((word) => ROLE_WORDS.has(word));
+}
+
+/** The text before the first ` <separator> ` (separator surrounded by whitespace). */
+function beforeSpaced(segment: string, separators: RegExp): string {
+    // `\s<sep>\s` matches one character either side, so a single-pass split
+    // cannot backtrack (Sonar S8786); the trim removes the rest of the run.
+    return segment.split(separators)[0].trim();
+}
 
 /** Strip `@ Employer` / ` at Employer` — the role, not where it is held. */
 function stripEmployer(segment: string): string {
-    return segment.split('@')[0].split(/\s+at\s+/i)[0].trim();
+    return beforeSpaced(segment.split('@')[0], /\sat\s/i);
 }
 
 /**
@@ -65,11 +94,11 @@ function stripEmployer(segment: string): string {
 export function extractRoles(headline: string | undefined): string[] {
     const segments = decodeEntities(headline ?? '')
         .split('|')
-        .map((segment) => stripEmployer(segment.split(/\s+[-–—]\s+/)[0]))
+        .map((segment) => stripEmployer(beforeSpaced(segment, /\s[-–—]\s/)))
         .map((segment) => segment.replace(/\s+/g, ' ').trim());
     const roles: string[] = [];
     segments.forEach((segment, index) => {
-        if (!segment || (index > 0 && !ROLE_WORDS.test(segment))) {
+        if (!segment || (index > 0 && !isRole(segment))) {
             return;
         }
         if (!roles.some((role) => role.toLowerCase() === segment.toLowerCase())) {
@@ -104,7 +133,7 @@ export function locality(location: string | undefined): string {
 /** `"Aachen, North Rhine-Westphalia, Germany"` → `"Aachen, Germany"`. */
 export function shortLocation(location: string | undefined): string {
     const parts = locationParts(location);
-    return parts.length > 1 ? `${parts[0]}, ${parts[parts.length - 1]}` : (parts[0] ?? '');
+    return parts.length > 1 ? `${parts[0]}, ${parts.at(-1)}` : (parts[0] ?? '');
 }
 
 function escapeRegExp(value: string): string {
@@ -113,8 +142,27 @@ function escapeRegExp(value: string): string {
 
 /** `"Retrieval-Augmented Generation (RAG)"` → `["Retrieval-Augmented Generation", "RAG"]`. */
 function skillTerms(skill: string): string[] {
-    const match = /^(.*?)\s*\(([^)]+)\)\s*$/.exec(skill);
-    return (match ? [match[1], match[2]] : [skill]).map((term) => term.trim()).filter(Boolean);
+    return splitTrailingParenthetical(skill)
+        .map((term) => term.trim())
+        .filter(Boolean);
+}
+
+/**
+ * `"Main (qualifier)"` → `["Main", "qualifier"]`; anything else → `[skill]`.
+ * The qualifier is the LAST parenthetical with no `)` inside it, opened at its
+ * first `(`. String operations rather than `/^(.*?)\s*\(([^)]+)\)\s*$/`, whose
+ * lazy prefix and whitespace runs backtrack (Sonar S8786).
+ */
+function splitTrailingParenthetical(skill: string): string[] {
+    const text = skill.trimEnd();
+    if (!text.endsWith(')')) {
+        return [skill];
+    }
+    const open = text.indexOf('(', text.lastIndexOf(')', text.length - 2) + 1);
+    if (open === -1 || open >= text.length - 2) {
+        return [skill];
+    }
+    return [text.slice(0, open), text.slice(open + 1, -1)];
 }
 
 /**
@@ -130,7 +178,7 @@ export function skillLabel(skill: string): string {
 
 function mentions(text: string, skill: string): boolean {
     return skillTerms(skill).some((term) =>
-        new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(term)}($|[^\\p{L}\\p{N}])`, 'iu').test(text),
+        new RegExp(String.raw`(^|[^\p{L}\p{N}])${escapeRegExp(term)}($|[^\p{L}\p{N}])`, 'iu').test(text),
     );
 }
 
@@ -193,7 +241,7 @@ export function buildHomeTitle(input: IdentityInput, overrides: IdentityOverride
         role && `${name} - ${role}`,
     ].filter((candidate): candidate is string => Boolean(candidate));
     const fit = candidates.find((candidate) => candidate.length <= MAX_TITLE_LENGTH);
-    return fit ?? truncateAtWord(candidates[candidates.length - 1] ?? name, MAX_TITLE_LENGTH);
+    return fit ?? truncateAtWord(candidates.at(-1) ?? name, MAX_TITLE_LENGTH);
 }
 
 /**
@@ -213,7 +261,7 @@ export function buildPageTitle(page: string, ownerName: string): string {
 const PHRASES = {
     en: {
         is: (name: string, roles: string, where: string) =>
-            `${name} is ${/^[aeiou]/i.test(roles) ? 'an' : 'a'} ${roles}${where ? ` based in ${where}` : ''}.`,
+            `${name} is ${indefiniteArticle(roles)} ${roles}${affix(' based in ', where)}.`,
         skills: (list: string) => `Specialises in ${list}.`,
         and: 'and',
         availability: {
@@ -223,7 +271,7 @@ const PHRASES = {
     },
     de: {
         is: (name: string, roles: string, where: string) =>
-            `${name} ist ${roles}${where ? ` in ${where}` : ''}.`,
+            `${name} ist ${roles}${affix(' in ', where)}.`,
         skills: (list: string) => `Schwerpunkte: ${list}.`,
         and: 'und',
         availability: {
@@ -239,13 +287,30 @@ export function phrasesFor(lang: string | undefined) {
 
 function joinList(items: readonly string[], and: string): string {
     return items.length > 1
-        ? `${items.slice(0, -1).join(', ')} ${and} ${items[items.length - 1]}`
+        ? `${items.slice(0, -1).join(', ')} ${and} ${items.at(-1)}`
         : items.join('');
 }
 
 /** Split plain text into sentences (kept with their terminal punctuation). */
 function sentences(text: string): string[] {
-    return text.match(/[^.!?]+[.!?]+(?=\s|$)/g)?.map((s) => s.trim()) ?? (text ? [text] : []);
+    // A sentence ends at a run of `.`/`!`/`?` followed by whitespace or the
+    // end; a scan rather than `/[^.!?]+[.!?]+(?=\s|$)/g`, which backtracks
+    // across every `.` that is NOT followed by whitespace (Sonar S8786), and
+    // which dropped the "3." of "3.5 years." (the match restarted after it).
+    const found: string[] = [];
+    let start = 0;
+    for (let index = 0; index < text.length; index += 1) {
+        const atBoundary = index + 1 === text.length || text[index + 1].trim() === '';
+        if ('.!?'.includes(text[index]) && atBoundary) {
+            // Never empty: the slice ends with the punctuation at `index`.
+            found.push(text.slice(start, index + 1).trim());
+            start = index + 1;
+        }
+    }
+    if (found.length) {
+        return found;
+    }
+    return text ? [text] : [];
 }
 
 /**

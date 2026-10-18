@@ -249,6 +249,22 @@ test.describe('SEO & SSR Verification', () => {
         expect(await (await request.get('/llms.txt')).text()).toContain(`(${site_url}/llms-full.txt)`);
     });
 
+    // 5c. The generated files carry backend text (profile, post titles); each
+    // declares a non-HTML type AND forbids sniffing, through the real proxy.
+    for (const [path, type] of [
+        ['/robots.txt', 'text/plain'],
+        ['/llms.txt', 'text/plain'],
+        ['/llms-full.txt', 'text/plain'],
+        ['/sitemap.xml', 'application/xml'],
+    ] as const) {
+        test(`should serve ${path} as ${type} with nosniff`, async ({ request }) => {
+            const response = await request.get(path);
+            expect(response.ok()).toBe(true);
+            expect(response.headers()['content-type']).toContain(type);
+            expect(response.headers()['x-content-type-options']).toBe('nosniff');
+        });
+    }
+
     // 6. The OG image must actually exist — it did not before #71
     test('should serve the referenced Open Graph image', async ({ request }) => {
         const response = await request.get('/assets/og-image.png');

@@ -12,6 +12,7 @@ import { SeoService } from '../../services/seo.service';
 import { SiteConfigService } from '../../services/site-config.service';
 import { rolesLabel } from '../../seo/identity';
 import { buildBreadcrumbs, toGraph } from '../../seo/graph';
+import { affix } from '../../seo/text';
 
 /**
  * The Projects showcase (#92) — a section on the home page and the `/projects`
@@ -60,7 +61,7 @@ export class ProjectsComponent implements OnInit {
                 const role = rolesLabel(site.ownerHeadline);
                 this.seoService.updateSeo({
                     title: 'Projects',
-                    description: `Projects and case studies by ${site.ownerName}${role ? `, ${role}` : ''}.`,
+                    description: `Projects and case studies by ${site.ownerName}${affix(', ', role)}.`,
                     url: '/projects',
                 });
                 this.seoService.setJsonLd(

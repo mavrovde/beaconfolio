@@ -8,6 +8,7 @@ import express from 'express';
 import { join } from 'node:path';
 import { indexNowKeyPath, resolveIndexNowKey } from './app/seo/indexnow';
 import { LLMS_FULL_PATH, renderLlmsFullTxt, renderLlmsTxt } from './app/seo/llms-txt';
+import { PLAIN_TEXT, XML, sendGeneratedFile } from './app/seo/send-text';
 import {
   createJsonFetcher,
   renderRobotsTxt,
@@ -93,7 +94,7 @@ const fetchJson = createJsonFetcher();
 
 app.get('/robots.txt', (req, res, next) => {
   renderRobotsTxt(fetchJson, requestOrigin(req.headers, req.protocol))
-    .then((body) => res.type('text/plain; charset=utf-8').send(body))
+    .then((body) => sendGeneratedFile(res, PLAIN_TEXT, body))
     .catch(next);
 });
 
@@ -102,13 +103,13 @@ app.get('/llms.txt', (req, res, next) => {
     // Markdown by content, `.txt` by convention (llmstxt.org). `text/plain`
     // keeps it readable in a browser tab, which is what agents and humans both
     // do with it first.
-    .then((body) => res.type('text/plain; charset=utf-8').send(body))
+    .then((body) => sendGeneratedFile(res, PLAIN_TEXT, body))
     .catch(next);
 });
 
 app.get(LLMS_FULL_PATH, (req, res, next) => {
   renderLlmsFullTxt(fetchJson, requestOrigin(req.headers, req.protocol))
-    .then((body) => res.type('text/plain; charset=utf-8').send(body))
+    .then((body) => sendGeneratedFile(res, PLAIN_TEXT, body))
     .catch(next);
 });
 
@@ -124,13 +125,13 @@ if (indexNow.warning) {
 }
 if (indexNow.key) {
   app.get(indexNowKeyPath(indexNow.key), (_req, res) => {
-    res.type('text/plain; charset=utf-8').send(indexNow.key);
+    sendGeneratedFile(res, PLAIN_TEXT, indexNow.key);
   });
 }
 
 app.get('/sitemap.xml', (req, res, next) => {
   renderSitemapXml(fetchJson, requestOrigin(req.headers, req.protocol))
-    .then((body) => res.type('application/xml; charset=utf-8').send(body))
+    .then((body) => sendGeneratedFile(res, XML, body))
     .catch(next);
 });
 

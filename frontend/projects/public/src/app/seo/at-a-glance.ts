@@ -1,7 +1,7 @@
 import { Profile } from '../services/profile.service';
 import { phrasesFor, rankSkills, rolesLabel, shortLocation, skillLabel } from './identity';
 import { buildCredentials, buildWorksFor } from './person-schema';
-import { toPlainText } from './text';
+import { affix, indefiniteArticle, toPlainText } from './text';
 
 /**
  * The "At a glance" block: a short, VISIBLE, server-rendered summary plus
@@ -38,7 +38,7 @@ const TEXT = {
         heading: 'At a glance',
         who: (name: string) => `Who is ${name}?`,
         whoAnswer: (name: string, roles: string, employer: string, where: string) =>
-            `${name} is ${/^[aeiou]/i.test(roles) ? 'an' : 'a'} ${roles}${employer ? ` at ${employer}` : ''}${where ? `, based in ${where}` : ''}.`,
+            `${name} is ${indefiniteArticle(roles)} ${roles}${affix(' at ', employer)}${affix(', based in ', where)}.`,
         focus: (name: string) => `What does ${name} specialise in?`,
         certs: (name: string) => `Which certifications does ${name} hold?`,
         where: (name: string) => `Where is ${name} based?`,
@@ -54,7 +54,7 @@ const TEXT = {
         heading: 'Auf einen Blick',
         who: (name: string) => `Wer ist ${name}?`,
         whoAnswer: (name: string, roles: string, employer: string, where: string) =>
-            `${name} ist ${roles}${employer ? ` bei ${employer}` : ''}${where ? `, ansässig in ${where}` : ''}.`,
+            `${name} ist ${roles}${affix(' bei ', employer)}${affix(', ansässig in ', where)}.`,
         focus: (name: string) => `Worauf ist ${name} spezialisiert?`,
         certs: (name: string) => `Welche Zertifizierungen hat ${name}?`,
         where: (name: string) => `Wo ist ${name} ansässig?`,
@@ -70,7 +70,7 @@ const TEXT = {
 
 function list(items: readonly string[], and: string): string {
     return items.length > 1
-        ? `${items.slice(0, -1).join(', ')} ${and} ${items[items.length - 1]}`
+        ? `${items.slice(0, -1).join(', ')} ${and} ${items.at(-1)}`
         : items.join('');
 }
 

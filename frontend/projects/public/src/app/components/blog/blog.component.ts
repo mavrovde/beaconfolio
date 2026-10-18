@@ -8,6 +8,7 @@ import { SeoService } from '../../services/seo.service';
 import { SiteConfigService, DEFAULT_SITE_CONFIG, SiteConfig } from '../../services/site-config.service';
 import { buildKeywords, rolesLabel } from '../../seo/identity';
 import { buildBreadcrumbs, toGraph } from '../../seo/graph';
+import { affix } from '../../seo/text';
 
 /** Backend sort key for "newest original publication first" (posted_at ?? created_at). */
 export const PUBLISHED_ORDER = 'published_at';
@@ -90,7 +91,7 @@ export class BlogComponent implements OnInit {
         const role = rolesLabel(site.ownerHeadline);
         this.seoService.updateSeo({
           title: 'Blog',
-          description: `Articles and professional reflections by ${site.ownerName}${role ? `, ${role}` : ''}.`,
+          description: `Articles and professional reflections by ${site.ownerName}${affix(', ', role)}.`,
           url: '/blog',
           keywords: ['Blog', site.ownerName, buildKeywords({ name: site.ownerName, headline: site.ownerHeadline }, {})]
             .filter(Boolean)

@@ -1,7 +1,14 @@
 import { BlogPost } from '@beaconfolio/shared';
 import { SiteConfig } from '../services/site-config.service';
 import { personId } from './person-schema';
-import { fullPostTitle, MAX_RECOVERED_TITLE, toMetaDescription, toPlainText, truncateAtWord } from './text';
+import {
+    fullPostTitle,
+    MAX_RECOVERED_TITLE,
+    toMetaDescription,
+    toPlainText,
+    trimTrailingSlashes,
+    truncateAtWord,
+} from './text';
 
 /**
  * The page-level schema.org nodes and the ONE `@graph` envelope they ship in.
@@ -38,11 +45,11 @@ export function toGraph(nodes: readonly (JsonLdNode | undefined)[]): JsonLdGraph
 }
 
 function base(site: SiteConfig): string {
-    return site.siteUrl.replace(/\/+$/, '');
+    return trimTrailingSlashes(site.siteUrl);
 }
 
 export function websiteId(siteUrl: string): string {
-    return `${siteUrl.replace(/\/+$/, '')}/#website`;
+    return `${trimTrailingSlashes(siteUrl)}/#website`;
 }
 
 /** The `WebSite` node; `undefined` without a site URL (an `@id` must be absolute). */
@@ -127,7 +134,11 @@ export function absoluteUrl(site: SiteConfig, path: string | undefined | null): 
         return value;
     }
     const url = base(site);
-    return url ? `${url}${value.startsWith('/') ? '' : '/'}${value}` : '';
+    if (!url) {
+        return '';
+    }
+    const separator = value.startsWith('/') ? '' : '/';
+    return `${url}${separator}${value}`;
 }
 
 /**

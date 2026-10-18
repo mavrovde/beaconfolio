@@ -99,6 +99,16 @@ All notable changes to this project will be documented in this file.
   - **`/llms-full.txt`** — the whole public profile and excerpts of the 20 newest posts as clean
     Markdown, linked from `/llms.txt`; `llms.txt` post titles no longer carry the importer's `…`
     and are dated by publication.
+  - **Hardening from the PR's CodeQL / SonarCloud findings.** Tag stripping for plain text
+    (`stripTags` in `seo/text.ts`) is a single linear scan instead of one `/<[^>]*>/g` pass
+    (CodeQL `js/incomplete-multi-character-sanitization`): its output never holds a `<` followed
+    by a tag-name character, including a kept `<` that a removed tag would butt against text
+    (`<<b>b>`). The generated `robots.txt`, `llms.txt`, `llms-full.txt`, `sitemap.xml` and the
+    IndexNow key file now send `X-Content-Type-Options: nosniff` beside their explicit non-HTML
+    type (neither the proxy nor the app sent it). End-anchored and nested-quantifier regexes Sonar
+    measured as super-linear (S8786/S5843) are string scans; the sitemap's newest-date pick no
+    longer relies on a default `sort()` (S2871). A side effect of the sentence scan: "3.5 years."
+    stays one sentence (the regex dropped the "3.").
   - **IndexNow key file:** with `INDEXNOW_KEY` set (per deployment, forwarded to the frontend
     container by both compose files; 8–128 chars `[A-Za-z0-9-]`), the SSR server serves
     `GET /{key}.txt` → the key as `text/plain`. Unset = no route; invalid = no route + a startup

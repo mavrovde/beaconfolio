@@ -40,9 +40,9 @@ import { AtAGlance, buildAtAGlance } from '../../seo/at-a-glance';
     `,
 })
 export class AtAGlanceComponent implements OnChanges {
-    private languageService = inject(LanguageService);
-    private siteConfig = inject(SiteConfigService);
-    private profile$ = new BehaviorSubject<Profile | null>(null);
+    private readonly languageService = inject(LanguageService);
+    private readonly siteConfig = inject(SiteConfigService);
+    private readonly profile$ = new BehaviorSubject<Profile | null>(null);
 
     @Input() profile: Profile | null = null;
 

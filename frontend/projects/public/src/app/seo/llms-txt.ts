@@ -175,6 +175,94 @@ function heading(level: 2 | 3, text: string): string {
     return `${'#'.repeat(level)} ${text.replace(/\s+/g, ' ').trim()}`;
 }
 
+/** `parts`, each as plain text, joined with an em dash — empties dropped. */
+function joinPlain(parts: readonly (string | null | undefined)[]): string {
+    return parts
+        .map((part) => toPlainText(part))
+        .filter(Boolean)
+        .join(' — ');
+}
+
+/** A `## title` section; nothing at all when `body` is empty. */
+function section(title: string, body: readonly string[]): string[] {
+    return body.length ? [heading(2, title), '', ...body, ''] : [];
+}
+
+function headerLines(site: SsrSiteConfig, profile: Profile | null, base: string): string[] {
+    const name = toPlainText(profile?.name) || site.ownerName || site.siteName || 'Portfolio';
+    const headline = toPlainText(profile?.headline) || site.ownerHeadline;
+    const availability = AVAILABILITY_NOTE[site.availability];
+    const facts = [
+        profile?.location ? `- Location: ${toPlainText(profile.location)}` : '',
+        availability ? `- Availability: ${availability}` : '',
+        `- Website: ${base}/`,
+        `- Structured profile (JSON Resume): ${base}${RESUME_PATH}`,
+        `- Contact: ${base}/#contact`,
+    ].filter(Boolean);
+    return [`# ${name}`, '', ...(headline ? [`> ${headline}`, ''] : []), ...facts, ''];
+}
+
+function experienceLines(experience: Profile['experience'] | undefined): string[] {
+    const lines: string[] = [];
+    for (const role of experience ?? []) {
+        lines.push(heading(3, joinPlain([role.title, role.company]) || 'Role'));
+        const period = [role.startDate, role.endDate]
+            .map((d) => toPlainText(d))
+            .filter(Boolean)
+            .join(' – ');
+        const meta = [period, toPlainText(role.location)].filter(Boolean).join(' · ');
+        if (meta) {
+            lines.push('', meta);
+        }
+        const description = decodeEntities(role.description ?? '').trim();
+        if (description) {
+            lines.push('', description);
+        }
+        lines.push('');
+    }
+    // `section` closes with its own blank line; drop the last role's.
+    return lines.slice(0, -1);
+}
+
+function certificationLines(certifications: Profile['certifications'] | undefined): string[] {
+    return (certifications ?? []).map((cert) => {
+        const label = joinPlain([cert.name, cert.issuer, cert.issueDate ?? cert.date]);
+        return cert.credentialUrl ? link(label, cert.credentialUrl) : `- ${label}`;
+    });
+}
+
+/**
+ * The "Recent posts" section. `offset` is the length of the file before it
+ * (joined text plus the joining newline), so the whole-file bound
+ * `LLMS_FULL_MAX_CHARS` is measured on the file as it will be served.
+ */
+function postLines(posts: readonly SitemapPost[], base: string, offset: number): string[] {
+    if (!posts.length) {
+        return [];
+    }
+    const lines: string[] = [heading(2, 'Recent posts'), ''];
+    for (const post of posts.slice(0, LLMS_FULL_MAX_POSTS)) {
+        const url = `${base}/blog/${post.slug}`;
+        const title = post.title || post.slug;
+        const date = post.published?.slice(0, 10);
+        const excerpt = truncateAtWord(toPlainText(post.content || post.summary), LLMS_FULL_EXCERPT);
+        const block = [
+            heading(3, title),
+            '',
+            [date, post.language, url].filter(Boolean).join(' · '),
+            ...(excerpt ? ['', excerpt] : []),
+            '',
+        ];
+        if (offset + lines.join('\n').length + block.join('\n').length > LLMS_FULL_MAX_CHARS) {
+            lines.push(link(title, url, date));
+            continue;
+        }
+        lines.push(...block);
+    }
+    lines.push(link('All posts', `${base}/blog`, 'the complete index'), '');
+    return lines;
+}
+
 /**
  * `/llms-full.txt` — the whole public profile as clean Markdown, plus excerpts
  * of the newest posts, generated from the SAME public profile view and post
@@ -189,102 +277,24 @@ export function buildLlmsFullTxt(
     posts: readonly SitemapPost[],
 ): string {
     const base = stripTrailingSlash(site.siteUrl);
-    const name = toPlainText(profile?.name) || site.ownerName || site.siteName || 'Portfolio';
-    const lines: string[] = [`# ${name}`, ''];
-    const headline = toPlainText(profile?.headline) || site.ownerHeadline;
-    if (headline) {
-        lines.push(`> ${headline}`, '');
-    }
-    const facts = [
-        profile?.location ? `- Location: ${toPlainText(profile.location)}` : '',
-        AVAILABILITY_NOTE[site.availability] ? `- Availability: ${AVAILABILITY_NOTE[site.availability]}` : '',
-        `- Website: ${base}/`,
-        `- Structured profile (JSON Resume): ${base}${RESUME_PATH}`,
-        `- Contact: ${base}/#contact`,
-    ].filter(Boolean);
-    lines.push(...facts, '');
-
     const about = decodeEntities(profile?.about ?? '').trim();
-    if (about) {
-        lines.push(heading(2, 'Summary'), '', about, '');
-    }
-
-    const experience = profile?.experience ?? [];
-    if (experience.length) {
-        lines.push(heading(2, 'Experience'), '');
-        for (const role of experience) {
-            const title = [toPlainText(role.title), toPlainText(role.company)].filter(Boolean).join(' — ');
-            lines.push(heading(3, title || 'Role'));
-            const period = [role.startDate, role.endDate].map((d) => toPlainText(d)).filter(Boolean).join(' – ');
-            const meta = [period, toPlainText(role.location)].filter(Boolean).join(' · ');
-            if (meta) {
-                lines.push('', meta);
-            }
-            const description = decodeEntities(role.description ?? '').trim();
-            if (description) {
-                lines.push('', description);
-            }
-            lines.push('');
-        }
-    }
-
     const skills = (profile?.skills ?? []).map((skill) => toPlainText(skill)).filter(Boolean);
-    if (skills.length) {
-        lines.push(heading(2, 'Skills'), '', skills.join(', '), '');
-    }
-
-    const certifications = profile?.certifications ?? [];
-    if (certifications.length) {
-        lines.push(heading(2, 'Certifications'), '');
-        for (const cert of certifications) {
-            const date = toPlainText(cert.issueDate ?? cert.date);
-            const label = [toPlainText(cert.name), toPlainText(cert.issuer), date].filter(Boolean).join(' — ');
-            lines.push(cert.credentialUrl ? link(label, cert.credentialUrl) : `- ${label}`);
-        }
-        lines.push('');
-    }
-
-    const education = profile?.education ?? [];
-    if (education.length) {
-        lines.push(heading(2, 'Education'), '');
-        for (const entry of education) {
-            lines.push(`- ${[entry.school, entry.degree, entry.years].map((v) => toPlainText(v)).filter(Boolean).join(' — ')}`);
-        }
-        lines.push('');
-    }
-
-    const languages = profile?.languages ?? [];
-    if (languages.length) {
-        lines.push(heading(2, 'Languages'), '');
-        for (const language of languages) {
-            lines.push(`- ${[language.name, language.proficiency].map((v) => toPlainText(v)).filter(Boolean).join(' — ')}`);
-        }
-        lines.push('');
-    }
-
-    if (posts.length) {
-        lines.push(heading(2, 'Recent posts'), '');
-        for (const post of posts.slice(0, LLMS_FULL_MAX_POSTS)) {
-            const url = `${base}/blog/${post.slug}`;
-            const title = post.title || post.slug;
-            const excerpt = truncateAtWord(toPlainText(post.content || post.summary), LLMS_FULL_EXCERPT);
-            const block = [
-                heading(3, title),
-                '',
-                [post.published?.slice(0, 10), post.language, url].filter(Boolean).join(' · '),
-                ...(excerpt ? ['', excerpt] : []),
-                '',
-            ];
-            if (lines.join('\n').length + block.join('\n').length > LLMS_FULL_MAX_CHARS) {
-                lines.push(link(title, url, post.published?.slice(0, 10)));
-                continue;
-            }
-            lines.push(...block);
-        }
-        lines.push(link('All posts', `${base}/blog`, 'the complete index'), '');
-    }
-
-    return lines.join('\n');
+    const education = (profile?.education ?? []).map(
+        (entry) => `- ${joinPlain([entry.school, entry.degree, entry.years])}`,
+    );
+    const languages = (profile?.languages ?? []).map(
+        (language) => `- ${joinPlain([language.name, language.proficiency])}`,
+    );
+    const lines = [
+        ...headerLines(site, profile, base),
+        ...section('Summary', about ? [about] : []),
+        ...section('Experience', experienceLines(profile?.experience)),
+        ...section('Skills', skills.length ? [skills.join(', ')] : []),
+        ...section('Certifications', certificationLines(profile?.certifications)),
+        ...section('Education', education),
+        ...section('Languages', languages),
+    ];
+    return [...lines, ...postLines(posts, base, lines.join('\n').length + 1)].join('\n');
 }
 
 /** The active public profile (English), or null — the file still renders. */

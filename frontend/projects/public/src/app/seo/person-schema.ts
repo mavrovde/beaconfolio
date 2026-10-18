@@ -1,7 +1,7 @@
 import { Certification, Education, Experience, Profile } from '../services/profile.service';
 import { SiteConfig } from '../services/site-config.service';
 import { MAX_SCHEMA_SKILLS, primaryRole, rankSkills } from './identity';
-import { decodeEntities, toPlainText } from './text';
+import { decodeEntities, toPlainText, trimTrailingSlashes } from './text';
 
 /**
  * schema.org `Person` structured data for the home page (#71).
@@ -94,7 +94,7 @@ export const PROFILE_PHOTO_PATH = '/api/app/profile/photo';
 
 /** `https://site` → `https://site/#person` — ONE identifier for every page's graph. */
 export function personId(siteUrl: string): string {
-    return `${siteUrl.replace(/\/+$/, '')}/#person`;
+    return `${trimTrailingSlashes(siteUrl)}/#person`;
 }
 
 /**
@@ -197,10 +197,7 @@ export function buildSameAs(urls: readonly (string | undefined)[]): string[] | u
         if (!/^https:\/\//i.test(url)) {
             continue;
         }
-        const key = url
-            .toLowerCase()
-            .replace(/^https:\/\/(www\.)?/, '')
-            .replace(/\/+$/, '');
+        const key = trimTrailingSlashes(url.toLowerCase().replace(/^https:\/\/(www\.)?/, ''));
         if (!seen.has(key)) {
             seen.add(key);
             result.push(url);
@@ -269,7 +266,7 @@ export function buildPersonSchema(profile: Profile, site: SiteConfig): PersonSch
         '@type': 'Person',
         name: toPlainText(profile.name) || site.ownerName,
     };
-    const siteUrl = site.siteUrl.replace(/\/+$/, '');
+    const siteUrl = trimTrailingSlashes(site.siteUrl);
     // The TOP skills, not all of them: the headline/about decide what matters
     // (see `rankSkills`), and 77 undifferentiated terms dilute every one.
     const skills = rankSkills(profile.skills, profile.headline, profile.about).slice(
