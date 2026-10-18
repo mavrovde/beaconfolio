@@ -70,6 +70,7 @@
             <!-- Fallback URL input if needed, or hidden -->
             <details class="text-xs text-terminal-dim">
               <summary class="cursor-pointer hover:text-secondary">Advanced: Use External URL</summary>
+              <label for="image_url" class="sr-only">External image URL</label>
               <input type="text" id="image_url" name="image_url" [(ngModel)]="post.image_url" [disabled]="saving"
                 placeholder="https://example.com/image.jpg"
                 class="mt-2 w-full bg-black border border-terminal-dim rounded px-2 py-1 text-primary focus:border-primary outline-none" />

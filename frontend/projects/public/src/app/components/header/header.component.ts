@@ -97,11 +97,11 @@ export class HeaderComponent {
 
   scrollToYear(year: number): void {
     if (!isPlatformBrowser(this.platformId)) {
-      this.router.navigate(['/'], { fragment: 'experience' });
+      void this.router.navigate(['/'], { fragment: 'experience' });
       return;
     }
 
-    this.router.navigate(['/'], { fragment: 'experience' }).then(() => {
+    void this.router.navigate(['/'], { fragment: 'experience' }).then(() => {
       setTimeout(() => this._scrollToYearElement(year), 500);
     });
   }
@@ -127,11 +127,11 @@ export class HeaderComponent {
   scrollTo(href: string, event: Event) {
     event.preventDefault();
     if (href.startsWith('/')) {
-      this.router.navigate([href]);
+      void this.router.navigate([href]);
       return;
     }
 
-    this.router.navigate(['/'], { fragment: href.substring(1) });
+    void this.router.navigate(['/'], { fragment: href.substring(1) });
   }
 
   switchLanguage(lang: Language): void {

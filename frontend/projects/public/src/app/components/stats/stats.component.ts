@@ -130,8 +130,10 @@ export class SystemStatsComponent implements OnInit, OnDestroy {
   private simulateMemoryFluctuation(): void {
     if (isPlatformBrowser(this.platformId)) {
       setInterval(() => {
-        // Fluctuate between 20MB and 60MB
-        this.memoryUsage = Math.floor(Math.random() * (60 - 20 + 1) + 20);
+        // Fluctuate between 20MB and 60MB. A decorative readout, but drawn
+        // from the Web Crypto CSPRNG rather than `Math.random` (Sonar S2245)
+        // — it costs nothing and leaves no PRNG call for a reviewer to clear.
+        this.memoryUsage = 20 + (crypto.getRandomValues(new Uint32Array(1))[0] % (60 - 20 + 1));
         this.cdr.markForCheck(); // zoneless: repaint the memory display
       }, 5000);
     }

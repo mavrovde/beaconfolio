@@ -130,7 +130,7 @@ export class LlmComponent implements OnInit, AfterViewChecked {
       return;
     }
     if (prompt.toLowerCase() === 'exit' || prompt.toLowerCase() === 'quit') {
-      this.router.navigate(['/']);
+      void this.router.navigate(['/']);
       return;
     }
 

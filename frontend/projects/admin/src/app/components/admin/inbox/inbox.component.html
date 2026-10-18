@@ -46,7 +46,9 @@
         </thead>
         <tbody class="divide-y">
           @for (i of items; track i) {
-            <tr (click)="toggleExpand(i.id)" class="cursor-pointer hover:bg-gray-50"
+            <!-- The row expands from the keyboard too (Enter, once focused). -->
+            <tr (click)="toggleExpand(i.id)" (keyup.enter)="toggleExpand(i.id)" tabindex="0"
+              [attr.aria-expanded]="expandedId === i.id" class="cursor-pointer hover:bg-gray-50"
               [attr.data-testid]="'row-' + i.id">
               <td class="px-4 py-2 text-sm whitespace-nowrap">{{ i.created_at | date: 'medium' }}</td>
               <td class="px-4 py-2 text-sm">
@@ -55,7 +57,9 @@
               </td>
               <td class="px-4 py-2 text-sm">{{ i.company || '—' }}</td>
               <td class="px-4 py-2 text-sm"><span class="rounded bg-gray-100 px-2 py-1">{{ i.source }}</span></td>
-              <td class="px-4 py-2 text-sm" (click)="$event.stopPropagation()">
+              <!-- Neither a click nor an Enter on the status select may toggle the row. -->
+              <td class="px-4 py-2 text-sm" (click)="$event.stopPropagation()"
+                (keyup.enter)="$event.stopPropagation()">
                 <select [ngModel]="i.status" (ngModelChange)="setStatus(i, $event)"
                   [attr.aria-label]="'status of ' + i.name" class="border rounded px-2 py-1 bg-white">
                   @for (s of statuses; track s) {

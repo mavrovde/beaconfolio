@@ -139,7 +139,7 @@ export class BlogComponent implements OnInit {
 
     // Use native fetch on browser to bypass Angular HttpClient SSR hydration issues
     if (isPlatformBrowser(this.platformId)) {
-      this.loadMoreWithFetch(apiPage, apiPageSize);
+      void this.loadMoreWithFetch(apiPage, apiPageSize);
       return;
     }
 
@@ -285,7 +285,7 @@ export class BlogComponent implements OnInit {
 
   toggleOrNavigate(post: BlogPost) {
     if (this.isExpanded(post.id)) {
-      this.router.navigate(['/blog', post.slug]);
+      void this.router.navigate(['/blog', post.slug]);
     } else {
       this.togglePost(post.id);
     }

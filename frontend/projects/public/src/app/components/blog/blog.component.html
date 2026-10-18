@@ -23,7 +23,8 @@
             class="text-primary">~/blog</span>$ grep -i
         </div>
       }
-      <input #searchInput (keyup.enter)="onSearch($event)" type="text" placeholder="search semantically..."
+      <label for="blog-search" class="sr-only">Search posts</label>
+      <input id="blog-search" #searchInput (keyup.enter)="onSearch($event)" type="text" placeholder="search semantically..."
         class="bg-transparent border-none outline-none text-primary w-full caret-primary placeholder:text-terminal-dim placeholder:opacity-50"
         (blur)="onSearch($event)" />
       @if (currentQuery) {

@@ -106,6 +106,26 @@ describe('SystemStatsComponent - Browser', () => {
     expect(component.memoryUsage).toBeLessThanOrEqual(60);
   });
 
+  // The readout is drawn from the Web Crypto CSPRNG (Sonar S2245), and the
+  // modulo maps it onto exactly [20, 60]: 40 is the top, 41 wraps to the floor.
+  it.each([
+    [0, 20],
+    [40, 60],
+    [41, 20],
+    [0xffffffff, 20 + (0xffffffff % 41)],
+  ])('maps a CSPRNG draw of %d onto %d MB', (draw, expected) => {
+    const spy = vi
+      .spyOn(crypto, 'getRandomValues')
+      .mockImplementation(<T extends ArrayBufferView | null>(array: T): T => {
+        (array as unknown as Uint32Array)[0] = draw;
+        return array;
+      });
+    vi.advanceTimersByTime(5001);
+    expect(spy).toHaveBeenCalled();
+    expect(component.memoryUsage).toBe(expected);
+    spy.mockRestore();
+  });
+
   it('should pad single digits correctly', () => {
     const result = (component as any).formatTime(1000);
     expect(result).toBe('00:00:01');

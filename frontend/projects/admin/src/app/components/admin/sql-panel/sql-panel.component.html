@@ -21,6 +21,7 @@
     </button>
 
     <div class="relative">
+      <label for="restoreFile" class="sr-only">SQL backup file to restore</label>
       <input type="file" id="restoreFile" (change)="onFileSelected($event)" accept=".sql" class="hidden"
         #fileInput>
       <button (click)="fileInput.click()" [disabled]="loading"

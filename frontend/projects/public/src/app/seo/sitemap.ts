@@ -174,10 +174,23 @@ export function stripTrailingSlash(url: string): string {
 }
 
 /**
+ * A `Host` value safe to echo into a generated file: a DNS name or bracketed
+ * IPv6 literal, optional port. Labels are dot-separated runs, so the pattern
+ * has no overlapping quantifiers (linear on any input).
+ */
+const HOST_PATTERN = /^(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[[0-9a-f:.]+\])(?::\d{1,5})?$/i;
+
+/**
  * The origin this request arrived on, used only as a fallback when the backend
  * (and therefore `SITE_URL`) is unreachable — a sitemap needs ABSOLUTE URLs, so
  * "no origin at all" is not an option. Behind the two nginx layers the raw
  * `Host` is the internal service name, hence the forwarded headers first.
+ *
+ * Both halves are CLIENT-controlled headers that end up in a response body
+ * (Sonar `tssecurity:S5131`), so neither is echoed unvalidated: the scheme is
+ * `http` or `https` and nothing else, and a host that is not a plain
+ * hostname[:port] degrades to `localhost` — the same value a request with no
+ * host at all gets.
  */
 export function requestOrigin(
     headers: Readonly<Record<string, string | string[] | undefined>>,
@@ -185,10 +198,36 @@ export function requestOrigin(
 ): string {
     const first = (value: string | string[] | undefined): string =>
         (Array.isArray(value) ? value[0] : value) ?? '';
-    const proto = first(headers['x-forwarded-proto']).split(',')[0].trim() || protocol;
-    const host =
-        first(headers['x-forwarded-host']).split(',')[0].trim() || first(headers['host']) || 'localhost';
+    const scheme = (value: string): string | undefined => {
+        const lowered = value.trim().toLowerCase();
+        return lowered === 'http' || lowered === 'https' ? lowered : undefined;
+    };
+    const proto =
+        scheme(first(headers['x-forwarded-proto']).split(',')[0]) ?? scheme(protocol) ?? 'http';
+    const candidate =
+        first(headers['x-forwarded-host']).split(',')[0].trim() || first(headers['host']).trim();
+    const host = HOST_PATTERN.test(candidate) ? candidate : 'localhost';
     return `${proto}://${host}`;
+}
+
+/**
+ * The configured `SITE_URL`, normalized through the WHATWG URL parser, or ''
+ * when it is not an absolute http(s) URL. The value is written into every
+ * generated file, so it is parsed rather than trusted as text: the parser
+ * percent-encodes anything markup-shaped in a path, and a non-web scheme
+ * (`javascript:`, `data:`) never passes.
+ */
+export function normalizeSiteUrl(value: string): string {
+    let url: URL;
+    try {
+        url = new URL(value);
+    } catch {
+        return '';
+    }
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        return '';
+    }
+    return stripTrailingSlash(url.href);
 }
 
 /**
@@ -241,7 +280,7 @@ export async function resolveSiteConfig(
     }
     const text = (value: string | undefined): string => (value ?? '').trim();
     return {
-        siteUrl: stripTrailingSlash(text(wire?.site_url) || fallbackOrigin),
+        siteUrl: normalizeSiteUrl(text(wire?.site_url)) || stripTrailingSlash(fallbackOrigin),
         siteName: text(wire?.site_name),
         ownerName: text(wire?.owner_name),
         ownerHeadline: text(wire?.owner_headline),

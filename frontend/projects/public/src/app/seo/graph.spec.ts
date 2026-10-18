@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { BlogPost } from '@beaconfolio/shared';
 import { DEFAULT_SITE_CONFIG, SiteConfig } from '../services/site-config.service';
-import { jsonForScriptBlock } from '../app.component';
+import { jsonForScriptBlock } from './json-ld';
 import {
     absoluteUrl,
     buildBlogPosting,

@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Security
+- **Every SonarCloud vulnerability and bug under `frontend/` is fixed at its source (#494).** No
+  Angular sanitizer bypass remains: the JSON-LD block is written into `<head>` through
+  `textContent` by `SeoService` (still `<`-escaped, because the server serializes script text
+  verbatim) and the GTM `<noscript>` iframe is built on the server with `setAttribute` from a
+  constant origin and a pattern-checked id, server-only so a script-running browser never loads
+  a second, DOM-built iframe (`typescript:S6268`). The generated `robots.txt`/`llms.txt`/
+  `llms-full.txt`/`sitemap.xml` no longer echo client headers unchecked — the forwarded scheme
+  must be `http`/`https` and the host a plain hostname[:port], else `localhost` — and the
+  backend `SITE_URL` is parsed as an http(s) URL; all four go out through one writer with an
+  explicit non-HTML type (`tssecurity:S5131`; the remaining taint, admin-authored content served
+  as text behind nginx's `nosniff`, is acknowledged in code). The admin app drops the unused
+  cdnjs Font Awesome stylesheet that loaded without SRI (`Web:S5725`), the stats readout uses
+  Web Crypto instead of `Math.random` (`S2245`), every fire-and-forget router/async call is an
+  explicit `void` (`S9383`), every unlabeled input has a label, sortable table headers are real
+  buttons, and the inbox row and the LLM terminal answer Enter as well as a click
+  (`Web:InputWithoutLabelCheck`, `Web:MouseEventWithoutKeyboardEquivalentCheck`). The internal
+  `http://backend:8000` SSR origin is a compose-network-only hop and is justified in place
+  (`S5332`).
+
 ### Added
 - **Imported posts carry their real publication date to search engines.** Every public post
   payload (list, detail by slug and by id, similar posts, semantic search) now includes

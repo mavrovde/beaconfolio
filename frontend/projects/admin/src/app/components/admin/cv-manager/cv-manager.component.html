@@ -18,8 +18,8 @@
       <div>
         <div class="controls-bar">
           <div class="search-box">
-            <span class="prompt">> SEARCH:</span>
-            <input type="text" [(ngModel)]="requestsTable.searchText"
+            <label for="cv-requests-search" class="prompt">> SEARCH:</label>
+            <input id="cv-requests-search" type="text" [(ngModel)]="requestsTable.searchText"
               (keyup.enter)="requestsTable.setSearch(requestsTable.searchText)"
               placeholder="Enter keywords..." class="terminal-input" />
           </div>
@@ -28,26 +28,26 @@
           <table>
             <thead>
               <tr>
-                <th (click)="requestsTable.toggleSort('name')" class="sortable">Name {{
+                <th class="sortable"><button type="button" class="sort-button" (click)="requestsTable.toggleSort('name')">Name {{
                   requestsTable.isSorted('name') ? (requestsTable.getSortDirection('name') === 'asc' ? '▲'
-                : '▼') : '' }}</th>
-                <th (click)="requestsTable.toggleSort('email')" class="sortable">Email {{
+                : '▼') : '' }}</button></th>
+                <th class="sortable"><button type="button" class="sort-button" (click)="requestsTable.toggleSort('email')">Email {{
                   requestsTable.isSorted('email') ? (requestsTable.getSortDirection('email') === 'asc' ?
-                '▲' : '▼') : '' }}</th>
-                <th (click)="requestsTable.toggleSort('company')" class="sortable">Company {{
+                '▲' : '▼') : '' }}</button></th>
+                <th class="sortable"><button type="button" class="sort-button" (click)="requestsTable.toggleSort('company')">Company {{
                   requestsTable.isSorted('company') ? (requestsTable.getSortDirection('company') === 'asc'
-                ? '▲' : '▼') : '' }}</th>
-                <th (click)="requestsTable.toggleSort('cv_version')" class="sortable">CV Version {{
+                ? '▲' : '▼') : '' }}</button></th>
+                <th class="sortable"><button type="button" class="sort-button" (click)="requestsTable.toggleSort('cv_version')">CV Version {{
                   requestsTable.isSorted('cv_version') ? (requestsTable.getSortDirection('cv_version') ===
-                'asc' ? '▲' : '▼') : '' }}</th>
-                <th (click)="requestsTable.toggleSort('created_at')" class="sortable">Requested {{
+                'asc' ? '▲' : '▼') : '' }}</button></th>
+                <th class="sortable"><button type="button" class="sort-button" (click)="requestsTable.toggleSort('created_at')">Requested {{
                   requestsTable.isSorted('created_at') ? (requestsTable.getSortDirection('created_at') ===
-                'asc' ? '▲' : '▼') : '' }}</th>
-                <th (click)="requestsTable.toggleSort('subscribe_to_updates')" class="sortable">Subscribed
+                'asc' ? '▲' : '▼') : '' }}</button></th>
+                <th class="sortable"><button type="button" class="sort-button" (click)="requestsTable.toggleSort('subscribe_to_updates')">Subscribed
                   {{
                   requestsTable.isSorted('subscribe_to_updates') ?
                   (requestsTable.getSortDirection('subscribe_to_updates') ===
-                'asc' ? '▲' : '▼') : '' }}</th>
+                'asc' ? '▲' : '▼') : '' }}</button></th>
                 <th>Description</th>
                 <th>Download status</th>
               </tr>
@@ -137,15 +137,15 @@
           <table>
             <thead>
               <tr>
-                <th (click)="versionsTable.toggleSort('version')" class="sortable">Version {{
+                <th class="sortable"><button type="button" class="sort-button" (click)="versionsTable.toggleSort('version')">Version {{
                   versionsTable.isSorted('version') ? (versionsTable.getSortDirection('version') === 'asc'
-                ? '▲' : '▼') : '' }}</th>
-                <th (click)="versionsTable.toggleSort('filename')" class="sortable">Filename {{
+                ? '▲' : '▼') : '' }}</button></th>
+                <th class="sortable"><button type="button" class="sort-button" (click)="versionsTable.toggleSort('filename')">Filename {{
                   versionsTable.isSorted('filename') ? (versionsTable.getSortDirection('filename') ===
-                'asc' ? '▲' : '▼') : '' }}</th>
-                <th (click)="versionsTable.toggleSort('created_at')" class="sortable">Uploaded {{
+                'asc' ? '▲' : '▼') : '' }}</button></th>
+                <th class="sortable"><button type="button" class="sort-button" (click)="versionsTable.toggleSort('created_at')">Uploaded {{
                   versionsTable.isSorted('created_at') ? (versionsTable.getSortDirection('created_at') ===
-                'asc' ? '▲' : '▼') : '' }}</th>
+                'asc' ? '▲' : '▼') : '' }}</button></th>
                 <th>Status</th>
               </tr>
             </thead>

@@ -5,6 +5,7 @@ import { SiteConfigService, SiteConfig, DEFAULT_SITE_CONFIG } from './site-confi
 import { environment } from '../../environments/environment';
 import { buildHomeTitle, buildKeywords, buildPageTitle } from '../seo/identity';
 import { toMetaDescription, toPlainText } from '../seo/text';
+import { jsonForScriptBlock } from '../seo/json-ld';
 
 /** Open Graph `article:*` facts for a blog post (og:type=article). */
 export interface SeoArticle {
@@ -56,6 +57,9 @@ export function ogLocale(lang: string | undefined): string {
 /** A schema.org JSON-LD node, serialized verbatim into a `<script type="application/ld+json">`. */
 export type JsonLd = Record<string, unknown>;
 
+/** The one JSON-LD block this service owns, in <head>. */
+const JSON_LD_SELECTOR = 'script[type="application/ld+json"]';
+
 /**
  * Path of the bundled social-share card, relative to the configured site URL
  * (#71). The asset physically exists at
@@ -98,6 +102,13 @@ export class SeoService {
 
     constructor() {
         const siteConfig = inject(SiteConfigService);
+
+        // The page's structured data, as ONE `<script type="application/ld+json">`
+        // in <head>. A DOM write through the injected document (present in the
+        // server-rendered HTML, zoneless-safe — nothing template-bound) instead
+        // of an `[innerHTML]` binding, which needed `bypassSecurityTrustHtml`
+        // (Sonar `typescript:S6268`).
+        this.jsonLdSchema$.subscribe((schema) => this.renderJsonLd(schema));
 
         siteConfig.config$.subscribe((cfg) => {
             // eslint-disable-next-line no-restricted-syntax -- cd-safety-ok: writes go to the Title/Meta DOM services, never to a template-bound property — no repaint needed.
@@ -336,6 +347,28 @@ export class SeoService {
             { rel: 'describedby', type: 'text/plain' },
             `${this.baseUrl}/llms.txt`
         );
+    }
+
+    /**
+     * Write (or remove, for null) the head's JSON-LD block. The text goes in
+     * through `textContent`, never parsed as markup; `jsonForScriptBlock`
+     * still escapes every `<`, because the server serializes a script's text
+     * verbatim and the browser's HTML parser decides where the element ends.
+     */
+    private renderJsonLd(schema: JsonLd | null): void {
+        const head = this.document.head;
+        const existing = head.querySelector<HTMLScriptElement>(JSON_LD_SELECTOR);
+        if (!schema) {
+            existing?.remove();
+            return;
+        }
+        let script = existing;
+        if (!script) {
+            script = this.document.createElement('script');
+            script.setAttribute('type', 'application/ld+json');
+            head.appendChild(script);
+        }
+        script.textContent = jsonForScriptBlock(schema);
     }
 
     setJsonLd(schema: JsonLd): void {

@@ -32,7 +32,7 @@ export class AdminLinkedinComponent implements OnInit {
     isUploadingPostsJson = false;
 
     ngOnInit(): void {
-        this.checkLoginStatus();
+        void this.checkLoginStatus();
     }
 
     async checkLoginStatus() {

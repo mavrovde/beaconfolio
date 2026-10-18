@@ -5,8 +5,8 @@
 
   <div class="controls-bar">
     <div class="search-box">
-      <span class="prompt">> SEARCH:</span>
-      <input type="text" [(ngModel)]="table.searchText" (keyup.enter)="table.setSearch(table.searchText)"
+      <label for="tag-manager-search" class="prompt">> SEARCH:</label>
+      <input id="tag-manager-search" type="text" [(ngModel)]="table.searchText" (keyup.enter)="table.setSearch(table.searchText)"
         placeholder="Enter tag name..." class="terminal-input" />
     </div>
   </div>
@@ -15,10 +15,10 @@
     <table>
       <thead>
         <tr>
-          <th (click)="table.toggleSort('name')" class="sortable">Tag Name {{
-          table.isSorted('name') ? (table.getSortDirection('name') === 'asc' ? '▲' : '▼') : '' }}</th>
-          <th (click)="table.toggleSort('count')" class="sortable">Usage Count {{
-          table.isSorted('count') ? (table.getSortDirection('count') === 'asc' ? '▲' : '▼') : '' }}</th>
+          <th class="sortable"><button type="button" class="sort-button" (click)="table.toggleSort('name')">Tag Name {{
+          table.isSorted('name') ? (table.getSortDirection('name') === 'asc' ? '▲' : '▼') : '' }}</button></th>
+          <th class="sortable"><button type="button" class="sort-button" (click)="table.toggleSort('count')">Usage Count {{
+          table.isSorted('count') ? (table.getSortDirection('count') === 'asc' ? '▲' : '▼') : '' }}</button></th>
           <th>Actions</th>
         </tr>
       </thead>
@@ -28,7 +28,8 @@
             <td>
               @if (editingTag === tag.name) {
                 <div class="edit-mode">
-                  <input type="text" [(ngModel)]="newTagName" (keyup.enter)="saveRename(tag.name)"
+                  <label for="tag-rename-input" class="sr-only">New name for {{ tag.name }}</label>
+                  <input id="tag-rename-input" type="text" [(ngModel)]="newTagName" (keyup.enter)="saveRename(tag.name)"
                     (keyup.escape)="cancelEdit()" class="terminal-input small" autoFocus />
                   <button (click)="saveRename(tag.name)" class="btn-icon">✓</button>
                   <button (click)="cancelEdit()" class="btn-icon">✗</button>

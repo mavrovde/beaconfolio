@@ -19,8 +19,10 @@
 
     @if (!isLoggedIn) {
       <div class="auth-form">
-        <input type="email" placeholder="LinkedIn Email" [(ngModel)]="linkedinUsername" [disabled]="isLoggingIn" class="input-field">
-        <input type="password" placeholder="LinkedIn Password" [(ngModel)]="linkedinPassword" [disabled]="isLoggingIn" class="input-field">
+        <label for="linkedin-email" class="sr-only">LinkedIn Email</label>
+        <input id="linkedin-email" type="email" placeholder="LinkedIn Email" [(ngModel)]="linkedinUsername" [disabled]="isLoggingIn" class="input-field">
+        <label for="linkedin-password" class="sr-only">LinkedIn Password</label>
+        <input id="linkedin-password" type="password" placeholder="LinkedIn Password" [(ngModel)]="linkedinPassword" [disabled]="isLoggingIn" class="input-field">
         <button class="btn-primary" (click)="login()" [disabled]="isLoggingIn || !linkedinUsername || !linkedinPassword">
           {{ isLoggingIn ? 'Connecting...' : 'Login & Save Session' }}
         </button>
@@ -51,7 +53,8 @@
         (~30s).</div>
       </div>
       <div class="controls-bar">
-        <input type="file" accept=".json,application/json" (change)="onPostsFileSelected($event)" />
+        <label for="linkedin-posts-file" class="sr-only">posts_data.json file</label>
+        <input id="linkedin-posts-file" type="file" accept=".json,application/json" (change)="onPostsFileSelected($event)" />
         <button (click)="uploadPostsJson()" [disabled]="isUploadingPostsJson || !selectedPostsFile"
           class="btn-primary">
           <span class="icon">📤</span>

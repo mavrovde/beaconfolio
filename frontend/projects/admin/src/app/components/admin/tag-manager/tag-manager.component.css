@@ -203,3 +203,20 @@ tr:hover {
     opacity: 0.5;
     cursor: not-allowed;
 }
+
+/* The sort control is a real <button> inside the header cell (keyboard- and
+   screen-reader-operable; Sonar Web:MouseEventWithoutKeyboardEquivalentCheck),
+   styled to look exactly like the header text it replaced. */
+th.sortable .sort-button {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-align: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}

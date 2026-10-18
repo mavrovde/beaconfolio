@@ -159,7 +159,7 @@ export class BlogPostComponent implements OnInit {
         const slug = params.get('slug');
         if (!slug) {
           // No slug in the route is a routing error (not a content 404) — go home.
-          this.router.navigate(['/']);
+          void this.router.navigate(['/']);
           return of<BlogPostVm>({ status: 'notfound' });
         }
         // The site config is a SOURCE of this view, not a field latched beside
@@ -256,7 +256,7 @@ export class BlogPostComponent implements OnInit {
   }
 
   goBack() {
-    this.router.navigate(['/'], { fragment: 'blog' });
+    void this.router.navigate(['/'], { fragment: 'blog' });
   }
 
   async sharePost() {

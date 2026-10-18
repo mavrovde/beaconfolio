@@ -238,7 +238,8 @@
 </div>
 <h3 class="font-semibold mb-2">Timeline</h3>
 <form (ngSubmit)="addNote()" class="flex gap-2 mb-4">
-  <input name="note" [(ngModel)]="noteDraft" placeholder="Add a remark…"
+  <label for="pipeline-note" class="sr-only">Add a remark</label>
+  <input id="pipeline-note" name="note" [(ngModel)]="noteDraft" placeholder="Add a remark…"
     class="border rounded px-3 py-2 flex-1 bg-white" />
   <button type="submit" [disabled]="!noteDraft.trim()"
   class="border rounded px-4 py-2 bg-white disabled:opacity-40">Add</button>

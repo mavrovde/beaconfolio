@@ -209,8 +209,8 @@ describe('GoogleAnalyticsService', () => {
 
 // --- GTM container install (#447) ---
 
-import { firstValueFrom } from 'rxjs';
-import { safeTagId } from './google-analytics.service';
+import { DOCUMENT } from '@angular/core';
+import { GTM_NOSCRIPT_ID, gtmNoscriptUrl, safeTagId } from './google-analytics.service';
 
 /** Build a service whose site config carries the given fields. */
 function serviceWith(cfg: Record<string, unknown>) {
@@ -294,21 +294,19 @@ describe('GoogleAnalyticsService — GTM (#447)', () => {
     expect(srcs()).toEqual([]);
   });
 
-  it('exposes the <noscript> url only when a container is configured', async () => {
-    const withGtm = serviceWith({ gtmContainerId: 'GTM-ABC1234' });
-    expect(await firstValueFrom(withGtm.gtmNoscriptUrl$)).not.toBeNull();
-
-    const without = serviceWith({});
-    expect(await firstValueFrom(without.gtmNoscriptUrl$)).toBeNull();
+  it('builds the <noscript> url only when a container is configured', () => {
+    expect(gtmNoscriptUrl('GTM-ABC1234')).toBe('https://www.googletagmanager.com/ns.html?id=GTM-ABC1234');
+    expect(gtmNoscriptUrl('')).toBeNull();
+    expect(gtmNoscriptUrl('GTM-X"><script>')).toBeNull();
   });
 
   // Regression: a pre-#447 backend omits gtm_container_id entirely. Without
   // the typeof guard, TAG_ID_PATTERN.test(undefined) tests the STRING
   // "undefined" — pure letters, so it MATCHES — and the noscript iframe would
   // point at ns.html?id=undefined.
-  it('treats a MISSING container id as absent, not as the string "undefined"', async () => {
+  it('treats a MISSING container id as absent, not as the string "undefined"', () => {
     const svc = serviceWith({ gtmContainerId: undefined });
-    expect(await firstValueFrom(svc.gtmNoscriptUrl$)).toBeNull();
+    expect(gtmNoscriptUrl(undefined)).toBeNull();
     svc.initialize();
     expect(srcs().some(u => u.includes('undefined'))).toBe(false);
   });
@@ -336,5 +334,69 @@ describe('GoogleAnalyticsService — GTM (#447)', () => {
     expect(safeTagId('')).toBe('');
     expect(safeTagId('GTM-OK123')).toBe('GTM-OK123');
     expect(safeTagId('GTM OK')).toBe('');
+  });
+});
+
+
+// --- the <noscript> half, server-rendered (#447) ---
+//
+// It used to be an `[src]` binding fed by `bypassSecurityTrustResourceUrl`
+// (Sonar typescript:S6268); it is now written into the injected document on
+// the SERVER only. Each case runs against a fresh document standing in for the
+// per-request SSR document.
+describe('GoogleAnalyticsService.renderNoscript', () => {
+  function serverService(cfg: Record<string, unknown>, platform: 'server' | 'browser' = 'server') {
+    const doc = document.implementation.createHTMLDocument('ssr');
+    doc.body.innerHTML = '<app-root></app-root>';
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        GoogleAnalyticsService,
+        { provide: PLATFORM_ID, useValue: platform },
+        { provide: DOCUMENT, useValue: doc },
+        { provide: Router, useValue: { events: new Subject<any>().asObservable() } },
+        {
+          provide: SiteConfigService,
+          useValue: { config$: of({ analyticsId: '', gtmContainerId: '', ...cfg }) },
+        },
+      ],
+    });
+    return { svc: TestBed.inject(GoogleAnalyticsService), doc };
+  }
+
+  it('writes the noscript iframe as the first child of <body> on the server', () => {
+    const { svc, doc } = serverService({ gtmContainerId: 'GTM-ABC1234' });
+    svc.renderNoscript();
+
+    const noscript = doc.body.firstElementChild as HTMLElement;
+    expect(noscript.tagName).toBe('NOSCRIPT');
+    expect(noscript.id).toBe(GTM_NOSCRIPT_ID);
+    const iframe = noscript.querySelector('iframe') as HTMLIFrameElement;
+    expect(iframe.getAttribute('src')).toBe('https://www.googletagmanager.com/ns.html?id=GTM-ABC1234');
+    expect(iframe.getAttribute('height')).toBe('0');
+    expect(iframe.getAttribute('width')).toBe('0');
+    expect(iframe.getAttribute('style')).toBe('display:none;visibility:hidden');
+  });
+
+  // A DOM-built iframe in a script-running browser LOADS — a second pageview.
+  it('writes nothing in the browser', () => {
+    const { svc, doc } = serverService({ gtmContainerId: 'GTM-ABC1234' }, 'browser');
+    svc.renderNoscript();
+    expect(doc.querySelector('noscript')).toBeNull();
+  });
+
+  it('writes nothing when no container (or an unsafe one) is configured', () => {
+    for (const gtmContainerId of ['', undefined, 'GTM-X"></iframe><script>alert(1)']) {
+      const { svc, doc } = serverService({ gtmContainerId });
+      svc.renderNoscript();
+      expect(doc.querySelector('noscript')).toBeNull();
+    }
+  });
+
+  it('is idempotent within one document', () => {
+    const { svc, doc } = serverService({ gtmContainerId: 'GTM-ABC1234' });
+    svc.renderNoscript();
+    svc.renderNoscript();
+    expect(doc.querySelectorAll('noscript')).toHaveLength(1);
   });
 });

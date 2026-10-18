@@ -38,6 +38,19 @@ describe('LlmComponent additional branch coverage (browser)', () => {
 
   afterEach(() => vi.restoreAllMocks());
 
+  // The keyboard equivalent of click-anywhere-to-focus (Sonar
+  // Web:MouseEventWithoutKeyboardEquivalentCheck): Enter bubbling up from
+  // inside the terminal returns focus to the prompt, labelled for AT.
+  it('returns focus to the labelled prompt on Enter inside the terminal', () => {
+    const host: HTMLElement = fixture.nativeElement;
+    const input = host.querySelector('#llm-prompt') as HTMLInputElement;
+    expect(host.querySelector('label[for="llm-prompt"]')).not.toBeNull();
+    const link = host.querySelector('.terminal-container a') as HTMLAnchorElement;
+    link.focus();
+    link.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter', bubbles: true }));
+    expect(document.activeElement).toBe(input);
+  });
+
   it('sendMessage returns early when already thinking (line 109)', () => {
     component.userInput = 'hi';
     component.isThinking = true;

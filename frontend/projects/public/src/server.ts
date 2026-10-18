@@ -91,9 +91,46 @@ const angularApp = new AngularNodeAppEngine({
  */
 const fetchJson = createJsonFetcher();
 
+const PLAIN_TEXT = 'text/plain; charset=utf-8';
+const XML = 'application/xml; charset=utf-8';
+
+/**
+ * The ONE place a generated machine file is written to the client.
+ *
+ * Sonar `tssecurity:S5131` (reflected XSS) traces backend JSON — post bodies,
+ * titles, profile text — into this body, and it is right that the text is not
+ * HTML-escaped: these files are Markdown/plain text/XML whose consumers read
+ * the characters verbatim, so escaping would corrupt them. What makes the
+ * write safe, reviewed and pinned:
+ *
+ *  - The type is explicit and never HTML: `text/plain` or `application/xml`,
+ *    set before the body, so Express does not infer `text/html` from a string.
+ *    `contentType` accepts only those two constants.
+ *  - The frontend nginx adds `X-Content-Type-Options: nosniff` to every
+ *    response (`frontend/nginx.conf`), so no browser second-guesses the type;
+ *    `e2e/public/seo-ssr.spec.ts` asserts the type AND exactly one nosniff on
+ *    each of these files, through the real proxy.
+ *  - XML text is escaped where it is built (`escapeXml` in `seo/sitemap.ts`).
+ *  - The two values a CLIENT controls — the forwarded/Host headers — are
+ *    validated before they can enter any body (`requestOrigin`), and the
+ *    backend `SITE_URL` is parsed as an http(s) URL (`normalizeSiteUrl`); see
+ *    `seo/sitemap.origin.cov2.spec.ts`.
+ *
+ * The remaining taint is the backend's own published content, which an
+ * authenticated admin wrote, served as non-HTML text. That is the finding the
+ * NOSONAR below acknowledges.
+ */
+function sendGeneratedFile(
+  res: express.Response,
+  contentType: typeof PLAIN_TEXT | typeof XML,
+  body: string,
+): void {
+  res.type(contentType).send(body); // NOSONAR — non-HTML type + nginx nosniff; see the comment above
+}
+
 app.get('/robots.txt', (req, res, next) => {
   renderRobotsTxt(fetchJson, requestOrigin(req.headers, req.protocol))
-    .then((body) => res.type('text/plain; charset=utf-8').send(body))
+    .then((body) => sendGeneratedFile(res, PLAIN_TEXT, body))
     .catch(next);
 });
 
@@ -102,13 +139,13 @@ app.get('/llms.txt', (req, res, next) => {
     // Markdown by content, `.txt` by convention (llmstxt.org). `text/plain`
     // keeps it readable in a browser tab, which is what agents and humans both
     // do with it first.
-    .then((body) => res.type('text/plain; charset=utf-8').send(body))
+    .then((body) => sendGeneratedFile(res, PLAIN_TEXT, body))
     .catch(next);
 });
 
 app.get(LLMS_FULL_PATH, (req, res, next) => {
   renderLlmsFullTxt(fetchJson, requestOrigin(req.headers, req.protocol))
-    .then((body) => res.type('text/plain; charset=utf-8').send(body))
+    .then((body) => sendGeneratedFile(res, PLAIN_TEXT, body))
     .catch(next);
 });
 
@@ -124,13 +161,13 @@ if (indexNow.warning) {
 }
 if (indexNow.key) {
   app.get(indexNowKeyPath(indexNow.key), (_req, res) => {
-    res.type('text/plain; charset=utf-8').send(indexNow.key);
+    sendGeneratedFile(res, PLAIN_TEXT, indexNow.key);
   });
 }
 
 app.get('/sitemap.xml', (req, res, next) => {
   renderSitemapXml(fetchJson, requestOrigin(req.headers, req.protocol))
-    .then((body) => res.type('application/xml; charset=utf-8').send(body))
+    .then((body) => sendGeneratedFile(res, XML, body))
     .catch(next);
 });
 
