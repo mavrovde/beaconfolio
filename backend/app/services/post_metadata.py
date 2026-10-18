@@ -59,14 +59,19 @@ LINKEDIN_BOILERPLATE_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 # A hashtag starts with a LETTER: "#1 priority" is a rank, not a tag.
 _HASHTAG = r"#(?=[^\W\d_])[\w-]+"
-_HASHTAG_RUN_TRAILING = re.compile(rf"(?:\s*{_HASHTAG})+\s*$")
+# NOTE: there is deliberately no regex for the TRAILING run. The obvious one,
+# ``(?:\s*#tag)+\s*$``, is quadratic: ``re.sub`` retries the run from every
+# hashtag and fails at ``$`` each time, measured at 1.28 s for 14k characters
+# of hashtags followed by one word (PR #493 review). It is stripped token by
+# token from the right instead (:func:`_strip_trailing_hashtags`).
 _HASHTAG_RUN_LEADING = re.compile(rf"^\s*(?:{_HASHTAG}\s*)+")
 _HASHTAG_INLINE = re.compile(r"#(?=[^\W\d_])([\w-]+)")
 _WHITESPACE = re.compile(r"\s+")
-# Leading decoration: bullets, arrows, dashes, stray punctuation. Opening
-# quotes/brackets are kept — they belong to the text that follows — and so is
-# a "#" before a digit ("#1 priority" is a rank).
-_LEADING_JUNK = re.compile(r"^(?:[^\w\"'“‘(\[«#]|#(?!\d))+")
+# Leading characters that START text rather than decorate it: opening
+# quotes/brackets belong to the text that follows. Everything else that is not
+# a word character is decoration (bullets, arrows, dashes, stray punctuation)
+# unless :func:`_starts_text` says otherwise.
+_OPENERS = frozenset("\"'“‘([«")
 # Clause boundaries a too-long first sentence may be cut at WITHOUT an
 # ellipsis: the head before them reads as complete. Commas are deliberately
 # absent — the head before a comma usually does not.
@@ -79,11 +84,24 @@ _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 _TRAILING_JOINERS = " ,;:-–—(/&"
 
 
+# "Other symbol" (So) characters that are part of TEXT, not decoration:
+# "25°C", "25℃", "№ 5". Python's unicodedata has no Extended_Pictographic
+# property, so the So strip is an exclusion list rather than an emoji list.
+# ©/®/™ are deliberately NOT here: dropping them from a title loses nothing.
+_TEXTUAL_SYMBOLS = frozenset("°℃℉№")
+# Zero-width (non-)joiner. Between two letters it is ORTHOGRAPHY (Persian,
+# Indic scripts: "می‌خواهم"), not emoji glue, and removing it joins word parts.
+_JOINERS = frozenset("\u200c\u200d")
+
+
 def _is_symbol(ch: str) -> bool:
     """Emoji and pictographs (So), non-ASCII modifier symbols such as skin
     tones (Sk — ASCII ``^``/`` ` `` are Sk too and are kept), surrogates and
     private-use glyphs. Each is replaced by a space: an emoji often stands
-    between two words."""
+    between two words. Degree-style signs that belong to a number are kept
+    (:data:`_TEXTUAL_SYMBOLS`)."""
+    if ch in _TEXTUAL_SYMBOLS:
+        return False
     cat = unicodedata.category(ch)
     if cat == "Sk":
         return ord(ch) > 127
@@ -91,16 +109,96 @@ def _is_symbol(ch: str) -> bool:
 
 
 def _is_invisible(ch: str) -> bool:
-    """Zero-width joiners, soft hyphens, BOMs (Cf) and variation selectors —
-    the glue inside emoji sequences. Removed without a space: a soft hyphen
-    sits INSIDE a word."""
-    return unicodedata.category(ch) == "Cf" or 0xFE00 <= ord(ch) <= 0xFE0F
+    """Zero-width joiners, soft hyphens, BOMs (Cf), variation selectors and
+    enclosing marks (Me) — the glue inside emoji sequences. Removed without a
+    space: a soft hyphen sits INSIDE a word, and a keycap ("1️⃣" = "1" + U+FE0F
+    + U+20E3 COMBINING ENCLOSING KEYCAP) must reduce to its digit, not leave a
+    stray enclosing glyph behind."""
+    cat = unicodedata.category(ch)
+    return cat in ("Cf", "Me") or 0xFE00 <= ord(ch) <= 0xFE0F
+
+
+def _is_letter_part(ch: str) -> bool:
+    """A letter, or a mark attached to one (an Indic virama is Mn)."""
+    return ch.isalpha() or unicodedata.category(ch).startswith("M")
 
 
 def _strip_symbols(text: str) -> str:
-    return "".join(
-        "" if _is_invisible(ch) else " " if _is_symbol(ch) else ch for ch in text
-    )
+    out = []
+    last = len(text) - 1
+    for i, ch in enumerate(text):
+        if (
+            ch in _JOINERS
+            and 0 < i < last
+            and _is_letter_part(text[i - 1])
+            and _is_letter_part(text[i + 1])
+        ):
+            out.append(ch)
+            continue
+        if _is_invisible(ch):
+            continue
+        out.append(" " if _is_symbol(ch) else ch)
+    return "".join(out)
+
+
+def _is_word_char(ch: str) -> bool:
+    """Exactly ``re``'s ``\\w`` for ``str`` patterns."""
+    return ch.isalnum() or ch == "_"
+
+
+def _strip_trailing_hashtags(text: str) -> str:
+    """Remove a trailing run of hashtags (and the whitespace around it) — the
+    same strings ``(?:\\s*#tag)+\\s*$`` removes, in ONE right-to-left pass.
+
+    Each character is examined a bounded number of times, so the cost is
+    linear in ``len(text)`` however many hashtags precede the end. A tag is
+    ``#`` + a non-digit word character + ``[\\w-]*``; the tags may touch
+    (``#a#b``) or follow a word directly (``word#tag``), as in the regex.
+    """
+    end = len(text)
+    while end > 0 and text[end - 1].isspace():
+        end -= 1
+    kept = len(text)  # nothing stripped yet
+    while True:
+        start = end
+        while start > 0 and (text[start - 1] == "-" or _is_word_char(text[start - 1])):
+            start -= 1
+        # The token must be non-empty, preceded by "#", and start with a
+        # word character that is neither a digit nor "_" ("#1" is a rank).
+        if start == end or start == 0 or text[start - 1] != "#":
+            break
+        first = text[start]
+        if first == "-" or first == "_" or first.isdecimal():
+            break
+        end = start - 1
+        while end > 0 and text[end - 1].isspace():
+            end -= 1
+        kept = end
+    return text[:kept]
+
+
+def _starts_text(text: str, i: int) -> bool:
+    """Whether ``text[i]`` begins the readable text (so the leading strip
+    stops there) rather than decorating it."""
+    ch = text[i]
+    nxt = text[i + 1] if i + 1 < len(text) else ""
+    if _is_word_char(ch) or ch in _OPENERS:
+        return True
+    # "$5M raised", "€10", "£1bn": a currency sign belongs to its amount.
+    if unicodedata.category(ch) == "Sc":
+        return True
+    # "#1 priority" is a rank; "+1 to this"/"-5 °C"/"−5" are signed numbers.
+    if ch in "#+-−" and nxt.isdecimal():
+        return True
+    # ".NET 10", ".5 seconds" — but not the last dot of "...Wait".
+    return ch == "." and _is_word_char(nxt) and (i == 0 or text[i - 1] != ".")
+
+
+def _strip_leading_junk(text: str) -> str:
+    i = 0
+    while i < len(text) and not _starts_text(text, i):
+        i += 1
+    return text[i:]
 
 
 def _strip_boilerplate(text: str) -> str:
@@ -119,11 +217,11 @@ def clean_line(line: str) -> str:
     """
     text = _strip_symbols(line)
     text = _strip_boilerplate(text)
-    text = _HASHTAG_RUN_TRAILING.sub("", text)
+    text = _strip_trailing_hashtags(text)
     text = _HASHTAG_RUN_LEADING.sub("", text)
     text = _HASHTAG_INLINE.sub(r"\1", text)
     text = _WHITESPACE.sub(" ", text).strip()
-    text = _LEADING_JUNK.sub("", text).strip()
+    text = _strip_leading_junk(text).strip()
     # A line with no letter or digit left (",", "…", "—") is not text.
     if not any(ch.isalnum() for ch in text):
         return ""

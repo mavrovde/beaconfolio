@@ -228,7 +228,7 @@ services:
       - BEACONFOLIO_SEO_TITLE=${BEACONFOLIO_SEO_TITLE:-}
       - BEACONFOLIO_SEO_DESCRIPTION=${BEACONFOLIO_SEO_DESCRIPTION:-}
       - BEACONFOLIO_SEO_KEYWORDS=${BEACONFOLIO_SEO_KEYWORDS:-}
-      # AI-crawler policy (#252): allow (default) | deny — rendered into the
+      # AI-crawler policy (#252): allow (default) | deny | search-only — rendered into the
       # SSR robots.txt via GET /config/site.
       - AI_CRAWLER_POLICY=${AI_CRAWLER_POLICY:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-}

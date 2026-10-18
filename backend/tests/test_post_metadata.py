@@ -8,6 +8,7 @@ import re
 
 import pytest
 
+from app.services import post_metadata as pm
 from app.services.post_metadata import (
     DEFAULT_TITLE,
     LINKEDIN_BOILERPLATE_PATTERNS,
@@ -95,6 +96,32 @@ TITLE_CASES = [
         LIVE_SAMPLE,
         "The kind of impression you get from Google courses on cloud…",
     ),
+    # PR #493 review, finding 1: real openers the strip used to mangle.
+    # A keycap is digit + U+FE0F + U+20E3 (Me); it must reduce to its digit,
+    # not leave the enclosing-keycap glyph behind ("1⃣ Ship small").
+    ("keycap_reduces_to_its_digit", "1️⃣ Ship small.\n2️⃣ Measure.", "1 Ship small"),
+    ("keycap_list_opener", "1️⃣ First lesson: ship small", "1 First lesson: ship small"),
+    ("hash_keycap_is_decoration", "#️⃣ Hashtag keycap", "Hashtag keycap"),
+    ("leading_currency_kept", "$5M raised to fix search", "$5M raised to fix search"),
+    (
+        "leading_currency_kept_k",
+        "$100k salaries are a myth",
+        "$100k salaries are a myth",
+    ),
+    ("leading_euro_kept", "€10 a month is too much", "€10 a month is too much"),
+    ("leading_plus_one_kept", "+1 for boring technology", "+1 for boring technology"),
+    (
+        "leading_minus_number_kept",
+        "-5 degrees and the CI still runs",
+        "-5 degrees and the CI still runs",
+    ),
+    ("leading_dotnet_kept", ".NET 10 is out", ".NET 10 is out"),
+    ("bullet_then_dotnet", "• .NET 10 ships", ".NET 10 ships"),
+    ("leading_ellipsis_dots_stripped", "...Wait for it", "Wait for it"),
+    ("dash_bullet_stripped", "- Lessons from a migration", "Lessons from a migration"),
+    ("plus_bullet_stripped", "+ Lessons from a migration", "Lessons from a migration"),
+    ("degree_sign_kept", "30° in the server room", "30° in the server room"),
+    ("degree_celsius_kept", "It was 25°C in Berlin", "It was 25°C in Berlin"),
     ("only_symbols_falls_back", "🎉🎉 #yay", DEFAULT_TITLE),
     ("empty_falls_back", "", DEFAULT_TITLE),
     ("whitespace_falls_back", "  \n\t ", DEFAULT_TITLE),
@@ -239,10 +266,91 @@ def test_truncate_drops_dangling_joiners_before_the_ellipsis():
         ("Soft­hyphen stays one word", "Softhyphen stays one word"),
         ("Great talk… see more", "Great talk"),
         ("reposted this", ""),
+        # Keycap: the enclosing mark (U+20E3, category Me) is removed.
+        ("1️⃣ Ship small.", "1 Ship small."),
+        ("Step 2⃣ done", "Step 2 done"),
+        # ZWNJ/ZWJ between letters is orthography (Persian), kept...
+        ("Hello‌world", "Hello‌world"),
+        ("می‌خواهم", "می‌خواهم"),
+        # ...but at an edge or beside an emoji it is glue, removed.
+        ("‌edge joiner", "edge joiner"),
+        ("trailing joiner‍", "trailing joiner"),
+        ("a‍🎉 b", "a b"),
+        ("° alone is not a title", "alone is not a title"),
+        ("25℃ outside", "25℃ outside"),
+        ("Product™ launch", "Product launch"),
+        # "#1" is a rank, "#_x" / "#-x" are not hashtags: trailing run kept.
+        ("Ranked #1", "Ranked #1"),
+        ("snake #_case", "snake #_case"),
+        ("dash #-tag", "dash #-tag"),
+        # Touching tags, and a tag glued to the preceding word, are stripped as
+        # the original regex stripped them.
+        ("Done #a#b", "Done"),
+        ("Done#tag", "Done"),
+        ("Ends with a dot. #tag", "Ends with a dot."),
+        ("#tag", ""),
     ],
 )
 def test_clean_line(line: str, expected: str):
     assert clean_line(line) == expected
+
+
+# --- trailing hashtag strip: equivalence + linear cost (finding 2) ---------------
+
+# The regex the hand-written strip replaced. It is the REFERENCE for behaviour
+# only — on long inputs it is quadratic, which is why it is no longer used.
+_REFERENCE_TRAILING_RUN = re.compile(r"(?:\s*#(?=[^\W\d_])[\w-]+)+\s*$")
+
+
+def test_trailing_strip_matches_the_replaced_regex_on_short_inputs():
+    """Same output as the old regex, over a fixed-seed sample of short strings
+    built from the characters that matter (word chars, digits, "_", "-", "#",
+    whitespace, a combining mark, a non-decimal digit)."""
+    import random
+
+    alphabet = list("ab1_- #\t.é²٣") + ["́"]
+    rnd = random.Random(493)
+    for _ in range(20000):
+        text = "".join(rnd.choice(alphabet) for _ in range(rnd.randint(0, 10)))
+        assert pm._strip_trailing_hashtags(text) == _REFERENCE_TRAILING_RUN.sub(
+            "", text
+        ), repr(text)
+
+
+def test_trailing_strip_examines_each_character_a_bounded_number_of_times(
+    monkeypatch,
+):
+    """The adversarial shape from the review — a long hashtag run followed by
+    one word, ~20k characters — must cost O(n), asserted by COUNTING character
+    examinations rather than by wall-clock time (no flaky bound under -n auto).
+    The replaced regex retried the run from every "#": quadratic."""
+    calls = 0
+    real = pm._is_word_char
+
+    def counting(ch: str) -> bool:
+        nonlocal calls
+        calls += 1
+        return real(ch)
+
+    monkeypatch.setattr(pm, "_is_word_char", counting)
+
+    followed_by_text = "#tag " * 4000 + "word"
+    assert pm._strip_trailing_hashtags(followed_by_text) == followed_by_text
+    assert calls <= 2 * len(followed_by_text)
+
+    calls = 0
+    all_tags = "Body " + "#tag " * 4000
+    assert pm._strip_trailing_hashtags(all_tags) == "Body"
+    assert calls <= 2 * len(all_tags)
+
+
+def test_long_adversarial_body_derives_correctly():
+    body = "#tag " * 4000 + "word"
+    assert len(body) > 20000
+    summary = derive_summary(body)
+    # The run is LEADING here (stripped), and "word" survives.
+    assert summary == "word"
+    assert derive_title("Intro " + "#tag " * 4000 + "end").startswith("Intro tag tag")
 
 
 def test_boilerplate_patterns_are_generic():

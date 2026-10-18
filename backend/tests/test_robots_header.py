@@ -103,6 +103,27 @@ async def test_middleware_matrix(path, response, expected):
     assert r.headers.get("x-robots-tag") == expected
 
 
+@pytest.mark.parametrize(
+    "media_type", ["application/x-ndjson", "text/event-stream"], ids=["ndjson", "sse"]
+)
+async def test_middleware_leaves_streamed_responses_alone(media_type):
+    """The module promises streamed chat/search bodies are untouched: the
+    content type is compared EXACTLY against application/json, so a streamed
+    NDJSON/SSE response gets no header and its chunks arrive intact."""
+    from starlette.responses import StreamingResponse
+
+    async def chunks():
+        yield b'{"a": 1}\n'
+        yield b'{"b": 2}\n'
+
+    r = await _get(
+        _app(StreamingResponse(chunks(), media_type=media_type)), "/api/app/thing"
+    )
+    assert r.status_code == 200
+    assert "x-robots-tag" not in r.headers
+    assert r.content == b'{"a": 1}\n{"b": 2}\n'
+
+
 async def test_middleware_passes_non_http_scopes_through():
     seen = []
 
