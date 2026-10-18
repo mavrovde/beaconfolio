@@ -342,3 +342,82 @@ def test_brand_knobs_do_not_disturb_the_rest_of_the_identity():
     assert s.site_url == defaults.site_url
     assert s.analytics_id == defaults.analytics_id
     assert s.gtm_container_id == defaults.gtm_container_id
+
+
+# --- Search engines: verification tokens + SEO overrides (v1.17.0) ---
+
+SEO_KNOBS = {
+    "google_site_verification": "BEACONFOLIO_GOOGLE_SITE_VERIFICATION",
+    "bing_site_verification": "BEACONFOLIO_BING_SITE_VERIFICATION",
+    "seo_title": "BEACONFOLIO_SEO_TITLE",
+    "seo_description": "BEACONFOLIO_SEO_DESCRIPTION",
+    "seo_keywords": "BEACONFOLIO_SEO_KEYWORDS",
+}
+
+
+@pytest.mark.asyncio
+async def test_seo_fields_default_to_empty(client: AsyncClient, monkeypatch):
+    """Empty is the documented default for all five: no verification tag, and
+    the frontend COMPOSES title/description/keywords from the identity."""
+    from app.config import Settings
+
+    defaults = Settings(_env_file=None)
+    for field in SEO_KNOBS:
+        assert getattr(defaults, field) == ""
+        monkeypatch.setattr(settings, field, "")
+    data = (await client.get(f"{settings.api_prefix}/config/site")).json()
+    for field in SEO_KNOBS:
+        assert data[field] == "", field
+
+
+@pytest.mark.asyncio
+async def test_seo_fields_reflect_settings(client: AsyncClient, monkeypatch):
+    """Distinct pinned values — an equality check against defaults would pass
+    against a hard-coded "" too (#255 mutation lesson)."""
+    monkeypatch.setattr(settings, "google_site_verification", " g-token-pin ")
+    monkeypatch.setattr(settings, "bing_site_verification", "B1NGPIN")
+    monkeypatch.setattr(settings, "seo_title", "Pinned title")
+    monkeypatch.setattr(settings, "seo_description", "Pinned description.")
+    monkeypatch.setattr(settings, "seo_keywords", " a ,b,, c d ,")
+    data = (await client.get(f"{settings.api_prefix}/config/site")).json()
+    assert data["google_site_verification"] == "g-token-pin"  # trimmed
+    assert data["bing_site_verification"] == "B1NGPIN"
+    assert data["seo_title"] == "Pinned title"
+    assert data["seo_description"] == "Pinned description."
+    assert data["seo_keywords"] == "a, b, c d"  # normalized list
+
+
+def test_seo_knobs_bind_only_their_namespaced_alias():
+    """Same #141 reason as the GTM/brand knobs: an ambient generic name
+    (``GOOGLE_SITE_VERIFICATION``, ``SEO_TITLE``) on a shared host must not
+    bind a neighbour's value into this site's <head>."""
+    from app.config import Settings
+
+    values = {env: f"v-{field}" for field, env in SEO_KNOBS.items()}
+    namespaced = Settings(_env_file=None, **values)
+    for field in SEO_KNOBS:
+        assert getattr(namespaced, field) == f"v-{field}"
+
+    ambient = Settings(
+        _env_file=None,
+        GOOGLE_SITE_VERIFICATION="neighbour",
+        BING_SITE_VERIFICATION="neighbour",
+        SEO_TITLE="neighbour",
+        SEO_DESCRIPTION="neighbour",
+        SEO_KEYWORDS="neighbour",
+    )
+    for field in SEO_KNOBS:
+        assert getattr(ambient, field) == "", f"{field} bound an un-namespaced name"
+
+
+def test_no_personal_data_in_identity_defaults():
+    """Template product: the committed defaults are the demo persona and an
+    example domain — never a real owner's identity (#66)."""
+    from app.config import Settings
+
+    s = Settings(_env_file=None)
+    assert s.owner_name == "Jane Doe"
+    assert s.site_url == "https://example.com"
+    assert s.social_links == ""
+    for field in SEO_KNOBS:
+        assert getattr(s, field) == ""

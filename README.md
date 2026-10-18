@@ -88,7 +88,7 @@ generated from your runtime config and your live data — there is nothing to au
 |---|---|
 | `GET /llms.txt` | The [llmstxt.org](https://llmstxt.org) map of the site: who the owner is, the availability signal, and a curated link list (structured profile, CV, contact, blog posts) an assistant can follow. Rendered by SSR from `GET /api/app/config/site` + your published posts. |
 | `GET /api/app/profile/resume.json` | The whole candidate in ONE request as [JSON Resume](https://jsonresume.org) v1.0.0 — experience, education, skills, languages, certificates, references, plus `meta.availability` and `meta.contactUrl`. Built from the active profile version (admin → Profile Data), so an upload changes it immediately. It passes through the SAME public allowlist as the HTML profile, so it cannot expose a field the site does not already show. Validated in CI against the pinned schema with **format assertion on** (`uri`, `email`, `date`); a credential whose date is only a year keeps that year on the CV page but omits the schema's `date` field rather than inventing a day. |
-| `GET /robots.txt` | Names the AI crawlers explicitly (GPTBot, ClaudeBot, Google-Extended, PerplexityBot, Applebot-Extended, …). `AI_CRAWLER_POLICY=allow` (default) welcomes them; `deny` gives **only** those agents `Disallow: /` and leaves classic search untouched. `/for/` (tailored recruiter links) and `/admin` are excluded for everyone — as path *prefixes*, deliberately. Under `deny`, robots.txt stops pointing crawlers at `/llms.txt`; the file itself is still served, because it is an on-demand map an assistant reads while helping a person, not a crawl permission. |
+| `GET /robots.txt` | Names the AI crawlers explicitly (GPTBot, ClaudeBot, Google-Extended, PerplexityBot, Applebot-Extended, …). `AI_CRAWLER_POLICY=allow` (default) welcomes them; `search-only` welcomes the search and user-initiated agents (so answers can still cite the site) but gives the training crawlers `Disallow: /` (the backend accepts `search-only` now; the SSR `robots.txt` renders it once the frontend SEO PR #494 ships, and until then treats it as `allow`); `deny` gives **only** those agents `Disallow: /` and leaves classic search untouched. `/for/` (tailored recruiter links) and `/admin` are excluded for everyone — as path *prefixes*, deliberately. Under `deny`, robots.txt stops pointing crawlers at `/llms.txt`; the file itself is still served, because it is an on-demand map an assistant reads while helping a person, not a crawl permission. |
 
 Every page's `<head>` also carries `<link rel="alternate" type="application/json">` to the JSON
 Resume and `<link rel="describedby">` to `/llms.txt`, server-rendered so an agent finds them
@@ -208,6 +208,23 @@ Then open <http://localhost:4200> (public site) and <http://admin.localhost:4200
    than files in the bundle. The terminal preset's shell chrome (`user@your-site:~$`, the `>_`
    wordmark prefix) is derived from `SITE_NAME`/`OWNER_NAME` and disappears entirely under the
    four document presets.
+
+   **Search engines** — five more `.env` knobs, all empty by default and served on the same
+   `GET /api/app/config/site`:
+
+   | Knob | What it does | Empty = |
+   |---|---|---|
+   | `BEACONFOLIO_GOOGLE_SITE_VERIFICATION` | the `content` token of Search Console's HTML-tag method (`google-site-verification`) | no tag |
+   | `BEACONFOLIO_BING_SITE_VERIFICATION` | the `content` token of Bing Webmaster Tools' HTML-tag method (`msvalidate.01`) | no tag |
+   | `BEACONFOLIO_SEO_TITLE` | a hand-worded site `<title>` | composed from `OWNER_*`/`SITE_*` + the profile |
+   | `BEACONFOLIO_SEO_DESCRIPTION` | a hand-worded meta description | composed the same way |
+   | `BEACONFOLIO_SEO_KEYWORDS` | a comma-separated keyword list | composed the same way |
+
+   Leave the three overrides empty unless you really want to word one by hand — the composed
+   values follow your identity and profile automatically. Imported LinkedIn posts carry their
+   ORIGINAL date (`posted_at`) in every public post payload, and the blog's default order is
+   newest-first by `COALESCE(posted_at, created_at)`, so an import batch never makes every post
+   look published on import day.
 3. Admin panel: upload your **Profile Data** JSON and your **CV** (Content → replaces the demo).
    Your **portrait** is a runtime upload too (#333), but has **no panel button yet** — it is one
    authenticated API call: `POST /api/app/admin/profile/photo` (JPEG/PNG ≤ 5 MB, checked by

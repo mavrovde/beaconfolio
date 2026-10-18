@@ -64,6 +64,23 @@ class SiteConfig(BaseModel):
     brand_og_image_url: str
     brand_font_css_url: str
     brand_font_family: str
+    # Search-engine ownership tokens (HTML-tag verification method) — the
+    # frontend renders `google-site-verification` / `msvalidate.01` metas from
+    # them. Empty means no tag. Absent on an older backend; the client
+    # normalizes each to "" exactly as it does `gtm_container_id`.
+    google_site_verification: str
+    bing_site_verification: str
+    # Hand-worded SEO OVERRIDES. Empty means the frontend composes the value
+    # from the identity fields above and the profile — the normal case, so the
+    # template needs no per-owner SEO copy. `seo_keywords` is a normalized
+    # comma-separated list ("a, b, c"), the form a keywords meta carries.
+    seo_title: str
+    seo_description: str
+    seo_keywords: str
+
+
+def _normalize_keywords(raw: str) -> str:
+    return ", ".join(k.strip() for k in raw.split(",") if k.strip())
 
 
 @router.get("/site", response_model=SiteConfig)
@@ -98,4 +115,9 @@ async def get_site_config(db: AsyncSession = Depends(get_db)) -> SiteConfig:
         brand_og_image_url=settings.brand_og_image_url,
         brand_font_css_url=settings.brand_font_css_url,
         brand_font_family=settings.brand_font_family,
+        google_site_verification=settings.google_site_verification.strip(),
+        bing_site_verification=settings.bing_site_verification.strip(),
+        seo_title=settings.seo_title.strip(),
+        seo_description=settings.seo_description.strip(),
+        seo_keywords=_normalize_keywords(settings.seo_keywords),
     )

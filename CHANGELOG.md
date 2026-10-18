@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Imported posts carry their real publication date to search engines.** Every public post
+  payload (list, detail by slug and by id, similar posts, semantic search) now includes
+  `posted_at` — the original LinkedIn date, ISO 8601, `null` for a post written here — and the list
+  also carries `updated_at` for a sitemap `<lastmod>`. `created_at` is unchanged (it is the row's
+  creation, i.e. the import day). The list's default order is now newest-first by
+  `COALESCE(posted_at, created_at)` (`sort_by=published_at`); `created_at` stays available as a
+  sort key, and sorting is NULLS LAST. Measured on the live site before this change: all 82
+  imports claimed the import day.
+- **Clean derived titles and meta descriptions for imported posts**
+  (`backend/app/services/post_metadata.py`). Title: the first readable sentence(s) of the first
+  line, ≤ 70 chars, cut at a clause boundary or a word boundary — "…" only when text was really
+  dropped. Summary: the cleaned body, ≤ 150 chars on a word boundary (it was the raw first 200
+  chars). Emoji, hashtag runs and generic share boilerplate (the named
+  `LINKEDIN_BOILERPLATE_PATTERNS` list, e.g. "View my verified achievement from …") are stripped
+  first. Pure functions of the body — nothing deployment-specific. The strip keeps text that
+  only looks like decoration: a keycap ("1️⃣") reduces to its digit, a leading currency sign
+  (`$5M`), signed number (`+1`, `-5`) or `.NET`-style dot survives, `°`/`℃` stay, and a
+  zero-width (non-)joiner between letters (Persian/Indic orthography) is kept. The trailing
+  hashtag strip is a linear right-to-left scan — the regex it replaced was quadratic on a long
+  hashtag run followed by text (1.28 s at 14k chars).
+- **`POST /api/app/linkedin/rederive-metadata`** — dry run by default, `?dry_run=false` applies;
+  import token or admin session. Moves already-imported rows onto the new derivation, but only
+  fields that still equal the PREVIOUS derivation (or are empty) — human edits are counted and
+  kept, slugs never change, a second apply changes nothing. No migration rewrites existing rows.
+- **Search-engine site config**: `google_site_verification`, `bing_site_verification` and the
+  optional overrides `seo_title`, `seo_description`, `seo_keywords` on
+  `GET /api/app/config/site` (env `BEACONFOLIO_GOOGLE_SITE_VERIFICATION`,
+  `BEACONFOLIO_BING_SITE_VERIFICATION`, `BEACONFOLIO_SEO_TITLE`, `BEACONFOLIO_SEO_DESCRIPTION`,
+  `BEACONFOLIO_SEO_KEYWORDS`; all default empty — empty overrides mean "compose from the
+  identity"). Documented in `backend/.env.example`, `.env.example`, both compose files and the
+  README.
+- **Conditional GET on the posts read routes**: a body-hash `ETag` (`If-None-Match` → `304`),
+  advisory `Last-Modified` on single posts, `Cache-Control: no-cache`, `Vary: Authorization`.
+  `If-Modified-Since` is deliberately not honoured (the admin SQL console can change a row
+  without bumping `updated_at`).
+- **`X-Robots-Tag: noindex` on API JSON responses** — except the documented machine surface
+  `/api/app/profile/resume.json` and every non-JSON response (post images stay indexable).
 - **The shared edge writes an access log for `mcp.viafrei.de`, and only for that site.** The
   viafrei tenant needs to tell "slow before the app" from "slow in the app" for multi-second
   stalls (viafrei repo issue #438); Caddy's JSON access line carries `duration` and `status`.
@@ -40,6 +77,16 @@ All notable changes to this project will be documented in this file.
   stop halfway with exit **0**; bash 5.2 (CI) exits 2.
 
 ### Changed
+- **`AI_CRAWLER_POLICY` accepts `search-only`** besides `allow`/`deny` (`config.py`
+  `_normalize_ai_crawler_policy`; an unknown value still falls back to `allow`), and
+  `GET /api/app/config/site` passes it through. The backend half only: `robots.txt` honours
+  `search-only` once the frontend SEO PR (#494) is deployed — until then the current frontend
+  folds any value other than `deny` to `allow`, the safe direction. #494 merges after this PR.
+  Compose comments and `.env.example` list the three values.
+- **A LinkedIn re-import no longer overwrites a summary a human edited**, and now upgrades a title
+  or summary that is still untouched machine output. Explicitly passed `title`/`summary` always
+  apply. `transfer-post` uses the same derivation (its summary was the literal
+  "Imported from LinkedIn").
 - **The edge guard tokenises the way Caddy does, and declines to certify what it cannot model.**
   `infra/edge/apply.test.sh` asserts that one tenant's status dashboard is reachable only through
   the IP-gated `handle @allowed` block of its own site. Five review rounds running it certified a
@@ -239,6 +286,8 @@ All notable changes to this project will be documented in this file.
   `seen`, allow an empty extraction, drop/reorder the merge, ignore `replace`, flip the sort)
   all fail the suite (including: the loop ignoring `maxPosts`, a bad file read as empty, a
   non-array accepted, `--replace` still parsing the file).
+- `GET /api/app/posts?sort_by=display_image_url` (any property name) returned 500 — sorting now
+  goes through an explicit column allowlist; unknown fields fall back to the default order.
 
 ## [1.16.0] - 2026-09-19
 

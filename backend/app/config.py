@@ -289,12 +289,38 @@ class Settings(BaseSettings):
     brand_font_family: str = Field(
         default="", validation_alias="BEACONFOLIO_BRAND_FONT_FAMILY"
     )
-    # AI-crawler policy (#252) — "allow" (default) or "deny", served on
-    # GET {api_prefix}/config/site and rendered into the SSR robots.txt.
+    # Search-engine ownership verification. The TOKEN each console hands out
+    # for the HTML-tag method — Google Search Console's
+    # `<meta name="google-site-verification" content="…">` and Bing Webmaster
+    # Tools' `<meta name="msvalidate.01" content="…">` — served on
+    # GET {api_prefix}/config/site so the SSR head can carry it on a PREBUILT
+    # image. Empty (the default) means no tag. Public by design: the token is
+    # printed into every page's HTML, which is how verification works.
+    google_site_verification: str = Field(
+        default="", validation_alias="BEACONFOLIO_GOOGLE_SITE_VERIFICATION"
+    )
+    bing_site_verification: str = Field(
+        default="", validation_alias="BEACONFOLIO_BING_SITE_VERIFICATION"
+    )
+    # SEO overrides. The site's <title>, meta description and keywords are
+    # COMPOSED by the frontend from the identity above (OWNER_NAME,
+    # OWNER_HEADLINE, OWNER_DESCRIPTION) and the profile data, so a forker who
+    # sets nothing still gets correct, owner-specific metadata. These exist only
+    # for an owner who wants to word one of them by hand; empty (the default)
+    # means "compose it". Keywords are a comma-separated list.
+    seo_title: str = Field(default="", validation_alias="BEACONFOLIO_SEO_TITLE")
+    seo_description: str = Field(
+        default="", validation_alias="BEACONFOLIO_SEO_DESCRIPTION"
+    )
+    seo_keywords: str = Field(default="", validation_alias="BEACONFOLIO_SEO_KEYWORDS")
+    # AI-crawler policy (#252) — "allow" (default), "deny" or "search-only", served
+    # on GET {api_prefix}/config/site and rendered into the SSR robots.txt.
     # Allow-by-default is the product thesis: recruiter research runs through AI
     # assistants, so being readable BY them is the point. An owner who objects
     # sets AI_CRAWLER_POLICY=deny and the AI user-agents (only those) get
-    # `Disallow: /`. Anything unrecognized falls back to "allow" — see the
+    # `Disallow: /`; "search-only" admits the search/user-initiated agents (so the
+    # site can still be cited in answers) and disallows the training crawlers.
+    # Anything unrecognized falls back to "allow" — see the
     # validator below — because a typo must not silently deindex a portfolio.
     ai_crawler_policy: str = "allow"
 
@@ -302,7 +328,7 @@ class Settings(BaseSettings):
     @classmethod
     def _normalize_ai_crawler_policy(cls, v: object) -> object:
         policy = v.strip().lower() if isinstance(v, str) else v
-        return policy if policy in ("allow", "deny") else "allow"
+        return policy if policy in ("allow", "deny", "search-only") else "allow"
 
     # Docker compose forwards these as ``SITE_NAME=${SITE_NAME:-}`` — an UNSET
     # host variable therefore arrives as an EMPTY string, which would silently

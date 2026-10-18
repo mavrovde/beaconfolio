@@ -32,6 +32,14 @@ from app.services.linkedin import (
     linkedin_service,
     normalize_linkedin_text,
 )
+from app.services.post_metadata import (
+    derive_summary,
+    derive_title,
+    is_machine_summary,
+    is_machine_title,
+    legacy_derive_summary,
+    legacy_derive_title,
+)
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
@@ -172,11 +180,7 @@ class TransferPostRequest(BaseModel):
 
 async def _create_post_from_transfer(post_data: TransferPostRequest) -> Post:
     """Shared helper to create a Post from a TransferPostRequest."""
-    title = post_data.content[:50].strip()
-    if not title:
-        title = "LinkedIn Post"
-        if post_data.content and len(post_data.content) > 50:
-            title += "..."
+    title = derive_title(post_data.content)
 
     slug_base = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
     if not slug_base:
@@ -198,7 +202,7 @@ async def _create_post_from_transfer(post_data: TransferPostRequest) -> Post:
         title=title,
         slug=slug,
         content=post_data.content,
-        summary="Imported from LinkedIn",
+        summary=derive_summary(post_data.content) or None,
         image_url=post_data.image_url,
         language="en",
         published=False,
@@ -304,17 +308,6 @@ def _import_authorized(token: str | None, user: User | None) -> bool:
     return bool(user and getattr(user, "is_admin", False))
 
 
-def _derive_title(content: str) -> str:
-    """First line / ~60 chars of the content, trimmed on a word boundary."""
-    first_line = content.strip().splitlines()[0] if content.strip() else ""
-    if len(first_line) <= 60:
-        return first_line or "LinkedIn Post"
-    cut = first_line[:60]
-    if " " in cut:
-        cut = cut.rsplit(" ", 1)[0]
-    return cut.strip() + "…"
-
-
 def _slug_base(title: str) -> str:
     base = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
     return base or "linkedin-post"
@@ -363,15 +356,30 @@ async def _upsert_linkedin_post(
     embedding,
     image_bytes: bytes | None,
     image_type: str | None,
+    title_explicit: bool = False,
+    summary_explicit: bool = False,
 ) -> tuple[Post, bool]:
-    """Upsert a post by LinkedIn URN. Returns (post, created)."""
+    """Upsert a post by LinkedIn URN. Returns (post, created).
+
+    On UPDATE, a derived title/summary replaces the stored one only while the
+    stored value is still machine output for the stored body
+    (``is_machine_title``/``is_machine_summary``) — a value a human edited in
+    the admin survives every re-import. A value the CALLER passed explicitly
+    is a deliberate act and always applies. Derivation is deterministic, so
+    re-importing an unchanged post never flaps either field.
+    """
     existing = (
         await db.execute(select(Post).where(Post.source_urn == urn))
     ).scalar_one_or_none()
 
     if existing is not None:
+        # Both checks read the body BEFORE it is overwritten: "machine output"
+        # means machine output for the content it was derived from.
+        if title_explicit or is_machine_title(existing.title, existing.content):
+            existing.title = title
+        if summary_explicit or is_machine_summary(existing.summary, existing.content):
+            existing.summary = summary
         existing.content = content
-        existing.summary = summary
         existing.posted_at = posted_at or existing.posted_at
         existing.source_url = source_url or existing.source_url
         existing.embedding = embedding
@@ -458,8 +466,10 @@ async def import_linkedin_post(
         image_type = image.content_type
 
     clean_content = normalize_linkedin_text(content)
-    resolved_title = (title or "").strip() or _derive_title(clean_content)
-    resolved_summary = (summary or "").strip() or clean_content[:200]
+    explicit_title = (title or "").strip()
+    explicit_summary = (summary or "").strip()
+    resolved_title = explicit_title or derive_title(clean_content)
+    resolved_summary = explicit_summary or derive_summary(clean_content)
     embedding = await get_embedding(f"{resolved_title}\n\n{clean_content}")
 
     logger.info(
@@ -484,6 +494,8 @@ async def import_linkedin_post(
         embedding=embedding,
         image_bytes=image_bytes,
         image_type=image_type,
+        title_explicit=bool(explicit_title),
+        summary_explicit=bool(explicit_summary),
     )
     return {
         "id": post.id,
@@ -654,14 +666,14 @@ async def import_posts_json(
         image_url = _pick_image_url(entry)
         image_bytes, image_type = await _download_image_best_effort(image_url)
 
-        title = _derive_title(content)
+        title = derive_title(content)
         embedding = await get_embedding(f"{title}\n\n{content}")
 
         post, was_created = await _upsert_linkedin_post(
             db,
             urn=urn,
             title=title,
-            summary=content[:200],
+            summary=derive_summary(content),
             content=content,
             language=(entry.get("language") or "en").lower()[:2],
             published=False,
@@ -696,3 +708,108 @@ async def import_posts_json(
         "skipped": skipped,
         "count": len(entries),
     }
+
+
+# --- Re-derive title/summary of already-imported posts ------------------------
+
+
+class FieldChange(BaseModel):
+    old: str | None
+    new: str
+
+
+class RederiveItem(BaseModel):
+    id: int
+    slug: str
+    title: FieldChange | None = None
+    summary: FieldChange | None = None
+
+
+class RederiveResult(BaseModel):
+    dry_run: bool
+    # Imported posts examined (those carrying a LinkedIn URN).
+    scanned: int
+    # Posts with at least one field that would change (dry run) / did change.
+    changed: int
+    # Fields left alone because they no longer equal the previous derivation,
+    # i.e. a human edited them.
+    kept_human_title: int
+    kept_human_summary: int
+    items: list[RederiveItem]
+
+
+@router.post("/rederive-metadata", response_model=RederiveResult)
+async def rederive_metadata(
+    dry_run: bool = True,
+    x_import_token: str | None = Header(None, alias="X-Import-Token"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User | None = Depends(get_current_user_optional),
+) -> RederiveResult:
+    """Recompute the derived title/summary of imported posts — a DRY RUN by
+    default; ``?dry_run=false`` applies.
+
+    Existing rows keep whatever the import that created them derived; this is
+    the owner's deliberate, reviewable way to move them onto the current
+    derivation (no migration rewrites production rows). A field changes ONLY
+    while it still equals the PREVIOUS derivation of the stored body
+    (``legacy_derive_title``/``legacy_derive_summary``) or is empty, so
+    anything a human edited is counted and left alone. Slugs are never
+    touched — they are published URLs. Idempotent: a second apply changes
+    nothing. Auth mirrors ``/import-post`` (machine token or admin session).
+    """
+    if not _import_authorized(x_import_token, current_user):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Re-derive requires a valid X-Import-Token or an admin session.",
+        )
+
+    result = await db.execute(
+        select(Post).where(Post.source_urn.isnot(None)).order_by(Post.id)
+    )
+    posts = result.scalars().all()
+    items: list[RederiveItem] = []
+    kept_title = 0
+    kept_summary = 0
+    for post in posts:
+        item = RederiveItem(id=post.id, slug=post.slug)
+        new_title = derive_title(post.content)
+        if post.title != new_title:
+            if not post.title or post.title == legacy_derive_title(post.content):
+                item.title = FieldChange(old=post.title, new=new_title)
+            else:
+                kept_title += 1
+        new_summary = derive_summary(post.content)
+        if (post.summary or "") != new_summary:
+            if not post.summary or post.summary == legacy_derive_summary(post.content):
+                item.summary = FieldChange(old=post.summary, new=new_summary)
+            else:
+                kept_summary += 1
+        if item.title is None and item.summary is None:
+            continue
+        items.append(item)
+        if not dry_run:
+            if item.title is not None:
+                post.title = item.title.new
+            if item.summary is not None:
+                post.summary = item.summary.new
+
+    if not dry_run and items:
+        await db.commit()
+
+    logger.info(
+        "[LinkedIn] rederive-metadata: dry_run=%s scanned=%d changed=%d "
+        "kept_human_title=%d kept_human_summary=%d",
+        dry_run,
+        len(posts),
+        len(items),
+        kept_title,
+        kept_summary,
+    )
+    return RederiveResult(
+        dry_run=dry_run,
+        scanned=len(posts),
+        changed=len(items),
+        kept_human_title=kept_title,
+        kept_human_summary=kept_summary,
+        items=items,
+    )

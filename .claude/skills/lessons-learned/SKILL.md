@@ -2448,3 +2448,28 @@ construction C — the correction lands immediately, it just reads as an appende
 than a clean edit — where the cure would be a hole in the one lint that catches silent content
 loss. (An earlier draft of this paragraph called the cost "a deferral, which is cheap". That was
 the round-1 framing, and the body above supersedes it: nothing is deferred.)
+
+## 82. A row's `created_at` is not its content's date — and a handler signature is a test contract (v1.17.0 SEO data)
+
+**Trap 1 — the import day becomes the publication date.** Every public post payload exposed only
+`created_at`. For a post written in the admin that IS the publication date; for an IMPORTED post it
+is the import second. Measured on the live site: all 82 LinkedIn imports claimed 2026-10-18 in the
+API, the sitemap `<lastmod>` and JSON-LD, while `posted_at` (LinkedIn's real date) sat unused in
+the table. Any time a row can be created long after the thing it describes (imports, backfills,
+restores), serve the domain date (`posted_at`) beside the row date, order by
+`COALESCE(posted_at, created_at)`, and remember `NULLS LAST` — Postgres puts NULLs FIRST on `DESC`.
+
+**Trap 2 — `hasattr(Model, sort_by)` is not an allowlist.** It admits Python properties
+(`display_image_url` → `.desc()` raises → 500) and deferred blob/vector columns. Sort through an
+explicit dict of columns.
+
+**Trap 3 — moving a cross-cutting concern INTO handlers breaks direct-call tests.** The first cut of
+ETag/304 added `request: Request` to `list_posts`/`get_post*` and returned a `Response`; the full
+`-n auto` suite then failed 11 tests in `tests/test_cov_posts.py` that call the handlers directly
+and read model attributes — invisible to a targeted run (the §16 stale-sibling class again). A
+`route_class=` (`app/api/conditional.py`) hashes the RENDERED body instead, keeps handlers typed,
+and needed no test edits.
+
+**Mutation note.** "Commit even on a dry run" is an EQUIVALENT mutant when the dry run never
+assigns — a commit with nothing dirty writes nothing. Mutate the assignment and the commit
+together, or the survivor tells you nothing.

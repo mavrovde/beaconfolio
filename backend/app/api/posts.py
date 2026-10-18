@@ -1,11 +1,13 @@
+from datetime import datetime
 from math import ceil
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.conditional import ConditionalGetRoute
 from app.database import get_db
 from app.logger import get_logger
 from app.models.post import Post
@@ -15,7 +17,9 @@ from app.services.embeddings import get_embedding
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/posts", tags=["posts"])
+# GET routes carry ETag/Last-Modified and answer If-None-Match with 304 —
+# see app/api/conditional.py. Non-GET and non-JSON responses pass through.
+router = APIRouter(prefix="/posts", tags=["posts"], route_class=ConditionalGetRoute)
 
 
 class PostCreate(BaseModel):
@@ -65,6 +69,12 @@ class PostResponse(BaseModel):
     tags: list[str]
     created_at: str
     updated_at: str
+    # The ORIGINAL publication date of an imported post (LinkedIn's date), ISO
+    # 8601, or null for a post written here. ``created_at`` is when the ROW was
+    # created — for an import that is the import day, so a consumer that wants
+    # the publication date reads ``posted_at ?? created_at`` (the same
+    # COALESCE the default list ordering uses).
+    posted_at: str | None = None
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
@@ -79,6 +89,10 @@ class PostListResponse(BaseModel):
     published: bool
     tags: list[str]
     created_at: str
+    # Same meaning as on PostResponse. ``updated_at`` is here for a sitemap's
+    # <lastmod>, which is a MODIFICATION date, not a publication date.
+    posted_at: str | None = None
+    updated_at: str | None = None
 
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
@@ -98,6 +112,7 @@ class SimilarPostResponse(BaseModel):
     summary: str | None
     image_url: str | None = None
     similarity: float
+    posted_at: str | None = None
 
 
 class TagSuggestionRequest(BaseModel):
@@ -117,6 +132,50 @@ class PostDetailSuggestionResponse(BaseModel):
     tags: list[str]
 
 
+def _iso(value: datetime | None) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _to_post_response(post: Post) -> PostResponse:
+    return PostResponse(
+        id=post.id,
+        title=post.title,
+        slug=post.slug,
+        content=post.content,
+        summary=post.summary,
+        image_url=post.display_image_url,
+        language=post.language,
+        published=post.published,
+        tags=post.tags,
+        created_at=post.created_at.isoformat(),
+        updated_at=post.updated_at.isoformat(),
+        posted_at=_iso(post.posted_at),
+    )
+
+
+# The publication date of a post: LinkedIn's original date for an import, the
+# row's creation for a post written here. The DEFAULT list order — an import
+# batch must not reorder the blog by import time.
+PUBLISHED_AT = func.coalesce(Post.posted_at, Post.created_at)
+DEFAULT_SORT = "published_at"
+# The columns a client may sort by. An allowlist, not ``hasattr(Post, …)``:
+# that admitted ``display_image_url`` (a Python property — ``.desc()`` on it
+# raised, a 500) and the deferred ``image_blob``/``embedding`` columns.
+SORTABLE_COLUMNS: dict[str, Any] = {
+    "published_at": PUBLISHED_AT,
+    "created_at": Post.created_at,
+    "updated_at": Post.updated_at,
+    "posted_at": Post.posted_at,
+    "title": Post.title,
+    "slug": Post.slug,
+    "summary": Post.summary,
+    "language": Post.language,
+    "published": Post.published,
+    "tags": Post.tags,
+    "id": Post.id,
+}
+
+
 @router.get("", response_model=PaginatedPostListResponse)
 async def list_posts(
     published_only: bool = True,
@@ -124,13 +183,27 @@ async def list_posts(
     tag: str | None = None,
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(10, ge=1, le=100, description="Items per page"),
-    sort_by: str = Query("created_at", description="Field to sort by"),
+    sort_by: str = Query(
+        DEFAULT_SORT,
+        description=(
+            "Field to sort by. `published_at` (default) is the publication "
+            "date, COALESCE(posted_at, created_at); `created_at` is when the "
+            "row was created (the import day, for an imported post). Unknown "
+            "fields fall back to `published_at` desc."
+        ),
+    ),
     sort_order: str = Query("desc", pattern="^(asc|desc)$", description="Sort order"),
     search: str | None = Query(None, description="Search in title and summary"),
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(get_current_user_optional),
-):
-    """List posts with pagination, sorting, and search."""
+) -> PaginatedPostListResponse:
+    """List posts with pagination, sorting, and search.
+
+    Carries an ``ETag`` (``If-None-Match`` → ``304``) via the router's
+    ``ConditionalGetRoute`` — no ``Last-Modified`` on a LIST: the newest
+    ``updated_at`` cannot see a post being deleted or unpublished, the
+    body-hash ETag can.
+    """
     # Restrict access to drafts
     if not published_only and (not current_user or not current_user.is_admin):
         published_only = True
@@ -152,22 +225,21 @@ async def list_posts(
         )
 
     # Get total count before pagination
-    from sqlalchemy import func
-
     count_query = select(func.count()).select_from(query.subquery())
     total_raw = await db.scalar(count_query)
     total = int(total_raw) if total_raw is not None else 0
 
-    # Apply sorting
-    if hasattr(Post, sort_by):
-        order_column = getattr(Post, sort_by)
-        if sort_order == "desc":
-            query = query.order_by(order_column.desc(), Post.id.desc())
-        else:
-            query = query.order_by(order_column.asc(), Post.id.asc())
+    # Apply sorting. NULLS LAST in both directions: Postgres puts NULLs FIRST
+    # on DESC, which would lead a `posted_at` sort with every post written
+    # here (no LinkedIn date).
+    order_column = SORTABLE_COLUMNS.get(sort_by)
+    if order_column is None:
+        # Unknown field: the default order (the order_by direction too).
+        query = query.order_by(PUBLISHED_AT.desc(), Post.id.desc())
+    elif sort_order == "desc":
+        query = query.order_by(order_column.desc().nulls_last(), Post.id.desc())
     else:
-        # Default to created_at desc if invalid sort field
-        query = query.order_by(Post.created_at.desc(), Post.id.desc())
+        query = query.order_by(order_column.asc().nulls_last(), Post.id.asc())
 
     # Apply pagination
     offset = (page - 1) * page_size
@@ -192,6 +264,8 @@ async def list_posts(
                 published=p.published,
                 tags=p.tags,
                 created_at=p.created_at.isoformat(),
+                posted_at=_iso(p.posted_at),
+                updated_at=_iso(p.updated_at),
             )
             for p in posts
         ],
@@ -207,8 +281,9 @@ async def get_post_by_id(
     id: int,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(get_current_user_optional),
-):
-    """Get a single post by ID."""
+) -> PostResponse:
+    """Get a single post by ID — with ``ETag``/``Last-Modified`` via the
+    router's ``ConditionalGetRoute``."""
     result = await db.execute(select(Post).where(Post.id == id))
     post = result.scalar_one_or_none()
 
@@ -219,19 +294,7 @@ async def get_post_by_id(
     if not post.published and (not current_user or not current_user.is_admin):
         raise HTTPException(status_code=404, detail="Post not found")
 
-    return PostResponse(
-        id=post.id,
-        title=post.title,
-        slug=post.slug,
-        content=post.content,
-        summary=post.summary,
-        image_url=post.display_image_url,
-        language=post.language,
-        published=post.published,
-        tags=post.tags,
-        created_at=post.created_at.isoformat(),
-        updated_at=post.updated_at.isoformat(),
-    )
+    return _to_post_response(post)
 
 
 @router.get("/search/semantic")
@@ -333,6 +396,7 @@ async def semantic_search(
             "slug": item["post"].slug,
             "summary": item["post"].summary,
             "image_url": item["post"].display_image_url,
+            "posted_at": _iso(item["post"].posted_at),
             "relevance": item["relevance"],
             # Debugging info could be returned if needed, but keeping schema clean for now
         }
@@ -345,8 +409,9 @@ async def get_post(
     slug: str,
     db: AsyncSession = Depends(get_db),
     current_user: User | None = Depends(get_current_user_optional),
-):
-    """Get a single post by slug."""
+) -> PostResponse:
+    """Get a single post by slug — with ``ETag``/``Last-Modified`` via the
+    router's ``ConditionalGetRoute``."""
     result = await db.execute(select(Post).where(Post.slug == slug))
     post = result.scalar_one_or_none()
 
@@ -357,19 +422,7 @@ async def get_post(
     if not post.published and (not current_user or not current_user.is_admin):
         raise HTTPException(status_code=404, detail="Post not found")
 
-    return PostResponse(
-        id=post.id,
-        title=post.title,
-        slug=post.slug,
-        content=post.content,
-        summary=post.summary,
-        image_url=post.display_image_url,
-        language=post.language,
-        published=post.published,
-        tags=post.tags,
-        created_at=post.created_at.isoformat(),
-        updated_at=post.updated_at.isoformat(),
-    )
+    return _to_post_response(post)
 
 
 @router.post("", response_model=PostResponse)
@@ -413,19 +466,7 @@ async def create_post(
             raise
     await db.refresh(post)
 
-    return PostResponse(
-        id=post.id,
-        title=post.title,
-        slug=post.slug,
-        content=post.content,
-        summary=post.summary,
-        image_url=post.display_image_url,
-        language=post.language,
-        published=post.published,
-        tags=post.tags,
-        created_at=post.created_at.isoformat(),
-        updated_at=post.updated_at.isoformat(),
-    )
+    return _to_post_response(post)
 
 
 @router.get("/{slug}/similar", response_model=list[SimilarPostResponse])
@@ -469,6 +510,7 @@ async def get_similar_posts(
             summary=p.summary,
             image_url=p.display_image_url,
             similarity=1 - distance,  # Convert distance to similarity
+            posted_at=_iso(p.posted_at),
         )
         for p, distance in similar_posts
     ]
@@ -576,19 +618,7 @@ async def generate_post_endpoint(
             raise
         await db.refresh(post)
 
-    return PostResponse(
-        id=post.id,
-        title=post.title,
-        slug=post.slug,
-        content=post.content,
-        summary=post.summary,
-        image_url=post.display_image_url,
-        language=post.language,
-        published=post.published,
-        tags=post.tags,
-        created_at=post.created_at.isoformat(),
-        updated_at=post.updated_at.isoformat(),
-    )
+    return _to_post_response(post)
 
 
 @router.put("/{id:int}", response_model=PostResponse)
@@ -631,19 +661,7 @@ async def update_post_by_id(
     await db.commit()
     await db.refresh(post)
 
-    return PostResponse(
-        id=post.id,
-        title=post.title,
-        slug=post.slug,
-        content=post.content,
-        summary=post.summary,
-        image_url=post.display_image_url,
-        language=post.language,
-        published=post.published,
-        tags=post.tags,
-        created_at=post.created_at.isoformat(),
-        updated_at=post.updated_at.isoformat(),
-    )
+    return _to_post_response(post)
 
 
 @router.delete("/{id:int}")
@@ -693,20 +711,7 @@ async def upload_post_image(
 
     await db.commit()
     await db.refresh(post)
-    return PostResponse(
-        id=post.id,
-        title=post.title,
-        slug=post.slug,
-        content=post.content,
-        summary=post.summary,
-        # image_url handled by validator/alias from display_image_url property
-        image_url=post.display_image_url,
-        language=post.language,
-        published=post.published,
-        tags=post.tags,
-        created_at=post.created_at.isoformat(),
-        updated_at=post.updated_at.isoformat(),
-    )
+    return _to_post_response(post)
 
 
 @router.get("/{post_id}/image")
