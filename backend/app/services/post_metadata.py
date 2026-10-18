@@ -102,18 +102,14 @@ SENTENCE_ABBREVIATIONS: frozenset[str] = frozenset(
         "vs",
         "e.g",
         "i.e",
-        "etc",
         "mr",
         "mrs",
         "ms",
         "dr",
         "prof",
         "st",
-        "no",
         "approx",
         "incl",
-        "inc",
-        "ltd",
         "jr",
         "sr",
         # German
@@ -121,9 +117,13 @@ SENTENCE_ABBREVIATIONS: frozenset[str] = frozenset(
         "bzw",
         "ca",
         "d.h",
-        "usw",
     }
 )
+# NOT listed, deliberately: "no", "etc", "inc", "ltd", "usw". Each often ENDS a
+# sentence ("I said no. Then…", "AWS, GCP etc. All…", "Google Inc. After…"),
+# and their mid-sentence uses are already covered by the lowercase/digit rule
+# in :func:`_ends_sentence` ("No. 1", "etc. and") — listing them only fused
+# real sentences into run-ons (PR #498 review, round 1).
 # Two or more single letters each followed by a dot: "L.A.", "U.S.", "e.g.",
 # "z.B.", "d.h.". A lone "A." is NOT one — "Plan A. Then" ends a sentence.
 _INITIALISM = re.compile(r"(?:[^\W\d_]\.){2,}")
@@ -308,6 +308,11 @@ def truncate_on_word(text: str, max_chars: int) -> str:
     return cut + ELLIPSIS
 
 
+#: Characters before a candidate "." searched for the word it closes. Longer
+#: than any abbreviation or realistic initialism ("N.A.S.A.", '("e.g.').
+_ABBREVIATION_LOOKBACK = 40
+
+
 def _is_abbreviation(text: str) -> bool:
     """Whether ``text`` ends in a word whose final "." is an abbreviation's
     or an initialism's, not a full stop (see :data:`SENTENCE_ABBREVIATIONS`).
@@ -333,7 +338,11 @@ def _ends_sentence(text: str, gap: re.Match[str]) -> bool:
     nxt = text[gap.end()] if gap.end() < len(text) else ""
     if nxt.islower() or nxt.isdecimal():
         return False
-    return not _is_abbreviation(text[: gap.start() + 1])
+    # Only the word before the dot matters, so look back over a bounded window:
+    # slicing from the start of the text made each candidate O(n) and the
+    # whole split quadratic on a long first line.
+    window = text[max(0, gap.start() + 1 - _ABBREVIATION_LOOKBACK) : gap.start() + 1]
+    return not _is_abbreviation(window)
 
 
 def split_sentences(text: str) -> list[str]:

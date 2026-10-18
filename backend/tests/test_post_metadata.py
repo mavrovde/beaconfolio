@@ -289,10 +289,50 @@ def test_a_dot_after_an_abbreviation_does_not_end_the_sentence(abbr: str):
 def test_abbreviation_list_is_generic_and_complete():
     """The brief's list, English + German — a removed entry is a regression."""
     assert pm.SENTENCE_ABBREVIATIONS >= {
-        "vs", "e.g", "i.e", "etc", "mr", "mrs", "ms", "dr", "prof", "st", "no",
-        "approx", "incl", "inc", "ltd", "jr", "sr",
-        "z.b", "bzw", "ca", "d.h", "usw",
+        "vs", "e.g", "i.e", "mr", "mrs", "ms", "dr", "prof", "st",
+        "approx", "incl", "jr", "sr",
+        "z.b", "bzw", "ca", "d.h",
     }  # fmt: skip
+    # Words that routinely END a sentence must not be listed (review round 1).
+    assert not pm.SENTENCE_ABBREVIATIONS & {"no", "etc", "inc", "ltd", "usw"}
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        (
+            "I said no. Then everything changed",
+            ["I said no.", "Then everything changed"],
+        ),
+        ("The answer is no. We moved on", ["The answer is no.", "We moved on"]),
+        ("AWS, GCP, Azure etc. All of them", ["AWS, GCP, Azure etc.", "All of them"]),
+        ("I joined Google Inc. After a year", ["I joined Google Inc.", "After a year"]),
+        ("ACME Ltd. Excited to share", ["ACME Ltd.", "Excited to share"]),
+        ("Go usw. Das ist schnell", ["Go usw.", "Das ist schnell"]),
+        # Their mid-sentence uses stay one sentence via the lowercase/digit rule.
+        ("Ranked No. 1 again", ["Ranked No. 1 again"]),
+        ("Docker, Podman etc. and more", ["Docker, Podman etc. and more"]),
+    ],
+)
+def test_sentence_ending_words_still_end_a_sentence(text: str, expected: list[str]):
+    assert pm.split_sentences(text) == expected
+
+
+def test_abbreviation_lookback_is_bounded(monkeypatch):
+    """Each candidate "." inspects at most _ABBREVIATION_LOOKBACK characters
+    (observed at the call, not by wall-clock), so a long first line splits in
+    linear time — slicing from the text's start made it quadratic."""
+    seen: list[int] = []
+    real = pm._is_abbreviation
+
+    def spy(text: str) -> bool:
+        seen.append(len(text))
+        return real(text)
+
+    monkeypatch.setattr(pm, "_is_abbreviation", spy)
+    long_line = "word " * 20000 + "vs. Next"
+    assert pm.split_sentences(long_line) == [long_line]
+    assert seen and max(seen) <= pm._ABBREVIATION_LOOKBACK
 
 
 @pytest.mark.parametrize(
@@ -318,7 +358,6 @@ def test_dotted_initialisms_do_not_end_a_sentence(text: str, expected: list[str]
         "Rust bzw. Go sind schnell",
         "Es dauerte ca. Fünf Tage",
         "Das heißt d.h. Weniger Arbeit",
-        "Äpfel, Birnen usw. Alles frisch",
     ],
 )
 def test_german_abbreviations_do_not_end_a_sentence(text: str):
@@ -351,8 +390,11 @@ def test_a_real_sentence_end_still_splits_the_title():
 
 def test_a_title_ending_in_an_abbreviation_keeps_its_dot():
     assert derive_title("We moved to the U.S.") == "We moved to the U.S."
-    assert derive_title("Tools, libraries etc.") == "Tools, libraries etc."
+    assert derive_title("Lessons learned with Prof.") == "Lessons learned with Prof."
     assert derive_title("A plain sentence.") == "A plain sentence"
+    # "etc." is deliberately NOT an abbreviation (it usually ends a sentence),
+    # so as the last word it is a full stop like any other.
+    assert derive_title("Tools, libraries etc.") == "Tools, libraries etc"
 
 
 # --- badge-only posts -----------------------------------------------------------
