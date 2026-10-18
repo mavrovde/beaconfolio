@@ -189,6 +189,16 @@ All notable changes to this project will be documented in this file.
   described the lcov guard as checking “per-project resolvability” when what it asserts is prefix
   conformance — 46/46 `SF:` lines prefixed, 0 doubly prefixed, 46/46 resolving on disk.
 
+### Fixed
+- **LinkedIn post images over 3 MB can be imported through the public host.** The importer's
+  `POST /api/app/linkedin/import-post` takes a post image up to `IMPORT_MAX_IMAGE_MB` (10 MB),
+  but the public `/api/app/` proxy location caps bodies at 3 MB, so a 3.8 MB feed image was
+  answered by nginx with an HTML `413` before the app saw it (found importing 82 posts to
+  production; the post had to be published without its image). That one path now has its own
+  exact-match location with `client_max_body_size 11m` (10 MB + multipart framing); every other
+  public route keeps the 3 MB cap, pinned by a second integration test. The endpoint still
+  requires `X-Import-Token` or an admin JWT and the app still enforces its own size check.
+
 ## [1.16.0] - 2026-09-19
 
 ### Security
