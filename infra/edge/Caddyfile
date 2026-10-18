@@ -217,7 +217,11 @@ admin.viafrei.de {
 # "Close the status panel by the ip white list again, it should be available
 # only to our laptop". Since then it is gated by the SAME allow-list file as the
 # console, in exactly the same shape — import, `handle @allowed`, and a bare
-# `respond 403` for everybody else — and the same DNS rule applies to it.
+# refusal for everybody else — and the same DNS rule applies to it. The refusal
+# here is `410`, not the console's `403` (viafrei owner, 2026-10-18): Google had
+# indexed this host while it was public and Search Console reported its URLs as
+# "Blocked due to access forbidden (403)"; 410 Gone tells a crawler the pages are
+# gone for good, so they drop out of the index instead of being retried.
 #
 # The app still routes the two names to DIFFERENT routers: the container routes
 # by Host, and on this name it reaches only the public router, which holds no
@@ -235,7 +239,7 @@ status.viafrei.de {
 		}
 	}
 	handle {
-		respond 403
+		respond 410
 	}
 }
 
