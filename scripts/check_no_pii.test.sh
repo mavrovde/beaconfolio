@@ -248,6 +248,69 @@ out="$(run "$d")"; rc=$?
 [ "$rc" -eq 0 ] && ok "a clean repo passes both checks" || bad "clean repo" "rc=$rc, out=$out"
 rm -rf "$d"
 
+# --- 7b. CHECK C: session identifiers in UNPUBLISHED commits (v1.17.0 retro) --
+# The fixture ids are ASSEMBLED so neither this file nor any commit carries a
+# literal one. A repo with a real remote: one PUBLISHED commit that already
+# carries a session URL (history, out of scope) and whatever the case adds.
+SURL="claude.ai/code/""session_""01AbCdEfGhIjKlMnOpQrStUv"
+STRAILER="Claude-""Session: https://${SURL}"
+G() { git -c user.name=t -c user.email=t@example.com -c commit.gpgsign=false "$@"; }
+sessrepo() { # sessrepo <dir> -> a clone whose origin already has a session-bearing commit
+  # skeleton() assigns `d` without `local`, and bash scoping is DYNAMIC: it
+  # overwrites the nearest caller's `d`. Using `d` for the path here sent the
+  # published commit to a directory that did not exist, so the history case
+  # passed with no history at all. The scope mutant below SURVIVED and exposed
+  # it. Hence `root` for the path, plus a `local d` that absorbs skeleton's
+  # write so the CALLER's `d` survives.
+  local root="$1" d
+  git init -q --bare "$root/remote.git"
+  G clone -q "$root/remote.git" "$root/w" 2>/dev/null
+  skeleton "$root/w"
+  ( cd "$root/w" && G commit -q -m "old: published long ago
+
+${STRAILER}" && G push -q origin HEAD:main ) >/dev/null 2>&1 \
+    || { echo "  ✗ HARNESS: the published-history fixture could not be built" >&2; return 1; }
+  [ -z "$(cd "$root/w" && git rev-list HEAD --not --remotes)" ] && [ -n "$(cd "$root/w" && git rev-list HEAD)" ] \
+    || { echo "  ✗ HARNESS: the fixture has no PUBLISHED commit" >&2; return 1; }
+}
+runw() { ( cd "$1" && CLAUDE_PROJECT_DIR="$1" bash "$SCRIPT" 2>&1 ); }
+
+d="$(mktemp -d)"; sessrepo "$d"
+out="$(runw "$d/w")"; rc=$?
+[ "$rc" -eq 0 ] && ok "CHECK C: an already-PUBLISHED session trailer is out of scope (rc=0)" \
+  || bad "published history not re-flagged" "rc=$rc, out=$out"
+# A trailer WITHOUT a URL, so only the trailer arm can catch it.
+( cd "$d/w" && echo x >> README.md && G commit -qam "feat: x
+
+Claude-""Session: internal-run-0042" ) >/dev/null 2>&1
+out="$(runw "$d/w")"; rc=$?
+[ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q 'Session-id guard' \
+  && ok "CHECK C: an unpublished Claude-Session trailer FAILS (rc=1)" \
+  || bad "unpublished trailer fails" "rc=$rc, out=$out"
+printf '%s' "$out" | grep -q 'feat: x' \
+  && ok "…and names the offending commit" || bad "names the commit" "$out"
+rm -rf "$d"
+
+d="$(mktemp -d)"; sessrepo "$d"
+( cd "$d/w" && echo x >> README.md && G commit -qam "fix: y
+
+See https://${SURL} for the run." ) >/dev/null 2>&1
+out="$(runw "$d/w")"; rc=$?
+[ "$rc" -eq 1 ] && ok "CHECK C: a session URL in an unpublished commit BODY fails" \
+  || bad "unpublished URL fails" "rc=$rc, out=$out"
+rm -rf "$d"
+
+# The false-positive direction: the RULE may be quoted (CLAUDE.md does), and
+# attribution is allowed.
+d="$(mktemp -d)"; sessrepo "$d"
+( cd "$d/w" && echo x >> README.md && G commit -qam "docs: never write a Claude-Session trailer or a claude.ai/code/session_… URL
+
+Co-Authored-By: Claude <noreply@anthropic.com>" ) >/dev/null 2>&1
+out="$(runw "$d/w")"; rc=$?
+[ "$rc" -eq 0 ] && ok "CHECK C: quoting the rule and Co-Authored-By attribution pass" \
+  || bad "rule prose / attribution pass" "rc=$rc, out=$out"
+rm -rf "$d"
+
 # --- 8. The REAL repository satisfies both contracts -------------------------
 out="$(bash "$SCRIPT")"; rc=$?
 [ "$rc" -eq 0 ] && ok "the real repository satisfies both contracts" || bad "real repo" "$out"
@@ -326,6 +389,35 @@ PY
     '&& $0 !~ pat {' '&& tolower($0) !~ pat {' assert_marker_case
   mutate "check A failure aborts the script (check B silently skipped)" \
     '  rc=1' '  exit 1' assert_b_after_a
+
+  # CHECK C (v1.17.0 retro): one mutant per arm.
+  runw2() { ( cd "$2" && CLAUDE_PROJECT_DIR="$2" bash "$1" 2>&1 ); }
+  assert_c_trailer() { local d o; d="$(mktemp -d)"; sessrepo "$d"
+    ( cd "$d/w" && echo x >> README.md && G commit -qam "feat: x
+
+Claude-""Session: internal-run-0042" ) >/dev/null 2>&1
+    o="$(runw2 "$1" "$d/w")"; local rc=$?; rm -rf "$d"
+    [ "$rc" -eq 1 ] && printf '%s' "$o" | grep -q 'Session-id guard'; }
+  assert_c_url() { local d o; d="$(mktemp -d)"; sessrepo "$d"
+    ( cd "$d/w" && echo x >> README.md && G commit -qam "fix: y
+
+See https://${SURL} for the run." ) >/dev/null 2>&1
+    o="$(runw2 "$1" "$d/w")"; local rc=$?; rm -rf "$d"; [ "$rc" -eq 1 ]; }
+  assert_c_history() { local d o; d="$(mktemp -d)"; sessrepo "$d"
+    o="$(runw2 "$1" "$d/w")"; local rc=$?; rm -rf "$d"; [ "$rc" -eq 0 ]; }
+  assert_c_prose() { local d o; d="$(mktemp -d)"; sessrepo "$d"
+    ( cd "$d/w" && echo x >> README.md && G commit -qam "docs: never write a claude.ai/code/session_… URL" ) >/dev/null 2>&1
+    o="$(runw2 "$1" "$d/w")"; local rc=$?; rm -rf "$d"; [ "$rc" -eq 0 ]; }
+  mutate "check C detection removed (an unpublished session trailer passes)" \
+    'if [ -n "$sess" ]; then' 'if false; then' assert_c_trailer
+  mutate "check C trailer arm removed" \
+    'grep -qE "$SESSION_TRAILER_RE"' 'grep -qE "NEVER_MATCHES_ANYTHING"' assert_c_trailer
+  mutate "check C URL arm removed" \
+    'grep -qE "$SESSION_URL_RE"' 'grep -qE "NEVER_MATCHES_ANYTHING"' assert_c_url
+  mutate "check C scope widened to ALL history (published commits re-flagged)" \
+    'git rev-list HEAD --not --remotes' 'git rev-list HEAD' assert_c_history
+  mutate "check C id-length floor removed (quoting the rule trips it)" \
+    'session_[A-Za-z0-9]{10,}' 'session_[A-Za-z0-9]{0,}' assert_c_prose
 
   echo "check_no_pii mutations: $KILLED killed, $SURVIVED survived, $INVALID invalid"
   [ "$SURVIVED" -eq 0 ] && [ "$INVALID" -eq 0 ] || fail=$((fail+1))

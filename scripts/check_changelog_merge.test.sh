@@ -147,6 +147,16 @@ sed '/- base entry A/d' "$T/base" > "$T/merged"
 rc=$(run "$SCRIPT")
 if [ "$rc" = 1 ] && grep -q 'check 4: .*base entry A' "$T/out"; then ok
 else bad "check 4: lost [Unreleased] line must fail" "$(cat "$T/out")"; fi
+# ...and names the remedy where the author meets the refusal (v1.17.0 retro: the
+# author AND the reviewer of #499 both reached for the §81 trap).
+grep -q 'lessons-learned §81' "$T/out" && ok \
+  || bad "check 4: the refusal must point at lessons §81's append-a-correction remedy" "$(cat "$T/out")"
+# The hint is check 4's alone: a check-1 failure must not suggest it.
+mkbase
+printf '\n## [Unreleased]\n' >> "$T/base"; cp "$T/base" "$T/merged"
+rc=$(run "$SCRIPT")
+if [ "$rc" = 1 ] && ! grep -q 'lessons-learned §81' "$T/out"; then ok
+else bad "check 1 failure must not print the check-4 remedy" "rc=$rc $(cat "$T/out")"; fi
 
 # --- check 4, rotation-aware (#406 review round 1) -------------------------
 # A release rotation moves every [Unreleased] line under a NEW released

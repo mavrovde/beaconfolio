@@ -163,6 +163,10 @@ Never accept "coverage is 100%" at face value — a line being executed is not t
 7. **Verdict on tests must be explicit:** in your review, list the edge/user cases you checked, which are covered, and which are **missing** (with the exact test you'd want added and its `file:line` anchor). Thin or happy-path-only test suites, or coverage inflated without assertions, are at least a **major** finding; a bug fix with no failing-first regression test is a **blocker**.
 - **Typing & style.** Pydantic models / explicit TS interfaces, no stray `any`, matches surrounding idioms.
 - **Docs & changelog.** README/relevant docs + `CHANGELOG.md [Unreleased]` updated; Conventional Commit; PR maps to each acceptance criterion.
+  **Never ask for an in-place edit of an `[Unreleased]` line that is already on `main`.** That is
+  lessons §81's trap, and `check_changelog_merge.sh` refuses it. Ask for an appended correction
+  instead. #499's round-1 verdict recommended the in-place edit after the author had already hit
+  the refusal.
 - **Scope discipline.** No unrelated drive-by changes smuggled in; atomic and reviewable.
 
 ## Set the review-state label with every verdict (owner directive 2026-09-13)

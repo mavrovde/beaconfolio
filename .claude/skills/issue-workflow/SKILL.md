@@ -159,6 +159,14 @@ gh pr create --repo mavrovde/beaconfolio --head <branch> --base main \
 `gh pr create` accepts repeated `--label` flags; a comma-joined single flag can fail against
 multi-word sets, so prefer one flag per label.
 
+**`run-e2e` is the exception: add it in its OWN command, after the PR exists**
+(`gh pr edit <N> --add-label run-e2e`). Every label fires a `labeled` event, and the other
+labels' events post `skipped` check-runs under the browser tier's name. At #499 (v1.17.0) the
+four labels given at creation cancelled the summoned run outright and the check read
+`skipping`. The concurrency half is fixed in `pr-evidence-e2e.yml`, but the masking half
+cannot be. Applying `run-e2e` last makes its run the newest one. Before trusting the tier,
+read the run (`gh run view <id> --json headSha,conclusion`), not the badge.
+
 **This rule has been violated and escalated by the owner TWICE (2026-09-06, both times in one
 day) — the second sweep backfilled labels onto 88 PRs.** Treat `--label` as a required part of
 the `gh pr create` invocation, exactly like `--title`: a PR command without labels is an

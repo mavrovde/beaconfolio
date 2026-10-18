@@ -52,6 +52,7 @@ measured them; **`n-a` means not measured, never estimated.**
 | [v1.15.1](v1.15.1.md) | **6**²⁸ | 6 / **6** | **1.00**²⁹ | **100% (6/6)**²⁹ | **0%**²⁹ | **0**²⁹ | **0** in review²⁹ | **0** | **6 of 6 (100%)**²⁷ | **9** | retired²¹ | retired²¹ | retired²¹ · 4.03h tag→tag²⁸ |
 | [v1.15.2](v1.15.2.md) | **3**²⁸ | 3 / **3** | **1.00**²⁹ | **100% (3/3)**²⁹ | **0%**²⁹ | **0**²⁹ | **0**²⁹ | **0** | **3 of 3 (100%)**²⁷ | 6 | retired²¹ | retired²¹ | retired²¹ · 1.60h tag→tag²⁸ |
 | [v1.16.0](v1.16.0.md) | **10** | 27 / **26**³¹ | **2.60** | **30% (3/10)**³² | **62%** | **9**⁵ (4 on doc surfaces) | **8** | **0** | **2 of 26 (8%)**³³ | **14** | retired²¹ | retired²¹ | retired²¹ · **8.57h tag→tag** |
+| [v1.17.0](v1.17.0.md) | **18** | 55 / **55** | **3.06**³⁴ | **44% (8/18)**³² | **67%** | **6**⁵ (3 touch a doc surface) | **15**³⁴ | **0** (2 bypassed, both covered)³⁵ | **0 of 40 stated; 15 unstated**³⁵ | **5.5** | retired²¹ | retired²¹ | retired²¹ · 710h release-PR→release-PR (two bursts) |
 
 ¹ v1.12.0's verdict headings predate the mandated form, so a canonical-heading re-count undercounts
 that window (15). From v1.13.0 the heading is charter-mandated **and** gate-enforced, so this column
@@ -408,6 +409,30 @@ column's denominator is the number of verdicts that said *something*. v1.16.0's 
 provenance a statement in **both** directions in `pr-reviewer.md` and the playbook; from the next
 release this cell is measured over all canonical verdicts or not at all.
 
+³⁴ **v1.17.0's rounds and class G are dominated by one PR.** #468, five files, took **12** of the
+55 verdicts and **7** of the 15 class-G findings. All seven were the same defect: an awk model of
+the Caddy grammar that each round's reviewer beat with a new spelling. Without #468 the window is
+43 verdicts over 17 PRs (2.53 rounds) and G = 8. That is hand arithmetic on the instrument's
+per-PR lines, given so the cell can be read. The cell itself is not replaced. See [v1.17.0
+§3](v1.17.0.md).
+
+³⁵ **Two populations, and the column cannot merge them.** 13 of the 18 PRs were this repo's
+sessions: 36 canonical verdicts, every one stating provenance, all independent. The other 5 (#467
+#468 #482 #483 #486) came from a different session working the shared-host edge: 19 verdicts, 4
+of which state provenance. All 15 silent verdicts in the window are there. The same five PRs
+account for both `PR_MERGE_GATE=0` bypasses of this repo's PRs (#467, #468). Each still had a
+covering APPROVE at merge, so the `0` stands, but neither carries the bypass comment #392
+promises. The merge gate posted it to the CWD's repository, which is [v1.17.0 §6 A](v1.17.0.md).
+From v1.18.0 this column is scored per authoring session.
+
+**v1.16.0's prediction: 4 pass, 6 fail — scored at v1.17.0** over 18 PRs / 55 verdicts. The
+clause-by-clause table, with the command behind each row, is [v1.17.0 §7](v1.17.0.md). Change A's
+load-bearing claim (the tightened grammar reproduces every published row) was re-measured on all
+four windows and **held**.
+
+**Standing prediction (set by v1.17.0, checked at the next release):** see
+[v1.17.0 §8](v1.17.0.md).
+
 **v1.15.0's prediction: 4 pass, 1 n/a, 1 partial — scored at v1.15.1.** Merged with no valid
 APPROVE **0 of 6** and stale approvals **0 of 6** ✅ (checked against the bypass log, which is empty
 for that window — note 30). Disclosure **6 of 6 = 100%** ✅, and its falsifier (b) did not apply:
@@ -438,7 +463,7 @@ issues on Project 3**, two of those four in the previous release's bucket. The t
 failures are one sentence: *the evidence exists, but not where the rule requires it at the time it
 requires it.* See [v1.16.0 §7](v1.16.0.md).
 
-**Standing prediction (set by v1.16.0, checked at the next release):** see
+**Superseded — the v1.16.0 standing prediction** (kept for the record; scored above): see
 [v1.16.0 §8](v1.16.0.md). It **keeps clauses 1, 3, 5 and 6 of [v1.15.1 §8](v1.15.1.md) as written**
 (independent verdict; zero invalid-APPROVE and zero stale merges; empty release queue + previous
 retro, evidenced at cut time; class T ≤1) and revises the four that failed or passed too easily:

@@ -7,7 +7,7 @@
 # Only 4 of 10 mutations bit. That is the exact fake-green class the retrospective
 # this hook came from is about, so every case here now asserts the DECISION
 # (parsed out of the JSON) and the mutation list below is part of the contract:
-# `bash pre-merge-gate.test.sh --mutations` re-runs them and must report 24 killed.
+# `bash pre-merge-gate.test.sh --mutations` re-runs them and must report 33 killed.
 set -u
 
 HOOK="${HOOK:-$(cd "$(dirname "$0")" && pwd)/pre-merge-gate.sh}"
@@ -41,10 +41,24 @@ case "$args" in
     exit 0 ;;
   "issue view "*)
     [ "${GH_STUB_ISSUE_FAIL-0}" = "1" ] && exit 1
+    # REPO-AWARE (v1.17.0 retro): an issue read with `--repo mavrovde/other`
+    # answers from the OTHER repository's fixture, so a gate that drops the
+    # merge's `-R` reads the CWD's issue instead and the case can tell.
+    case "$args" in
+      *"--repo mavrovde/other"*|*"--repo github.com/mavrovde/other"*)
+        printf '%s' "${GH_STUB_FOREIGN_ISSUE_BODY-}"; exit 0 ;;
+    esac
     printf '%s' "${GH_STUB_ISSUE_BODY-}" ;;
   "pr view "*)
     [ -n "${GH_STUB_SLEEP-}" ] && sleep "$GH_STUB_SLEEP"
     [ "${GH_STUB_PR_FAIL-0}" = "1" ] && exit 1
+    # REPO-AWARE, same reason: PR #N in mavrovde/other is a DIFFERENT PR from
+    # the CWD's #N. Default = no verdict at all, the shape of an unreviewed PR.
+    case "$args" in
+      *"--repo mavrovde/other"*|*"--repo github.com/mavrovde/other"*)
+        _unreviewed='{"reviews":[],"comments":[],"body":""}'
+        printf '%s' "${GH_STUB_FOREIGN_PR_JSON-$_unreviewed}"; exit 0 ;;
+    esac
     # PR-AWARE ON PURPOSE. A stub that answers the same for every PR cannot tell
     # "verified the right PR" from "fell back to the current branch and verified
     # a different one" — the wrong-PR cases below would pass either way. Set
@@ -320,6 +334,11 @@ GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
   _i=0; while [ ! -s "$STUB/comment.calls" ] && [ $_i -lt 20 ]; do sleep 0.1; _i=$((_i+1)); done
   if grep -q "bypass PR=284" "$_blog" && grep -q "pr comment 284" "$STUB/comment.calls"; then PASS=$((PASS+1));
   else FAIL=$((FAIL+1)); printf '  ✗ flags-before-operand bypass not traced with the right PR (#399 major 4): log=%s comments=%s\n' "$(cat "$_blog")" "$(cat "$STUB/comment.calls")"; fi
+  # ...and the public trace lands in the MERGE'S repository (v1.17.0 retro): the
+  # bypasses of #467/#468 named `-R mavrovde/beaconfolio`, were typed from
+  # another checkout, and neither PR carries the comment.
+  if grep -q "pr comment 284 --repo mavrovde/beaconfolio" "$STUB/comment.calls"; then PASS=$((PASS+1));
+  else FAIL=$((FAIL+1)); printf '  ✗ the bypass comment dropped the merge'"'"'s --repo (v1.17.0): %s\n' "$(cat "$STUB/comment.calls")"; fi
   # A bypassed NON-merge segment is not a merge-gate event: no trace at all.
   : > "$_blog"; : > "$STUB/comment.calls"
   PR_MERGE_GATE_LOG="$_blog" GH_STUB_COMMENT_CALLS="$STUB/comment.calls" PR_MERGE_GATE_TRACE_COMMENT=1 \
@@ -522,6 +541,33 @@ GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## Round 3 — ✅ APPROVED')" \
   run "the '## Round N — ✅ APPROVED' heading still counts (#255)" allow "gh pr merge 284 --squash"
 GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z 'PR-REVIEWER VERDICT: APPROVE')" \
   run "the 'PR-REVIEWER VERDICT: APPROVE' heading still counts (#171)" allow "gh pr merge 284 --squash"
+
+# 4d. THE MERGE'S REPOSITORY, not the CWD's (v1.17.0 retro). The CWD's PR #284
+#     carries a covering APPROVE; mavrovde/other's #284 is unreviewed. A gate
+#     that drops `-R`/`--repo`/`GH_REPO`/the URL's repo reads the wrong PR and
+#     ALLOWS. Measured before the fix from a real checkout:
+#     `gh pr merge 5 -R mavrovde/viafrei-bridge` was judged on beaconfolio's #5.
+GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ✅ APPROVED')" \
+  run "-R <other repo> reads THAT repo's PR, not the CWD's" deny "gh pr merge 284 -R mavrovde/other --merge"
+GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ✅ APPROVED')" \
+  run "--repo=<other> (joined form) reads that repo's PR" deny "gh pr merge 284 --repo=mavrovde/other"
+GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ✅ APPROVED')" \
+  run "gh -R <other> pr merge (global flag) reads that repo's PR" deny "gh -R mavrovde/other pr merge 284"
+GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ✅ APPROVED')" \
+  run "GH_REPO=<other> prefix reads that repo's PR" deny "GH_REPO=mavrovde/other gh pr merge 284"
+GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ✅ APPROVED')" \
+  run "a pull URL in another repo reads THAT repo's PR" deny "gh pr merge https://github.com/mavrovde/other/pull/284"
+# The positive control: the other repo's PR IS approved, so the merge allows —
+# the fix must not turn every cross-repo merge into a deny.
+GH_STUB_PR_JSON='{"reviews":[],"comments":[],"body":""}' \
+GH_STUB_FOREIGN_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ✅ APPROVED')" \
+  run "-R <other> with an approved PR there allows" allow "gh pr merge 284 -R mavrovde/other"
+# `Closes #NN` resolves in the merge's repository too: the CWD's #9 is ticked,
+# the other repo's #9 is not.
+GH_STUB_PR_JSON='{"reviews":[],"comments":[],"body":""}' \
+GH_STUB_FOREIGN_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ✅ APPROVED' 'Closes #9')" \
+GH_STUB_ISSUE_BODY="$AC_TICKED" GH_STUB_FOREIGN_ISSUE_BODY="$AC_UNTICKED" \
+  run "Closes #NN is read in the merge's repository" deny "gh pr merge 284 -R mavrovde/other"
 
 # 5. Quoted prose is DATA (#204/#237) — the false-positive direction.
 GH_STUB_PR_JSON="$(rev 2026-09-06T10:00:00Z '## ⛔ REQUEST CHANGES')" \
@@ -770,13 +816,32 @@ PY
   mutate die "value-taking gh flags dropped from the operand walk" \
     'replace::-b|--body|-t|--subject|-F|--body-file|-A|--author-email|-R|--repo|--match-head-commit=>-b|--body|-t|--subject|--match-head-commit'
   mutate die "branch operands no longer resolved (valid input fails closed)" \
-    "replace::PR_NUM=\"\$(gh pr view \"\$UNQUOTED\" --json number=>PR_NUM=\"\$(true \"\$UNQUOTED\" --json number"
+    "replace::PR_NUM=\"\$(gh pr view \"\$UNQUOTED\"=>PR_NUM=\"\$(true \"\$UNQUOTED\""
   mutate die "argv_split replaced by IFS word-splitting (the round-5 regression)" \
     "replace::set -- \"\${ARGV_SPLIT_RESULT[@]}\"=>local IFS=' '; set -- \$seg"
   mutate die "only the LAST merge in a command is verified" \
     'replace::MERGE_OPERANDS+=("$MERGE_OPERAND")=>MERGE_OPERANDS=("$MERGE_OPERAND")'
   mutate die "the bypass trace is removed (a PR_MERGE_GATE=0 merge leaves no record, #392)" \
     'replace::allow() { flush_bypass_traces; exit 0; }=>allow() { exit 0; }'
+  # v1.17.0 retro: the merge's REPOSITORY, one mutant per arm that carries it.
+  mutate die "gh reads ignore the merge's repository (the CWD's PR #N is judged)" \
+    'replace::[ -n "$MERGE_REPO" ] && REPO_ARGS=(--repo "$MERGE_REPO")=>:'
+  mutate die "Closes #NN read in the CWD's repository" \
+    'replace::gh issue view "$issue" ${REPO_ARGS[@]+"${REPO_ARGS[@]}"}=>gh issue view "$issue"'
+  mutate die "merge-level -R/--repo value not captured" \
+    'replace::case "$1" in -R|--repo) MERGE_REPO="${2:-}" ;; esac=>:'
+  mutate die "joined --repo=/-R= forms not captured" \
+    'replace::--repo=*|-R=*) MERGE_REPO="${1#*=}"; shift ;;=>--repo=*|-R=*) shift ;;'
+  mutate die "global gh -R/--repo not captured" \
+    'replace::--repo|-R) MERGE_REPO="${2:-}"; shift; shift || return 1 ;;=>--repo|-R) shift; shift || return 1 ;;'
+  mutate die "GH_REPO= prefix not captured" \
+    'replace::GH_REPO=*) MERGE_REPO=>GH_REPO_NEVER=*) MERGE_REPO='
+  mutate die "a pull URL's repository not derived" \
+    'replace::http://*/pull/*|https://*/pull/*)=>NEVER-A-URL)'
+  mutate die "the operand walk stops at the number (a trailing -R is dropped)" \
+    'replace::*) [ -z "$MERGE_OPERAND" ] && MERGE_OPERAND="$1"; shift ;;=>*) MERGE_OPERAND="$1"; break ;;'
+  mutate die "the bypass comment goes to the CWD's repository" \
+    'replace::[ -n "$repo" ] && repo_args=(--repo "$repo")=>:'
   mutate die "indirection (bash -c / eval / ssh) no longer inspected" \
     'replace::inner_script_invokes_pr_merge "$seg" && return 0=>false && return 0'
 

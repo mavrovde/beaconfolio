@@ -2124,6 +2124,14 @@ tier's triggers, so an unrelated label no longer starts (and therefore no longer
 integration run. The workarounds below are kept because the *general* rule outlives the bug, and
 because `concurrency` is still evaluated BEFORE a job's `if` anywhere else it is used.
 
+**It RECURRED one tier over at v1.17.0 (#499).** The browser tier's `cancel-in-progress` guard
+protected only a *running* run. GitHub keeps one *pending* run per concurrency group and cancels
+the older pending run unconditionally. So four labels at creation cancelled the summoned
+`run-e2e` run before it started: 4 cancelled, 1 skipped, the check read `skipping`. The fix gives
+an unrelated label a run-unique group (`pr-evidence-e2e.yml`). The general rule: **the guard
+that protects a running run does not protect a pending one.** Any `labeled`-triggered workflow
+with a shared group needs both halves.
+
 Two workarounds, both verified: `gh run rerun <opened-run-id>` (a rerun replays the original
 `opened` payload, so the guard passes), or simply push the next commit (`synchronize` passes the
 guard too). The general rule is the one rule 12 keeps re-teaching: **read the check's conclusion,
@@ -2528,3 +2536,68 @@ so it scanned the PREVIOUS `:latest` (deploy.yml moves `:latest` only after E2E)
 
 **Don't.** Don't read a green scanner job as "scanned". Open the log and find the actual CLI
 command line, and check that the upload step ran.
+
+## 85. A retry-once wrapper assumes the second run is INDEPENDENT of the first — a persistent cache breaks that (v1.17.0)
+
+**What happened.** Vitest 5's `fsModuleCache` defaults to `true` (verified at #499 in vitest
+5.0.5: `@default true`, `resolved.fsModuleCache ??= true`). It saves transformed modules to disk
+between runs. When a component with inline `styles` is loaded from that cache, it imports the
+Analog plugin's virtual `virtual:angular:jit:style:inline;<hash>` module. The plugin only
+registers that module while it is transforming the file itself, so the import has nothing to
+resolve. The first run in a checkout passed. **Every second run** in the same checkout failed:
+`Cannot find module '/@id/__x00__virtual:angular:jit:style:inline;…'`, in 6-7 test files.
+
+In CI a second run happens only when `scripts/run_frontend_suites.sh` retries after the
+worker-teardown race (`env-gotchas`). That is why it looked like a flake. #495's run
+39137839055, attempt 1, job "Frontend Tests · Public App (SSR)": the first run was 79/79 files
+green and was retried on the teardown signature. The retry then failed 6 of 79 files with the
+virtual-module error and printed `failed AGAIN on the retry — this is not the tolerated flake`.
+So the retry turned a tolerated flake into a red job.
+
+**Fix (shipped in #499).** Set `fsModuleCache: false` in all three `projects/*/vitest.config.ts`.
+It is a config fix at the root, not a wider retry. Measured at #499 review: forcing the cache back
+on reproduces the failure on run 2; with the PR's config, two consecutive runs both pass 944/944.
+
+**The general rule.** A retry is only evidence if the second attempt starts from the same state as
+the first. A tool that persists state between runs (a module cache, a build cache, a
+`.pytest_cache` that reorders tests, a warm DB) makes the retry a *different experiment*. When a
+retry fails differently from the first attempt, suspect the persisted state before the code.
+**Don't** answer it by retrying twice. Find the cache, disable it or clear it before the retry, and
+verify by running the suite twice in a row in one checkout.
+
+## 86. A gate that resolves an identifier must resolve it in the SAME namespace as the command it guards (v1.17.0)
+
+**What happened.** `pre-merge-gate.sh` read `gh pr merge 468 -R mavrovde/beaconfolio` as "PR #468"
+and looked it up with a bare `gh pr view 468`. gh resolves a bare number against the
+**current directory's** repository. So the gate judged whatever #468 meant in the checkout it was
+run from. Measured from this checkout before the fix: `gh pr merge 5 -R mavrovde/viafrei-bridge`
+was judged on beaconfolio's #5, a closed Dependabot PR. That one denied. The other direction allows:
+if the CWD's PR #N has a covering APPROVE, an unreviewed PR #N in another repo merges. The
+bypass-trace comment had the same defect. `$HOME/.claude/merge-gate-bypass.log` records
+`PR_MERGE_GATE=0` merges of beaconfolio #467 and #468 typed with `-R` from another checkout.
+Neither PR carries the bypass comment #392 promises.
+
+**Fix.** The gate now captures the repository from `-R/--repo` (both before and after `pr merge`,
+spaced and `=` forms), a `GH_REPO=` prefix, or a pull URL. It passes `--repo` to every `gh` read
+(the PR, the branch lookup, the `Closes #NN` issues) and to the bypass comment. There is one case
+per spelling and one mutant per arm in `pre-merge-gate.test.sh`.
+
+**The general rule.** When a check looks up the thing a command acts on, ask which **namespace**
+the command resolves it in: repository, kube context, AWS profile, git remote, Docker context,
+CWD. The check must use the same one. "PR #468" is not an identifier on its own; the repository is
+part of it. A check that silently uses a default namespace can pass while checking a different
+object.
+
+## 87. A wall-clock security pin that fails at load average 70+ is telling the truth — don't raise its budget (v1.17.0)
+
+`guard-destructive.test.sh` has `check_fast`/`check_within` cases that require the hook to decide
+within a few seconds. They exist because a PreToolUse hook that runs past its 15 s timeout does
+**not** deny; the command just runs (#219). In the v1.17.0 cycle the orchestrating session saw
+one of these cases fail in the pre-push gate. Load average was 70-94, from many parallel agents
+plus test suites. (That figure is the session's report and was not re-measured here; at the time
+of writing this retrospective, load was 30.9.) At that load the hook itself is slow in
+production too. The pin is reporting a guard that is weaker *right now*, not a flaky test.
+
+**Do:** re-run when load falls, and reduce concurrency if the push matters (run fewer agents or
+test suites at once). **Don't** raise `max_seconds`, and don't add a retry to the timing helpers.
+Either change would hide the one condition the pin exists to catch.

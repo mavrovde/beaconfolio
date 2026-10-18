@@ -57,8 +57,16 @@ allow() { flush_bypass_traces; exit 0; }
 # flow, where no PreToolUse hook exists) is covered by the scheduled
 # verdict-audit workflow, not by this hook.
 BYPASS_SEGS=()
-gate_bypass_trace() { # gate_bypass_trace <pr-or-unknown> <segment>
-  local n="$1" seg="$2" ts logf
+gate_bypass_trace() { # gate_bypass_trace <pr-or-unknown> <segment> [<repo>]
+  local n="$1" seg="$2" repo="${3:-}" ts logf
+  # The comment goes to the merge's OWN repository (v1.17.0 retro). Without
+  # `--repo`, `gh pr comment N` resolves N in the CWD's repository, so a bypass
+  # of `gh pr merge 468 -R mavrovde/beaconfolio` typed from another checkout
+  # left its public trace on that checkout's #468 — or nowhere. Measured: the
+  # local log records bypasses of #467 and #468 in this window, and neither PR
+  # carries the comment.
+  local repo_args=()
+  [ -n "$repo" ] && repo_args=(--repo "$repo")
   ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo unknown-time)"
   logf="${PR_MERGE_GATE_LOG:-$HOME/.claude/merge-gate-bypass.log}"
   # The log line is unconditional — PR=unknown still counts as one bypass.
@@ -71,7 +79,7 @@ gate_bypass_trace() { # gate_bypass_trace <pr-or-unknown> <segment>
     # the PR_MERGE_GATE=0 token VANISHED from the posted audit artifact — and
     # survived because the test asserted only the CALL, never the body. The
     # body assertion now exists; keep this plain text.
-    ( gh pr comment "$n" --body "## ⚠️ MERGE-GATE BYPASS — PR_MERGE_GATE=0 was used for this merge at $ts (recorded by pre-merge-gate.sh; rule 13 audit, #392)" >/dev/null 2>&1 & ) || :
+    ( gh pr comment "$n" ${repo_args[@]+"${repo_args[@]}"} --body "## ⚠️ MERGE-GATE BYPASS — PR_MERGE_GATE=0 was used for this merge at $ts (recorded by pre-merge-gate.sh; rule 13 audit, #392)" >/dev/null 2>&1 & ) || :
   fi
 }
 flush_bypass_traces() {
@@ -97,7 +105,7 @@ flush_bypass_traces() {
           esac ;;
         *) n="$MERGE_OPERAND" ;;
       esac
-      gate_bypass_trace "$n" "$seg"
+      gate_bypass_trace "$n" "$seg" "$MERGE_REPO"
     fi
     # a bypassed NON-merge segment (PR_MERGE_GATE=0 git merge 42) is not a
     # merge-gate event at all: no log, no comment.
@@ -192,6 +200,15 @@ inner_script_invokes_pr_merge() {
 
 segment_invokes_pr_merge() {
   local seg="$1"
+  # WHICH REPOSITORY the merge targets (v1.17.0 retro). gh resolves a bare PR
+  # number against the CWD's repository unless `-R/--repo`, `GH_REPO` or a pull
+  # URL names another one — and this gate used to drop all three and read the
+  # CWD's PR with the same number. Measured from this checkout:
+  # `gh pr merge 5 -R mavrovde/viafrei-bridge` was judged on beaconfolio's #5 (a
+  # closed Dependabot PR). That direction denied; the other direction ALLOWS an
+  # unreviewed merge whenever the CWD's PR #N happens to carry a covering
+  # APPROVE. Every `gh` read below is now pointed at this repository.
+  MERGE_REPO=""
   # DENY, not "treat as merge" — see the twin comment in the peel loop.
   [ "$SECONDS" -ge "$INSPECT_DEADLINE" ] \
     && deny "command too large to analyse within budget — run the merge alone"
@@ -222,6 +239,10 @@ segment_invokes_pr_merge() {
       return 1   # authorized: this segment is not gated
     fi
     while [[ "$seg" =~ ^[A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+ ]]; do
+      case "$seg" in
+        GH_REPO=*) MERGE_REPO="${seg%% *}"; MERGE_REPO="${MERGE_REPO#GH_REPO=}"
+                   MERGE_REPO="${MERGE_REPO//[\"\']/}" ;;
+      esac
       seg="${seg#* }"; changed=1
     done
     if command -v peel_wrapper >/dev/null 2>&1; then
@@ -299,8 +320,10 @@ segment_invokes_pr_merge() {
   shift || return 1
   while [ $# -gt 0 ]; do
     case "$1" in
-      --repo|-R|--hostname) shift; shift || return 1 ;;
-      --repo=*|-R=*|--hostname=*|-*) shift ;;
+      --repo|-R) MERGE_REPO="${2:-}"; shift; shift || return 1 ;;
+      --repo=*|-R=*) MERGE_REPO="${1#*=}"; shift ;;
+      --hostname) shift; shift || return 1 ;;
+      --hostname=*|-*) shift ;;
       *) break ;;
     esac
   done
@@ -315,11 +338,23 @@ segment_invokes_pr_merge() {
   while [ $# -gt 0 ]; do
     case "$1" in
       -b|--body|-t|--subject|-F|--body-file|-A|--author-email|-R|--repo|--match-head-commit) \
+        case "$1" in -R|--repo) MERGE_REPO="${2:-}" ;; esac
         shift; shift || break ;;
+      --repo=*|-R=*) MERGE_REPO="${1#*=}"; shift ;;
       -*) shift ;;
-      *) MERGE_OPERAND="$1"; break ;;
+      # Keep the FIRST bare operand, but keep WALKING: `gh pr merge 284 -R x`
+      # puts the repository AFTER the number, and stopping at the operand
+      # dropped it (the first draft of the v1.17.0 fix did exactly that).
+      *) [ -z "$MERGE_OPERAND" ] && MERGE_OPERAND="$1"; shift ;;
     esac
   done
+  # A pull URL names its repository itself; an explicit -R still wins, as in gh.
+  if [ -z "$MERGE_REPO" ]; then
+    case "$MERGE_OPERAND" in
+      http://*/pull/*|https://*/pull/*)
+        MERGE_REPO="${MERGE_OPERAND#*://}"; MERGE_REPO="${MERGE_REPO%%/pull/*}" ;;
+    esac
+  fi
   return 0
 }
 
@@ -328,6 +363,8 @@ MERGE_OPERAND=""
 MERGE_OPERAND_UNKNOWABLE=0
 MERGE_OPERANDS=()
 MERGE_UNKNOWABLE=()
+MERGE_REPO=""
+MERGE_REPOS=()
 OLD_IFS="$IFS"
 IN_HEREDOC_DELIM=""
 while IFS= read -r line; do
@@ -371,6 +408,7 @@ while IFS= read -r line; do
       MERGE_SEG="$seg"
       MERGE_OPERANDS+=("$MERGE_OPERAND")
       MERGE_UNKNOWABLE+=("$MERGE_OPERAND_UNKNOWABLE")
+      MERGE_REPOS+=("$MERGE_REPO")
       MERGE_OPERAND=""; MERGE_OPERAND_UNKNOWABLE=0
     fi
   done
@@ -396,6 +434,11 @@ past_deadline && deny "could not finish within ${DEADLINE_SECONDS}s — an unana
 for MERGE_IDX in "${!MERGE_OPERANDS[@]}"; do
 MERGE_OPERAND="${MERGE_OPERANDS[$MERGE_IDX]}"
 MERGE_OPERAND_UNKNOWABLE="${MERGE_UNKNOWABLE[$MERGE_IDX]}"
+MERGE_REPO="${MERGE_REPOS[$MERGE_IDX]}"
+# Every gh read for THIS merge goes to the merge's own repository (see
+# segment_invokes_pr_merge). Empty = the CWD's repository, exactly as gh does.
+REPO_ARGS=()
+[ -n "$MERGE_REPO" ] && REPO_ARGS=(--repo "$MERGE_REPO")
 [ "${MERGE_OPERAND_UNKNOWABLE:-0}" = "1" ] && deny "the PR this merges cannot be determined from the command (stdin operand, or a quoted value spanning lines) — run the merge alone with an explicit PR number"
 
 # ONE normalisation path for the operand. Two overlapping blocks lived here
@@ -414,7 +457,7 @@ if [ -n "${MERGE_OPERAND:-}" ]; then
   # `gh pr merge` also accepts a BRANCH; ask gh rather than guess at naming.
   # An unexpanded `$VAR` this hook cannot evaluate is left for the deny below.
   if [ -z "$PR_NUM" ] && [ "${UNQUOTED#*\$}" = "$UNQUOTED" ]; then
-    PR_NUM="$(gh pr view "$UNQUOTED" --json number --jq '.number' 2>/dev/null | grep -oE '^[0-9]+$' || true)"
+    PR_NUM="$(gh pr view "$UNQUOTED" ${REPO_ARGS[@]+"${REPO_ARGS[@]}"} --json number --jq '.number' 2>/dev/null | grep -oE '^[0-9]+$' || true)"
   fi
 fi
 
@@ -427,7 +470,7 @@ if [ -n "${MERGE_OPERAND:-}" ] && [ -z "$PR_NUM" ]; then
   deny "could not resolve '${MERGE_OPERAND}' to a pull request — pass an explicit PR number, or prefix PR_MERGE_GATE=0 if this merge is already authorized"
 fi
 if [ -z "$PR_NUM" ]; then
-  PR_NUM="$(gh pr view --json number --jq '.number' 2>/dev/null)"
+  PR_NUM="$(gh pr view ${REPO_ARGS[@]+"${REPO_ARGS[@]}"} --json number --jq '.number' 2>/dev/null)"
   [ -z "$PR_NUM" ] && deny "could not determine which PR this merges (no number given, and no PR found for the current branch) — refusing to merge unverified"
 fi
 
@@ -435,7 +478,7 @@ fi
 # `gh pr review --approve` is blocked for a same-identity author, so the repo's
 # sanctioned path is a COMMENT verdict whose body states APPROVE. Both streams
 # count and the NEWEST wins, so a later REQUEST CHANGES overrides an approval.
-PR_JSON="$(gh pr view "$PR_NUM" --json reviews,comments,body,commits,mergeable 2>/dev/null)" \
+PR_JSON="$(gh pr view "$PR_NUM" ${REPO_ARGS[@]+"${REPO_ARGS[@]}"} --json reviews,comments,body,commits,mergeable 2>/dev/null)" \
   || deny "could not read PR #$PR_NUM (network or auth) — refusing to merge unverified"
 past_deadline && deny "could not finish within ${DEADLINE_SECONDS}s — an unanalysed merge must not proceed"
 
@@ -612,7 +655,7 @@ CLOSES="$(printf '%s' "$BODY" | grep -oiE '(closes|fixes|resolves)[[:space:]]+#[
 for issue in $CLOSES; do
   past_deadline && deny "could not finish within ${DEADLINE_SECONDS}s — an unanalysed merge must not proceed"
   # FAIL CLOSED: an unreadable issue is not evidence that its criteria are met.
-  IBODY="$(gh issue view "$issue" --json body --jq '.body // ""' 2>/dev/null)" \
+  IBODY="$(gh issue view "$issue" ${REPO_ARGS[@]+"${REPO_ARGS[@]}"} --json body --jq '.body // ""' 2>/dev/null)" \
     || deny "PR #$PR_NUM says it closes #$issue but that issue could not be read — refusing to close an issue whose criteria are unverified"
   # Heading match is `#`-anchored and tolerates all-caps; a **bold** pseudo-heading
   # is NOT matched (measured) — the issue template always uses a real heading.

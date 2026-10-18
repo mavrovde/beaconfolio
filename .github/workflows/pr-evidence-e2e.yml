@@ -77,8 +77,26 @@ on:
 # Its own group, so this tier and the integration tier never cancel each other.
 # The label guard stays: a non-`run-e2e` label must not kill an in-flight
 # browser run either (same `concurrency`-before-`if` reasoning as above).
+#
+# ...and a non-`run-e2e` label gets a GROUP OF ITS OWN (v1.17.0 retro). The
+# cancel-in-progress guard below only protects a RUNNING run: GitHub keeps at
+# most ONE PENDING run per group and cancels the older pending one whenever a
+# new run is queued, whatever `cancel-in-progress` says (Actions docs,
+# "Using concurrency"). #499 was opened with four labels at once — the
+# labels-at-creation flow the issue policy mandates — so the `run-e2e` run was
+# still pending when the next `labeled` events arrived: runs 39140308774,
+# …309571, …309773 and …309855 CANCELLED, 39140310249 skipped, zero browser
+# evidence, and the check read `skipping`. Lessons §76's class (#264, #433),
+# recurring one tier over. Giving an unrelated label a run-unique group means
+# it can never displace the summoned run; it still starts, skips its job and
+# posts a `skipped` check-run, which is the masking residual described above —
+# read the RUN, and add `run-e2e` in its own `gh pr edit` after creation so its
+# run is the newest (issue-workflow skill).
 concurrency:
-  group: pr-evidence-e2e-${{ github.event.pull_request.number }}
+  group: >-
+    pr-evidence-e2e-${{ github.event.pull_request.number }}${{
+      (github.event.action == 'labeled' && github.event.label.name != 'run-e2e')
+      && format('-unrelated-label-{0}', github.run_id) || '' }}
   cancel-in-progress: >-
     ${{ github.event.action != 'labeled' || github.event.label.name == 'run-e2e' }}
 

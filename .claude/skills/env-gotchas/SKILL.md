@@ -163,6 +163,11 @@ Facts about THIS repo's environments that keep costing cycles. Check here before
 - **The Vitest 5 bump (#309) did NOT fix it** — measured on 5.0.0: 1 occurrence in 25 consecutive
   `npm run test:public` runs, byte-identical signature. Do not delete the harness on the assumption
   that a runner major fixed the upstream race, and do not "fix" it by loosening the gate.
+- **The retry is a SECOND run in the same checkout**, so it only proves anything if nothing
+  persisted between the two runs. Vitest 5's default `fsModuleCache: true` broke that: every second
+  run failed on `virtual:angular:jit:style:inline`, and the tolerated flake turned into a red CI job
+  (#495; fixed in #499 with `fsModuleCache: false` in each `vitest.config.ts`). Keep that setting.
+  If a retry fails *differently* from the first attempt, read lessons §85 first.
 
 ## Hooks
 - The pre-push hook runs the full docs+backend+frontend gate on every `git push` — from worktrees

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# PII guard (#66/#257) + de-branding guard (#313). Two contracts, one script,
-# both wired into the pre-push docs leg and the CI Version Consistency job.
+# PII guard (#66/#257) + de-branding guard (#313) + session-id guard (v1.17.0
+# retro, CHECK C at the bottom). Three contracts, one script, wired into the
+# always-on pre-push `pii` leg and the CI Version Consistency job.
 #
 # CHECK A — PII: the repo must stay free of the former owner's personal
 # identifiers (name, email, LinkedIn handle, GA id). This is the regression gate
@@ -139,6 +140,48 @@ if [ -n "$brand" ]; then
   rc=1
 else
   echo "✓ De-brand guard: current-guidance surfaces speak in the product's voice."
+fi
+
+# --- CHECK C: no AI-tooling session identifier in a commit about to be published
+# CLAUDE.md issue-flow rule 8 (owner directive 2026-09-06): a `Claude-Session:`
+# trailer or a claude.ai session URL is internal service information and must not
+# reach this PUBLIC repo. The rule was a sentence and nothing enforced it: in the
+# v1.17.0 window 21 commits (and 11 PR surfaces) carried a real session URL.
+# The tooling's own attribution template asks for that trailer, so this happens
+# by default, not by carelessness.
+#
+# Scope = commits reachable from HEAD that NO remote-tracking ref already has.
+# That is what the next push publishes. History already public is out of scope:
+# it cannot be fixed by a push, and re-flagging it would block every push.
+# With no remote refs at all (a first push) the whole history is new, so it is
+# all scanned, which is correct. No commits yet means nothing to scan.
+# KNOWN LIMITS: commit messages only. PR and issue bodies are not scanned (they
+# never pass through a push). In CI the checkout's HEAD is already on a remote
+# ref, so this check is a no-op there; the pre-push gate is where it bites.
+# The fixture ids in the self-test are assembled, so this file and its test
+# never carry a literal one.
+SESSION_URL_RE='claude\.ai/code/session_[A-Za-z0-9]{10,}'
+SESSION_TRAILER_RE='^[Cc]laude-[Ss]ession:[[:space:]]*[^[:space:]]'
+sess=""
+if git rev-parse --verify -q HEAD >/dev/null 2>&1; then
+  for c in $(git rev-list HEAD --not --remotes 2>/dev/null); do
+    msg="$(git log -1 --format=%B "$c" 2>/dev/null)"
+    if printf '%s\n' "$msg" | grep -qE "$SESSION_URL_RE" \
+       || printf '%s\n' "$msg" | grep -qE "$SESSION_TRAILER_RE"; then
+      sess="${sess}  $(git log -1 --format='%h %s' "$c")"$'\n'
+    fi
+  done
+fi
+
+if [ -n "$sess" ]; then
+  echo "✗ Session-id guard (rule 8): an unpublished commit carries an AI-tooling session identifier:"
+  printf '%s' "$sess"
+  echo "  Remove the 'Claude-Session:' trailer / claude.ai session URL before pushing"
+  echo "  (git commit --amend for HEAD, or an interactive rebase reword for older commits)."
+  echo "  'Co-Authored-By:' attribution is fine; the session link is not."
+  rc=1
+else
+  echo "✓ Session-id guard: no unpublished commit carries a session identifier."
 fi
 
 exit "$rc"

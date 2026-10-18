@@ -217,6 +217,14 @@ for l in unreleased_block(base):
 if failures:
     for f in failures:
         print(f"FAIL {f}")
+    # The remedy, printed where the author meets the refusal (v1.17.0 retro). The
+    # rule is lessons §81, and it was not reachable: #499's author edited an
+    # [Unreleased] line already on main and hit this check, and #499's reviewer
+    # then recommended the same in-place edit. Both had the lesson one file away.
+    if any(f.startswith("check 4:") for f in failures):
+        print("hint: if you EDITED that line on purpose rather than lost it in a rebase, the edit "
+              "cannot land: a line already on main is append-only until it ships. Keep the line "
+              "and APPEND a correction bullet (lessons-learned §81, construction C).")
     sys.exit(1)
 print(f"ok: merged CHANGELOG passes all 4 checks "
       f"({len(merged_released)} released headings, "

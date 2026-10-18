@@ -171,6 +171,18 @@ When your fix maps to a GitHub issue (see `CLAUDE.md` → *Issue tracking, miles
   Alembic once merged** (§53) — run `bash scripts/check_migration_heads.sh
   --against origin/main` and, whenever your base has moved, re-run the gates on
   the MERGED tree.
+- **A heuristic over user-written text gets an ADVERSARIAL TABLE before review,
+  not after.** In v1.17.0 the title/summary derivation in `post_metadata.py` took
+  three majors in two PRs (#493 ×2, #498), and every one was an input the
+  reviewer typed and the author had not: keycap emoji leaving U+20E3, `$100k` /
+  `.NET` / `+1` losing their first character, `view` matching inside `review`
+  and deleting the sentence, and "I said no. Then…" read as one sentence. Before
+  asking for review: (1) write a parametrised table covering Unicode categories
+  (`Me`/`Cf`/`So`/`Sc`), word-boundary substrings of every pattern, sentence ends
+  next to every abbreviation, and at least one non-English language; (2) run the
+  transform over the REAL corpus (the import JSON / the live rows) and paste a
+  before→after sample in the PR; (3) delete each pattern's anchor, one at a time,
+  and confirm a case goes red (#493 r3's `\b` survived).
 
 ## Rules
 - Never lower coverage thresholds, delete/skip tests, or add blanket ignores to

@@ -14,6 +14,38 @@ All notable changes to this project will be documented in this file.
 - **Snyk Container scanned the previous image:** it ran on `push` beside `deploy.yml`, so it tested the old `:latest` while the new images were still building. It now runs on `workflow_run` after a successful push-to-`main` `Prod Deployment` and scans the exact `sha-<commit>` tag that run published (cron and `workflow_dispatch` scan `:latest`).
 - **Container OS packages:** the image builds use `pull: true`; the Alpine runtime stages (proxy, admin) run `apk upgrade --no-cache` (zlib 1.3.2-r0 → r1, libexpat 2.8.5 → 2.9.0, measured in local builds); the Debian runtime stages (backend, public frontend) run `apt-get upgrade -y`. npm, npx and corepack are removed from the public SSR runtime image, which only runs `node` (Snyk flagged undici and others inside npm's own `node_modules`).
 
+### Fixed
+- **The merge gate judged the wrong PR when the merge named another repository** (v1.17.0
+  retrospective). `pre-merge-gate.sh` read every PR, branch and `Closes #NN` issue with a bare
+  `gh … view`, which resolves against the CURRENT directory's repository. So
+  `gh pr merge 5 -R mavrovde/viafrei-bridge` was judged on beaconfolio's #5 (measured), and any
+  merge whose CWD PR of the same number had a covering APPROVE would have been allowed. The gate
+  now takes the repository from `-R/--repo` (either side of `pr merge`, spaced or `=`), a `GH_REPO=`
+  prefix or a pull URL, and passes it to every read and to the bypass comment. That comment had
+  the same defect, which is why the two `PR_MERGE_GATE=0` merges of #467 and #468 left no trace on
+  either PR. Seven new cases and nine new mutants (lessons §86).
+- **A non-`run-e2e` label can no longer cancel the summoned browser run.** GitHub keeps one PENDING
+  run per concurrency group and cancels the older one when a new run is queued, whatever
+  `cancel-in-progress` says. #499 was opened with four labels and its `run-e2e` run was cancelled
+  before it started (4 cancelled, 1 skipped). `pr-evidence-e2e.yml` now gives every unrelated
+  `labeled` event a run-unique group; the `issue-workflow` skill says to add `run-e2e` in its own
+  command after creation (lessons §76).
+- **A push whose unpublished commits carry an AI-tooling session identifier is refused.**
+  `scripts/check_no_pii.sh` CHECK C scans the commits that no remote-tracking ref has yet for a
+  `Claude-Session:` trailer or a session URL (issue-flow rule 8). 21 commits in the v1.17.0 window
+  carried one. Already-published history is out of scope; mutation contract 12 / 0 / 0.
+- `check_changelog_merge.sh` now prints the remedy (append a correction, lessons §81) when it refuses
+  a lost `[Unreleased]` line. #499's author and reviewer both reached for the in-place edit §81
+  forbids.
+
+### Documentation
+- The v1.17.0 retrospective (`docs/retrospectives/v1.17.0.md`) and its trend row. Lessons §85
+  (a retry is only evidence if the second run is independent; Vitest 5's `fsModuleCache`), §86 (a
+  gate must resolve an identifier in the guarded command's namespace) and §87 (a wall-clock
+  security pin red at load 70+ is telling the truth). A `backend-dev` step for heuristic text
+  transforms (class H: three majors in #493/#498), and a `pr-reviewer` line against asking for
+  §81's in-place edit.
+
 ## [1.17.0] - 2026-10-18
 
 ### Security
