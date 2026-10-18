@@ -64,6 +64,12 @@ def _image(body: bytes = b"IMG") -> httpx.Response:
         "http://169.254.169.254/latest/meta-data/",  # cloud metadata
         "http://localhost:8000/api/app/admin/sql/backup",
         "file:///etc/passwd",
+        # a VALID media path on the wrong host: only the hostname check stops these
+        "https://evil.example/dms/image/v2/x.jpg",
+        "https://media.licdn.com.evil.example/dms/image/v2/x.jpg",
+        "https://media.licdn.com@evil.example/dms/image/v2/x.jpg",
+        "https://169.254.169.254/dms/image/v2/x.jpg",
+        "https://[::1]/dms/image/v2/x.jpg",
         # right host, but a path outside the media tree or one that climbs out
         "https://media.licdn.com/voyager/api/me",
         "https://media.licdn.com/dms/image/../../voyager/api/me",
@@ -116,6 +122,22 @@ def test_redirect_off_origin_is_not_followed(tmp_path):
         GOOD: httpx.Response(302, headers={"location": "http://169.254.169.254/"}),
         "http://169.254.169.254/": _image(),
     }
+    transport, seen = _recording_transport(routes)
+    with httpx.Client(transport=transport) as client:
+        assert core.download_image(client, GOOD, _cfg(tmp_path)) is None
+    assert [str(r.url) for r in seen] == [GOOD]
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "https://evil.example/dms/image/v2/x.jpg",
+        "https://10.0.0.5/dms/image/v2/x.jpg",
+    ],
+)
+def test_redirect_to_another_host_with_a_media_path_is_not_followed(tmp_path, target):
+    """Same valid /dms/image/ path, different host: only the host check refuses it."""
+    routes = {GOOD: httpx.Response(302, headers={"location": target}), target: _image()}
     transport, seen = _recording_transport(routes)
     with httpx.Client(transport=transport) as client:
         assert core.download_image(client, GOOD, _cfg(tmp_path)) is None

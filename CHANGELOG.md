@@ -48,17 +48,24 @@ All notable changes to this project will be documented in this file.
   similar-posts query of `api/posts.py` the name `result` was bound first to the `select(Post)` lookup
   and then rebound to the `(Post, distance)` query, so mypy kept the first binding's `Result[Post]`
   type and rejected the pair unpacking. The second binding is now `similar_result`; no cast. Measured:
-  full backend suite 1643 passed, 7 skipped, 100.00% coverage (`pytest -n auto`, as CI); mypy 2.4.0,
+  full backend suite 1646 passed, 7 skipped, 100.00% coverage (`pytest -n auto`, as CI); mypy 2.4.0,
   ruff and bandit clean. Frontend: build of all three projects, 679 + 459 + 166 tests at 100% coverage, ESLint
   and `npm ci` against the regenerated lockfile all pass.
 - **Every Snyk Code, CodeQL and SonarCloud vulnerability in `backend/`, `importer/` and `scripts/`
   fixed at its cause.** The admin SQL console (Snyk `python/Sqli`, CodeQL `py/sql-injection`) is
   now READ-ONLY at the database: a statement must open with `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/
   `VALUES`/`TABLE` (no `COPY`, `DO`, `SET`, DDL or DML), it runs inside `SET TRANSACTION READ ONLY`
-  with a 30 s `statement_timeout`, and the transaction is always rolled back, so a write hidden in a
-  CTE or `EXPLAIN ANALYZE` is refused by PostgreSQL and a session setting cannot leak onto the pool;
-  data changes go through the app's endpoints or restore. Running admin-authored SQL remains the
-  feature, so that one sink keeps an inline justification instead of being "sanitised". The
+  with a 30 s `statement_timeout`, and the transaction is always rolled back, with session advisory
+  locks released explicitly (`pg_advisory_unlock_all()`, since they survive a rollback). The layers
+  work together: the keyword check alone would pass `WITH x AS (DELETE ... RETURNING *) SELECT`;
+  it is the READ ONLY transaction that refuses it and `EXPLAIN ANALYZE` writes, and the rollback
+  keeps a session setting off the pool. Data changes go through the app's endpoints or restore.
+  Known residual, out of scope here: the app connects as a database superuser, so superuser-only
+  functions legal in a read-only transaction (`pg_read_file`, `pg_ls_dir`, `pg_reload_conf`,
+  `pg_terminate_backend`, ...) stay callable from this admin-only console; the real fix is a
+  dedicated non-superuser console role on the production database. Running admin-authored SQL
+  remains the feature, so that one sink keeps an inline justification instead of being
+  "sanitised". The
   importer only fetches post images from `https://media.licdn.com/dms/image/...` - the request is
   rebuilt from that constant origin and a validated, `..`-free path - and checks every redirect hop
   by hand - the URL comes from scraped page content and the request carries the LinkedIn session

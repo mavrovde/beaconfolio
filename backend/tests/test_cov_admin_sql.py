@@ -12,6 +12,29 @@ from app.api import admin_sql
 
 
 @pytest.mark.asyncio
+async def test_unreleasable_lock_discards_the_connection_and_keeps_the_real_error(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """DB unreachable: the advisory-unlock cleanup fails too. The connection is
+    invalidated (never pooled while possibly holding a lock) and the caller gets
+    the STATEMENT's error, not the cleanup's."""
+    with (
+        patch.object(
+            db_session, "execute", AsyncMock(side_effect=Exception("DB down"))
+        ),
+        patch.object(db_session, "rollback", AsyncMock()),
+        patch.object(db_session, "invalidate", AsyncMock()) as invalidate_mock,
+    ):
+        response = await client.post(
+            "/api/app/admin/sql/execute", json={"query": "SELECT 1"}
+        )
+
+    assert response.status_code == 501
+    assert response.json()["detail"] == "SQL Execution Error: DB down"
+    invalidate_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_execute_sql_without_rows_never_commits(
     client: AsyncClient, db_session: AsyncSession
 ):
@@ -36,7 +59,8 @@ async def test_execute_sql_without_rows_never_commits(
     assert response.status_code == 200
     assert response.json() == []
     commit_mock.assert_not_awaited()
-    rollback_mock.assert_awaited_once()
+    # Rolled back after the statement, and again after releasing advisory locks.
+    assert rollback_mock.await_count == 2
 
 
 @pytest.mark.asyncio

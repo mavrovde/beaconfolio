@@ -21,21 +21,30 @@ router = APIRouter(
 
 # The console is a READ-ONLY query tool. Admin-authored SQL from the request
 # body is the feature, so the bound is not "which SQL" but "what the SQL can
-# do", enforced in three independent layers (any one alone leaves the database
-# unchanged):
+# do". The layers work TOGETHER — none of them alone is the guarantee:
 #   1. the statement must open with a read keyword: no COPY (it reaches the
 #      server filesystem and, as a superuser, `TO PROGRAM`), DO, CALL, SET,
-#      GRANT, VACUUM or any DDL/DML verb;
+#      GRANT, VACUUM or any DDL/DML verb. This alone does NOT keep the data
+#      unchanged — `WITH x AS (DELETE ... RETURNING *) SELECT ...` passes it;
 #   2. it runs inside `SET TRANSACTION READ ONLY`, so PostgreSQL itself refuses
-#      every write the keyword check cannot see (`WITH x AS (DELETE ...) SELECT`,
-#      `EXPLAIN ANALYZE UPDATE ...`, `nextval()`), and refuses a switch back to
-#      read-write once the statement's snapshot is taken;
+#      every write the keyword check cannot see (that CTE, `EXPLAIN ANALYZE
+#      UPDATE ...`, `nextval()`), and refuses a switch back to read-write once
+#      the statement's snapshot is taken;
 #   3. the transaction is ALWAYS rolled back, so a session-level setting
 #      smuggled through a function (`set_config(..., false)`) cannot leak onto
-#      the pooled connection either.
+#      the pooled connection; session advisory locks are not transactional, so
+#      they are released explicitly (`pg_advisory_unlock_all()`) as well;
+#   4. `statement_timeout` bounds how long one statement may hold a connection.
 # asyncpg runs the statement as ONE prepared statement, so a chained
 # `SELECT 1; DROP TABLE users` is refused by the driver before layer 2.
 # Data changes go through the app's own endpoints or the restore path.
+#
+# KNOWN RESIDUAL: the app connects as a database SUPERUSER, so superuser-only
+# functions that are legal in a read-only transaction (`pg_read_file`,
+# `pg_ls_dir`, `pg_reload_conf`, `pg_terminate_backend`, ...) stay callable
+# from this admin-only console. READ ONLY bounds data changes, not superuser
+# powers; the real fix is a dedicated non-superuser role for the console on the
+# production database, which is outside this change.
 READ_ONLY_KEYWORDS = frozenset({"select", "with", "explain", "show", "values", "table"})
 _LEADING_KEYWORD = re.compile(r"\s*([A-Za-z]+)")
 # A runaway read (an accidental cross join) must not pin a pool connection.
@@ -70,8 +79,8 @@ async def execute_sql(
         await db.execute(text("SET TRANSACTION READ ONLY"))
         await db.execute(text(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}"))
         # Executing admin-authored SQL is this endpoint's purpose (admin-only
-        # router, see `dependencies=` above). It is bounded by the three layers
-        # in the module comment, so it can read but never change the database.
+        # router, see `dependencies=` above). It is bounded by the layers in
+        # the module comment, which together keep the data unchanged.
         # deepcode ignore Sqli: admin-only console, read-only at the DB level (READ ONLY transaction, keyword allowlist, unconditional rollback)
         result = await db.execute(text(statement))
         # Every allowlisted statement returns rows (SHOW and EXPLAIN included).
@@ -85,6 +94,20 @@ async def execute_sql(
         raise HTTPException(status_code=501, detail=f"SQL Execution Error: {error_msg}")
     finally:
         await db.rollback()
+        # Session-level advisory locks survive a rollback and would stay held
+        # by the pooled connection; release any the statement took. If that
+        # cannot be done (the database is unreachable), the connection is
+        # INVALIDATED instead — discarded, never returned to the pool still
+        # holding a lock — and the statement's own error is what the caller
+        # sees, not the cleanup's.
+        try:
+            await db.execute(text("SELECT pg_advisory_unlock_all()"))
+            await db.rollback()
+        except Exception:
+            logger.exception(
+                "Could not release advisory locks; discarding the connection"
+            )
+            await db.invalidate()
 
 
 def _get_db_url():

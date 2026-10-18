@@ -12,9 +12,12 @@ import pytest
 from fastapi import HTTPException
 from httpx import AsyncClient
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+from app.api import admin_sql
 from app.api.admin_sql import _read_only_statement
+from app.database import get_db
+from app.main import app
 from app.models.user import User
 
 URL = "/api/app/admin/sql/execute"
@@ -160,3 +163,64 @@ async def test_read_returns_rows_and_leaves_no_open_transaction(
     assert response.status_code == 200
     assert response.json() == [{"username": "sqlro"}]
     assert not db_session.in_transaction()
+
+
+@pytest.mark.asyncio
+async def test_statement_timeout_cancels_a_runaway_read(
+    client: AsyncClient, db_session: AsyncSession, monkeypatch
+):
+    """Layer 4: a statement running past STATEMENT_TIMEOUT_MS is cancelled by the server."""
+    monkeypatch.setattr(admin_sql, "STATEMENT_TIMEOUT_MS", 50)
+    response = await client.post(URL, json={"query": "SELECT pg_sleep(1)"})
+    assert response.status_code == 501
+    assert "statement timeout" in response.json()["detail"]
+    assert not db_session.in_transaction()
+
+
+ADVISORY_KEY = 4954951
+
+
+async def _advisory_locks_held(db: AsyncSession) -> int:
+    held = await db.execute(
+        text(
+            "SELECT count(*) FROM pg_locks WHERE locktype = 'advisory' "
+            "AND objid = :key AND granted"
+        ),
+        {"key": ADVISORY_KEY},
+    )
+    count = int(held.scalar_one())
+    await db.rollback()
+    return count
+
+
+@pytest.mark.asyncio
+async def test_session_advisory_lock_is_not_held_after_the_request(
+    client: AsyncClient, db_session: AsyncSession
+):
+    """A session advisory lock survives ROLLBACK, so the console releases it.
+
+    The suite's engine is NullPool (a released connection is CLOSED, which drops
+    every lock and would let this pass with the release deleted), so the console
+    runs here on a POOLED engine like production's: the connection goes back to
+    the pool alive, and only `pg_advisory_unlock_all()` frees the lock.
+    """
+    url = db_session.bind.url.render_as_string(hide_password=False)
+    pooled = create_async_engine(url, pool_size=1, max_overflow=0)
+    pooled_session = async_sessionmaker(pooled, expire_on_commit=False)
+
+    async def pooled_db():
+        async with pooled_session() as session:
+            yield session
+
+    previous = app.dependency_overrides[get_db]
+    app.dependency_overrides[get_db] = pooled_db
+    try:
+        response = await client.post(
+            URL, json={"query": f"SELECT pg_advisory_lock({ADVISORY_KEY}) AS locked"}
+        )
+        assert response.status_code == 200
+        # Checked from a DIFFERENT connection while the pooled one is still open.
+        assert await _advisory_locks_held(db_session) == 0
+    finally:
+        app.dependency_overrides[get_db] = previous
+        await pooled.dispose()
