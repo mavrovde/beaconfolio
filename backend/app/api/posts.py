@@ -1,6 +1,6 @@
 from datetime import datetime
 from math import ceil
-from typing import Any
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -340,11 +340,17 @@ def _like_contains(term: str) -> str:
     return f"%{escaped}%"
 
 
+#: Upper bound on ``/search/semantic?limit=`` (the UI asks for 10).
+SEARCH_MAX_LIMIT = 50
+
+
 @router.get("/search/semantic")
 async def semantic_search(
     q: str,
     lang: str | None = "en",
-    limit: int = 10,
+    # Bounded: a public, unauthenticated endpoint must not be asked to embed,
+    # rank and serialise an arbitrary number of posts per request.
+    limit: Annotated[int, Query(ge=1, le=SEARCH_MAX_LIMIT)] = 10,
     min_relevance: float = SEARCH_MIN_RELEVANCE,  # vector floor, see above
     db: AsyncSession = Depends(get_db),
 ):

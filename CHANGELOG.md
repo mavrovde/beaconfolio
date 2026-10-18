@@ -305,7 +305,9 @@ All notable changes to this project will be documented in this file.
   vector-only hits (capped at 0.8), a hit found by both scores 0.95, and the default vector
   floor is 0.5 — measured with `nomic-embed-text` on the real export, true matches scored
   0.53-0.72 and the best unrelated post per query 0.41-0.51. Existing rows keep their stored
-  tag (the URN upsert does not rewrite `language`); search no longer depends on it.
+  tag (the URN upsert does not rewrite `language`); search no longer depends on it. (The six
+  mis-tagged prod rows were also corrected to `en` by hand.) `limit` is now bounded to 1-50 on
+  this public endpoint (422 otherwise).
 
 ## [1.16.0] - 2026-09-19
 

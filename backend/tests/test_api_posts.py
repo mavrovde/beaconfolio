@@ -407,3 +407,16 @@ async def test_update_post_image_url(client: AsyncClient, mock_embedding, mocker
 
     assert response.status_code == 200
     assert response.json()["image_url"] == "http://updated.com/img.jpg"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("limit", ["0", "-1", "51", "100000"])
+async def test_semantic_search_rejects_an_out_of_range_limit(
+    client: AsyncClient, limit
+):
+    """The public search endpoint bounds ``limit`` (1..SEARCH_MAX_LIMIT)."""
+    response = await client.get(
+        f"{settings.api_prefix}/posts/search/semantic",
+        params={"q": "abc", "limit": limit},
+    )
+    assert response.status_code == 422
