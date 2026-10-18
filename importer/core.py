@@ -20,7 +20,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
-from urllib.parse import urljoin, urlparse
+from urllib.parse import parse_qsl, quote, urljoin, urlparse, urlsplit
 
 import httpx
 
@@ -133,6 +133,13 @@ def confine_to_workdir(raw: str, setting: str) -> Path:
     the tree is refused instead of being read or overwritten (CWE-22). The
     check is on the RESOLVED path, so ``scraper/../../etc`` cannot slip past a
     string test.
+
+    Snyk Code still reports this env-to-path flow as a ``python/PT`` NOTE: its
+    taint model does not recognise a realpath containment check as a sanitiser
+    (measured on PR #495 with both ``Path.resolve().is_relative_to`` and this
+    ``realpath``/``startswith`` form). The guard is the fix; it is pinned by
+    ``importer/tests/test_security.py`` and mutation-checked. The source is an
+    environment variable set by the operator who runs this local CLI.
     """
     workdir = os.path.realpath(os.getcwd())
     resolved = os.path.realpath(os.path.join(workdir, raw))
@@ -245,6 +252,13 @@ def _retry(fn: Callable[[], httpx.Response], cfg: Config) -> httpx.Response:
 # (hostname "evil") and "https://media.licdn.com.evil/" do not pass.
 IMAGE_URL_SCHEMES = ("https",)
 IMAGE_URL_HOSTS = ("media.licdn.com",)
+# The request itself is REBUILT from this constant origin plus a validated path,
+# never sent as the exported string: the path must be a media path made of
+# plain segments (no `..`, no `%`-escapes that could decode into one), and the
+# query string travels as parameters, not as part of the path (API path
+# traversal, Sonar S7044). Real exports all match `/dms/image/...`.
+IMAGE_ORIGIN = "https://media.licdn.com"
+_IMAGE_PATH = re.compile(r"/dms/image/[A-Za-z0-9_\-./]+")
 # Redirects are followed by hand so each hop is checked against the allowlist.
 _MAX_IMAGE_REDIRECTS = 3
 
@@ -261,18 +275,24 @@ def download_image(
     # the shared client, so it cannot ride along to any other request.
     headers = {"Cookie": f"li_at={cfg.li_at}"} if cfg.li_at else None
     for _ in range(_MAX_IMAGE_REDIRECTS + 1):
-        parsed = urlparse(url)
+        parsed = urlsplit(url)
         if (
             parsed.scheme not in IMAGE_URL_SCHEMES
             or parsed.hostname not in IMAGE_URL_HOSTS
+            or not _IMAGE_PATH.fullmatch(parsed.path)
+            or ".." in parsed.path.split("/")
         ):
             log.warning(
-                "image URL not on https://media.licdn.com, skipping: %s",
+                "image URL not a https://media.licdn.com/dms/image/ path, skipping: %s",
                 _log_safe(url),
             )
             return None
+        request_url = IMAGE_ORIGIN + quote(parsed.path)
+        params = parse_qsl(parsed.query, keep_blank_values=True)
         try:
-            resp = client.get(url, headers=headers, follow_redirects=False)
+            resp = client.get(
+                request_url, params=params, headers=headers, follow_redirects=False
+            )
         except httpx.HTTPError as exc:
             log.warning("image download failed %s: %s", _log_safe(url), _log_safe(exc))
             return None

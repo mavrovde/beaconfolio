@@ -59,7 +59,8 @@ All notable changes to this project will be documented in this file.
   CTE or `EXPLAIN ANALYZE` is refused by PostgreSQL and a session setting cannot leak onto the pool;
   data changes go through the app's endpoints or restore. Running admin-authored SQL remains the
   feature, so that one sink keeps an inline justification instead of being "sanitised". The
-  importer only fetches post images from `https://media.licdn.com/` and checks every redirect hop
+  importer only fetches post images from `https://media.licdn.com/dms/image/...` - the request is
+  rebuilt from that constant origin and a validated, `..`-free path - and checks every redirect hop
   by hand - the URL comes from scraped page content and the request carries the LinkedIn session
   cookie, so an unchecked URL was both an SSRF and a credential leak (Sonar S5144). `POSTS_JSON`/
   `IMPORT_STATE` are confined to the working directory on the resolved path, and the CHANGELOG

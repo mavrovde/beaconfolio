@@ -64,6 +64,11 @@ def _image(body: bytes = b"IMG") -> httpx.Response:
         "http://169.254.169.254/latest/meta-data/",  # cloud metadata
         "http://localhost:8000/api/app/admin/sql/backup",
         "file:///etc/passwd",
+        # right host, but a path outside the media tree or one that climbs out
+        "https://media.licdn.com/voyager/api/me",
+        "https://media.licdn.com/dms/image/../../voyager/api/me",
+        "https://media.licdn.com/dms/image/%2e%2e/%2e%2e/voyager/api/me",
+        "https://media.licdn.com/dms/image/v2/a%2Fb.jpg",
     ],
 )
 def test_off_origin_image_url_is_never_requested(tmp_path, url, caplog):
@@ -75,8 +80,24 @@ def test_off_origin_image_url_is_never_requested(tmp_path, url, caplog):
         assert core.download_image(client, url, _cfg(tmp_path)) is None
     assert seen == []  # no request at all, so the session cookie went nowhere
     assert any(
-        "not on https://media.licdn.com" in r.getMessage() for r in caplog.records
+        "not a https://media.licdn.com/dms/image/ path" in r.getMessage()
+        for r in caplog.records
     )
+
+
+def test_a_real_shaped_signed_url_is_requested_unchanged(tmp_path):
+    """Rebuilding the request must not alter a real export URL (path + signed query)."""
+    real = (
+        "https://media.licdn.com/dms/image/sync/v2/D4D27AQH-x_1/articleshare-shrink_480"
+        "/B4DaCpD-/0/1789542651374?e=1792918800&v=beta&t=Ab-_9xYz"
+    )
+    transport, seen = _recording_transport({real: _image(b"REAL")})
+    with httpx.Client(transport=transport) as client:
+        assert core.download_image(client, real, _cfg(tmp_path)) == (
+            b"REAL",
+            "image/jpeg",
+        )
+    assert [str(r.url) for r in seen] == [real]
 
 
 def test_allowed_image_is_fetched_with_the_session_cookie(tmp_path):
