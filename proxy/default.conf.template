@@ -55,6 +55,27 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # LinkedIn post import: the ONE public-host endpoint whose legitimate body is
+    # bigger than the 3m API default below. It accepts a post image (multipart,
+    # raw bytes) up to IMPORT_MAX_IMAGE_MB = 10 MB (app/config.py), so at 3m the
+    # importer's larger images died here with nginx's opaque HTML 413 before the
+    # app could answer (seen importing a 3.8 MB feed image: HTTP 413 <html>).
+    # Scoped to this exact path - an exact-match location - so every other public
+    # route keeps the tight 3m cap; the endpoint itself needs X-Import-Token or an
+    # admin JWT. Note the bound on an UNAUTHENTICATED request is this nginx limit
+    # alone: the app reads the uploaded file fully (UploadFile.read) and checks its
+    # size and the token only afterwards, so 11m is also the most a stranger can make
+    # the stack buffer for one request to this one URL. 11m = the 10 MB image cap +
+    # multipart framing/text fields.
+    location = /api/app/linkedin/import-post {
+        proxy_pass http://backend:8000/api/app/linkedin/import-post;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 11m;
+    }
+
     # API
     location /api/app/ {
         proxy_pass http://backend:8000/api/app/;
