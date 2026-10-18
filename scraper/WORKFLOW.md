@@ -45,6 +45,8 @@ npm run scrape:posts          # headless -> posts_data.json
 npm run scrape:posts:debug    # visible browser (HEADLESS=false)
 ```
 
+A run is **merged into** the existing `posts_data.json` by LinkedIn URN (fresh wins), so a partial run can never shrink the export; pass `--replace` to write only this run's posts. A run that extracts nothing exits non-zero and leaves the file untouched.
+
 `posts_data.json` is the input the **importer** consumes
 (`python -m importer` — see `importer/README.md`): it upserts posts into the
 backend by LinkedIn URN, as drafts by default.
@@ -55,7 +57,7 @@ backend by LinkedIn URN, as drafts by default.
 | --- | --- | --- |
 | `HEADLESS` | `true` | Set `false` to watch the browser (both scrapers; the `:debug` scripts set it for you) |
 | `PLAYWRIGHT_CHANNEL` | *(bundled Chromium)* | Set `chrome` to use your **system Chrome**. Recommended: after a Playwright package update the bundled-Chromium path fails until you run `npx playwright install`; the system-Chrome channel keeps working. |
-| `SCRAPE_MAX_POSTS` | `50` | Max number of posts `scrape-posts.js` extracts |
+| `SCRAPE_MAX_POSTS` | `50` | Hard cap on posts one run extracts - raise it (e.g. `500`) to export your whole history. `--scrolls=N` caps the scroll loop (default 60). |
 
 Example (profile scrape with system Chrome, visible):
 

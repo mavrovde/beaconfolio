@@ -220,6 +220,25 @@ All notable changes to this project will be documented in this file.
   exact-match location with `client_max_body_size 11m` (10 MB + multipart framing); every other
   public route keeps the 3 MB cap, pinned by a second integration test. The endpoint still
   requires `X-Import-Token` or an admin JWT and the app still enforces its own size check.
+- **`scraper/scrape-posts.js` finds posts again, and can no longer erase the last good export.**
+  LinkedIn stopped serving the `.feed-shared-update-v2` / `.update-components-text` class names
+  the extractor keyed on, so a run matched 0 cards and overwrote `posts_data.json` with `[]`
+  (25 posts lost until restored from a copy). It now anchors on markup that does not rotate with
+  the build: the card's `post-summary/urn:li:activity:` analytics link (the URN),
+  `data-testid="expandable-text-box"` (the body) and `data-testid="expandable-text-button"`
+  ("… more"). The feed is virtualised — cards scrolled past leave the DOM — so posts are now
+  harvested after every scroll and de-duplicated by URN, stopping after four scrolls that add
+  nothing (default cap 60 scrolls; the first run after the fix returned 82 posts back to
+  2024-12, where the old extractor's best case was the 20 cards in the DOM at once). An empty
+  extraction now exits non-zero and leaves `posts_data.json` untouched, `SCRAPE_MAX_POSTS` is a
+  hard cap, and a run is merged into the existing export by URN (`--replace` to overwrite) so a
+  partial run cannot shrink it - and an existing export that is malformed or not an array makes
+  the run fail closed instead of being read as empty. The loop and these guards live in the
+  browser-free `scraper/collect-posts.js` with 15 `node --test` cases; fourteen single-line mutants (drop
+  the cap, never count an empty step, never reset the counter, ignore `maxScrolls`, ignore
+  `seen`, allow an empty extraction, drop/reorder the merge, ignore `replace`, flip the sort)
+  all fail the suite (including: the loop ignoring `maxPosts`, a bad file read as empty, a
+  non-array accepted, `--replace` still parsing the file).
 
 ## [1.16.0] - 2026-09-19
 
