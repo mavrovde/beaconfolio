@@ -589,6 +589,39 @@ jobs:
       - name: Run the importer suite
         run: python -m pytest importer/tests -q
 
+  # Scraper suite (PR #497 review round 1, minor 4). The same blind spot the
+  # importer had before #417: `scraper/*.test.js` (post parsing, photo
+  # extraction, the HTML-entity decoder that keeps `&amp;` off the site) ran
+  # in NO automated gate — every "N pass" figure was a manual run. Standalone
+  # and parallel for the importer's reason: nothing on the deploy critical path
+  # waits on it.
+  #
+  # Cheap by construction: the suites import only `node:test`/`node:assert`
+  # and the modules under test, never Playwright, so no browser is needed and
+  # PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD keeps `npm ci` from fetching one. `npm ci`
+  # still runs so a future test that imports a dependency resolves it from the
+  # lockfile instead of failing on a missing module. No network beyond npm, no
+  # credential — rule 10 clean.
+  scraper-tests:
+    name: Scraper Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: scraper/package-lock.json
+      - name: Install scraper dependencies (no browsers)
+        working-directory: ./scraper
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: npm ci --no-audit --no-fund
+      - name: Run the scraper suite
+        working-directory: ./scraper
+        run: node --test
+
   hook-mutation-contracts:
     name: Hook Mutation Contract (${{ matrix.hook }})
     runs-on: ubuntu-latest

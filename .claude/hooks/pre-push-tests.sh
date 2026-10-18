@@ -855,6 +855,16 @@ run_checks() {
         return 1
       }
     fi
+    # Scraper suite (PR #497). FAST like the importer leg: `node --test` over
+    # pure modules (~0.2s), no Playwright browser, no network. A missing `node`
+    # FAILS the leg with the command to run — a leg that silently skips cannot
+    # gate.
+    if leg scraper && [ -f "$ROOT/scraper/package.json" ]; then
+      ( cd "$ROOT/scraper" && node --test >/dev/null 2>&1 ) || {
+        echo "  ✗ scraper suite failed — run 'cd scraper && node --test' to see which case"
+        return 1
+      }
+    fi
   fi
 
   # Hook self-tests. Selected PER HOOK (#377) — except that a change to

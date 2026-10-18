@@ -24,6 +24,7 @@ from app.services.json_resume import (
     clean_email,
     clean_url,
     full_date,
+    month_sort_key,
     network_for,
     normalize_date,
     username_for,
@@ -484,28 +485,20 @@ def test_demo_profile_maps_to_a_schema_valid_resume(language):
     assert document["basics"]["location"]["city"]
 
 
-def test_certificates_are_newest_first_with_undated_last():
-    """The upload's order is LinkedIn's API order, not a date order."""
+def test_build_certificates_keeps_the_order_it_is_given():
+    """No second sort here: `public_profile_view` orders certifications once,
+    for the site and `resume.json` alike (PR #497 review round 1, major 1).
+    A reordering mapper would make the two disagree again."""
     document = serialize(
         {
             "certifications": [
-                {"name": "undated"},
                 {"name": "old", "issueDate": "Nov 2023"},
-                {"name": "aug-a", "issueDate": "Aug 2026"},
-                {"name": "sep", "issueDate": "Sep 2026"},
-                {"name": "aug-b", "issueDate": "Aug 2026"},
-                {"name": "year", "date": "2025"},
+                {"name": "undated"},
+                {"name": "new", "issueDate": "Sep 2026"},
             ]
         }
     )
-    assert [c["name"] for c in document["certificates"]] == [
-        "sep",
-        "aug-a",
-        "aug-b",
-        "year",
-        "old",
-        "undated",
-    ]
+    assert [c["name"] for c in document["certificates"]] == ["old", "undated", "new"]
 
 
 def test_scraper_issue_date_is_read_and_still_needs_full_precision():
@@ -521,3 +514,52 @@ def test_scraper_issue_date_is_read_and_still_needs_full_precision():
         {"name": "full", "date": "2026-09-18"},
         {"name": "coarse"},
     ]
+
+
+def test_an_explicit_date_wins_over_issue_date():
+    """Both fields on ONE entry pins the precedence (PR #497 review, minor 2):
+    `date` is the hand-set field and the one the site displays."""
+    document = serialize(
+        {
+            "certifications": [
+                {"name": "both", "date": "2025-01-02", "issueDate": "2026-09-18"}
+            ]
+        }
+    )
+    assert document["certificates"] == [{"name": "both", "date": "2025-01-02"}]
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Sep 2026", (2026, 9)),
+        ("Sept. 2026", (2026, 9)),
+        ("September 2026", (2026, 9)),
+        ("Issued Sep 2026", (2026, 9)),
+        ("Okt 2026", (2026, 10)),
+        ("Okt. 2026", (2026, 10)),
+        ("Mai 2026", (2026, 5)),
+        ("Dez 2025", (2025, 12)),
+        ("Mär 2026", (2026, 3)),
+        ("März 2026", (2026, 3)),
+        ("MÄRZ 2026", (2026, 3)),
+        ("Ma\u0308rz 2026", (2026, 3)),  # decomposed umlaut (NFD)
+        ("Mrz 2026", (2026, 3)),
+        ("2026-09", (2026, 9)),
+        ("2026-09-18", (2026, 9)),  # the day is ignored: same month ties
+        ("2025", (2025, 0)),  # year-only sorts below every month of its year
+        ("", None),
+        ("soon", None),
+        ("Present", None),
+        (None, None),
+        (2026, None),
+    ],
+)
+def test_month_sort_key(raw, expected):
+    assert month_sort_key(raw) == expected
+
+
+def test_a_year_only_date_sorts_below_every_month_of_its_year():
+    assert (
+        month_sort_key("Dez 2024") < month_sort_key("2025") < month_sort_key("Jan 2025")
+    )

@@ -5,9 +5,8 @@ import {
   ProfileService,
   Profile,
   Certification,
-  certificationDateKey,
+  displayCertification,
   normalizeProfile,
-  sortCertificationsNewestFirst,
 } from './profile.service';
 import { LanguageService } from '@beaconfolio/shared';
 import { MockLanguageService } from '@beaconfolio/shared/testing';
@@ -108,93 +107,61 @@ describe('ProfileService', () => {
     deReqs[0].flush({ ...dummyProfile, name: 'German Profile' });
   });
 
-  it('should render backend certifications dated and newest first', () => {
+  it('should render backend certifications dated, in the order the backend sent', () => {
     const raw: Profile = {
       ...dummyProfile,
       certifications: [
+        { name: 'New', issuer: 'X', issueDate: 'Okt 2026' },
         { name: 'Old', issuer: 'X', issueDate: 'Jan 2024' },
-        { name: 'New', issuer: 'X', issueDate: 'Sep 2026' },
+        { name: 'Demo', issuer: 'X', date: '2023' },
       ],
     };
+    // Capture, flush, THEN assert: an expect inside `subscribe` throws into
+    // RxJS rather than failing the test, and passes when nothing emits.
+    let emitted: Profile | undefined;
     service.getProfile().subscribe((profile) => {
-      expect(profile.certifications?.map((c) => [c.name, c.date])).toEqual([
-        ['New', 'Sep 2026'],
-        ['Old', 'Jan 2024'],
-      ]);
+      emitted = profile;
     });
     httpMock.expectOne((r) => r.url.includes('/api/app/profile')).flush(raw);
+
+    expect(emitted).toBeDefined();
+    expect(emitted?.certifications?.map((c) => [c.name, c.date])).toEqual([
+      ['New', 'Okt 2026'],
+      ['Old', 'Jan 2024'],
+      ['Demo', '2023'],
+    ]);
   });
 });
 
-describe('certificationDateKey', () => {
-  it.each([
-    ['Sep 2026', 2026 * 12 + 8],
-    ['sept. 2026', 2026 * 12 + 8],
-    ['January 2024', 2024 * 12],
-    ['2026', 2026 * 12],
-    ['2026-09', 2026 * 12 + 8],
-    ['2026-09-18', 2026 * 12 + 8],
-    ['  Dec 2020 ', 2020 * 12 + 11],
-  ])('parses %j', (text, expected) => {
-    expect(certificationDateKey(text)).toBe(expected);
-  });
-
-  it.each([[''], [undefined], ['soon'], ['Foo 2026'], ['26']])('rejects %j', (text) => {
-    expect(certificationDateKey(text)).toBeNull();
-  });
-});
-
-describe('sortCertificationsNewestFirst', () => {
-  const cert = (name: string, issueDate?: string, date?: string): Certification => ({
-    name,
+describe('displayCertification', () => {
+  const cert = (issueDate?: string, date?: string): Certification => ({
+    name: 'C',
     issuer: 'I',
     issueDate,
     date,
   });
 
-  it('orders newest first and puts undated entries last', () => {
-    const sorted = sortCertificationsNewestFirst([
-      cert('undated-a'),
-      cert('2023', 'Nov 2023'),
-      cert('2026-sep', 'Sep 2026'),
-      cert('undated-b', ''),
-      cert('2026-aug', 'Aug 2026'),
-      cert('year-only', '2025'),
-    ]);
-    expect(sorted.map((c) => c.name)).toEqual([
-      '2026-sep',
-      '2026-aug',
-      'year-only',
-      '2023',
-      'undated-a',
-      'undated-b',
-    ]);
+  it('copies the scraper issueDate into date', () => {
+    expect(displayCertification(cert('Sep 2026')).date).toBe('Sep 2026');
   });
 
-  it('keeps the upload order within the same month (stable)', () => {
-    const sorted = sortCertificationsNewestFirst([
-      cert('first', 'Aug 2026'),
-      cert('newer', 'Sep 2026'),
-      cert('second', 'Aug 2026'),
-      cert('third', 'Aug 2026'),
-    ]);
-    expect(sorted.map((c) => c.name)).toEqual(['newer', 'first', 'second', 'third']);
+  it('keeps a date the demo profile wrote directly', () => {
+    expect(displayCertification(cert(undefined, '2025')).date).toBe('2025');
   });
 
-  it('copies issueDate into date, and prefers an explicit date', () => {
-    const [a, b] = sortCertificationsNewestFirst([
-      cert('scraped', 'Sep 2026'),
-      cert('demo', undefined, '2025'),
-    ]);
-    expect(a.date).toBe('Sep 2026');
-    expect(b.date).toBe('2025');
+  it('prefers an explicit date when an entry carries BOTH', () => {
+    // Pins the precedence: the backend orders by `date || issueDate` too.
+    expect(displayCertification(cert('Sep 2026', '2025')).date).toBe('2025');
+  });
+
+  it('renders an undated entry with an empty date', () => {
+    expect(displayCertification(cert()).date).toBe('');
   });
 
   it('does not mutate its input', () => {
-    const input = [cert('a', 'Jan 2020'), cert('b', 'Jan 2021')];
-    sortCertificationsNewestFirst(input);
-    expect(input.map((c) => c.name)).toEqual(['a', 'b']);
-    expect(input[0].date).toBeUndefined();
+    const input = cert('Jan 2020');
+    displayCertification(input);
+    expect(input.date).toBeUndefined();
   });
 });
 
@@ -202,5 +169,16 @@ describe('normalizeProfile', () => {
   it('passes a profile without certifications through unchanged', () => {
     const profile = { name: 'N' } as Profile;
     expect(normalizeProfile(profile)).toBe(profile);
+  });
+
+  it('never reorders certifications (the backend owns the order)', () => {
+    const profile = {
+      name: 'N',
+      certifications: [
+        { name: 'old', issuer: 'I', issueDate: 'Jan 2020' },
+        { name: 'new', issuer: 'I', issueDate: 'Jan 2026' },
+      ],
+    } as Profile;
+    expect(normalizeProfile(profile).certifications?.map((c) => c.name)).toEqual(['old', 'new']);
   });
 });

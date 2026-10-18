@@ -66,50 +66,26 @@ export interface Certification {
   credentialUrl?: string;
 }
 
-const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-
 /**
- * Sortable key for a certification date, as `year * 12 + month` (month 0 when
- * only a year is known), or `null` when the text carries no recognisable date.
- * Accepts the scraper's `"Sep 2026"`, a bare `"2026"` and ISO `"2026-09[-18]"`.
+ * Display-ready certification: `date` falls back to the scraper's `issueDate`
+ * (the CV template renders `date`). An explicit `date` wins when both are set —
+ * the backend orders by the same precedence (`json_resume.certificate_date`),
+ * so the badge shows the value the list is sorted by.
  */
-export function certificationDateKey(text: string | undefined): number | null {
-  const value = (text ?? '').trim().toLowerCase();
-  const iso = /^(\d{4})-(\d{2})/.exec(value);
-  if (iso) {
-    return Number(iso[1]) * 12 + Number(iso[2]) - 1;
-  }
-  const monthYear = /^([a-z]{3})[a-z]*\.?\s+(\d{4})$/.exec(value);
-  if (monthYear && MONTHS.includes(monthYear[1])) {
-    return Number(monthYear[2]) * 12 + MONTHS.indexOf(monthYear[1]);
-  }
-  const year = /^(\d{4})$/.exec(value);
-  return year ? Number(year[1]) * 12 : null;
+export function displayCertification(cert: Certification): Certification {
+  return { ...cert, date: cert.date || cert.issueDate || '' };
 }
 
 /**
- * Newest first, undated last. The sort is stable, so certifications issued in
- * the same month keep the order the upload gave them (LinkedIn's own order).
- * An upload's array order is NOT a date order — the scraper keeps LinkedIn's
- * API order — so the site must not render it as-is.
+ * Display-ready profile. ORDER is not decided here: the backend's
+ * `public_profile_view` sorts certifications (newest first, undated last,
+ * one date parser for English and German month names) for the site and
+ * `resume.json` alike. The bundled static fallback asset is rendered in the
+ * order it is written.
  */
-export function sortCertificationsNewestFirst(certs: Certification[]): Certification[] {
-  return certs
-    .map((cert) => ({ ...cert, date: cert.date || cert.issueDate || '' }))
-    .map((cert, index) => ({ cert, index, key: certificationDateKey(cert.date) }))
-    .sort((a, b) => {
-      if (a.key === b.key) return a.index - b.index;
-      if (a.key === null) return 1;
-      if (b.key === null) return -1;
-      return b.key - a.key;
-    })
-    .map(({ cert }) => cert);
-}
-
-/** Display-ready profile: certifications dated and in date order. */
 export function normalizeProfile(profile: Profile): Profile {
   return profile.certifications
-    ? { ...profile, certifications: sortCertificationsNewestFirst(profile.certifications) }
+    ? { ...profile, certifications: profile.certifications.map(displayCertification) }
     : profile;
 }
 
