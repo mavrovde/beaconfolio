@@ -12,6 +12,7 @@ tenant binds only `127.0.0.1:<port>` inside its allocated block, and the edge
 | 18100–18199   | viafrei       | 18180 (landing HTTP, PUBLIC), 18181 (retired preview root, nothing routes to it)****, 18187 (MCP Streamable HTTP, PUBLIC), 18190 (status page + operations console, both IP-gated)***, 18132 (Postgres, tooling) |
 | 18200–18999   | *unallocated* | — claim the next free 100-block per tenant via PR against this file          |
 | 5433**        | beaconfolio   | Postgres (`127.0.0.1:5433`, compose `db` publish — local pytest + tooling)   |
+| 25, 465, 587, 993 | beaconfolio | Mail (`mailserver` compose service, profile `mailserver`): 25 inbound MX, 465/587 submission, 993 IMAP. PUBLIC on all addresses (not via the edge); ufw opens them. The host's ONE SMTP listener: a second mail domain (e.g. viafrei.de, whose MX also resolves here) joins this server rather than binding 25 again |
 
 \* 18443 sits outside the nominal 100-block for historical reasons (the #310
 cutover bound HTTPS before the block convention settled). It is beaconfolio's

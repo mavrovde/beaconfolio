@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - Placeholder for next release.
+- **Self-hosted mail for the site domain (`mailserver` compose service, profile `mailserver`).**
+  docker-mailserver 16.0.1 (Postfix + Dovecot + Rspamd for DKIM/SPF/DMARC/spam, fail2ban): inbound
+  MX on 25, submission on 465/587, IMAP on 993. All state is host bind mounts under
+  `/opt/beaconfolio/mail` (mailboxes, accounts, aliases, DKIM keys), so a restart, upgrade or
+  reinstall keeps it, and the nightly host backup archives it. TLS comes from the shared edge
+  (new `mail.beaconfolio.com` block, the host's one ACME client), mounted read-only and reloaded on
+  renewal. Off for the release rollout and CI, which start no profile. The edge Caddyfile on `main`
+  also gains `9f997c73` (status.viafrei.de answers 410), which was live but only on a side branch.
 
 ### Fixed
 - **`sitemap.xml` now lists every `/projects/:slug` page.** Only `/projects` itself was listed, so

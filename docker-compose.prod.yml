@@ -380,6 +380,73 @@ services:
     networks:
       - app-network
 
+  # Self-hosted MAILBOX server for the site's domain: inbound MX + IMAP +
+  # authenticated submission (docker-mailserver: Postfix + Dovecot + Rspamd
+  # for DKIM/SPF/DMARC/spam). OFF unless started by name with its own profile:
+  #   docker compose -f docker-compose.prod.yml --profile mailserver up -d mailserver
+  # so the release rollout (`up -d`, no profile) never starts, stops or
+  # recreates it, and CI's prod-topology stack never binds host port 25.
+  #
+  # PERSISTENCE — every byte of state is a HOST bind mount under MAIL_ROOT, so
+  # a restart, an image upgrade, `docker rm`, or a reinstall from scratch keeps
+  # the mailboxes, accounts, aliases and DKIM keys:
+  #   data/   mailboxes (Maildir)        state/  queue, rspamd, fail2ban state
+  #   config/ accounts, aliases, DKIM     logs/   mail logs
+  # The nightly host backup (/usr/local/bin/beaconfolio-backup.sh) archives
+  # data/ + config/ alongside the DB dump.
+  #
+  # TLS comes from the shared Caddy edge, the ONE ACME client on the host
+  # (`mail.beaconfolio.com` block in infra/edge/Caddyfile): its certificate
+  # directory is mounted read-only, and docker-mailserver's change detector
+  # reloads Postfix/Dovecot when Caddy renews the files.
+  mailserver:
+    image: ghcr.io/docker-mailserver/docker-mailserver:16.0.1
+    profiles: ["mailserver"]
+    hostname: ${MAIL_HOSTNAME:-mail.beaconfolio.com}
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: ${MAILSERVER_MEM_LIMIT:-768m}
+    stop_grace_period: 1m
+    ports:
+      - "25:25"     # inbound MX (server-to-server)
+      - "465:465"   # submission over implicit TLS (clients)
+      - "587:587"   # submission with STARTTLS (clients)
+      - "993:993"   # IMAP over TLS (clients)
+    volumes:
+      - ${MAIL_ROOT:-/opt/beaconfolio/mail}/data:/var/mail
+      - ${MAIL_ROOT:-/opt/beaconfolio/mail}/state:/var/mail-state
+      - ${MAIL_ROOT:-/opt/beaconfolio/mail}/logs:/var/log/mail
+      - ${MAIL_ROOT:-/opt/beaconfolio/mail}/config:/tmp/docker-mailserver
+      - ${MAIL_TLS_DIR:-/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/mail.beaconfolio.com}:/etc/mail-tls:ro
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - SSL_TYPE=manual
+      - SSL_CERT_PATH=/etc/mail-tls/${MAIL_HOSTNAME:-mail.beaconfolio.com}.crt
+      - SSL_KEY_PATH=/etc/mail-tls/${MAIL_HOSTNAME:-mail.beaconfolio.com}.key
+      - POSTMASTER_ADDRESS=${MAIL_POSTMASTER:-postmaster@beaconfolio.com}
+      # Rspamd does DKIM signing, SPF/DMARC checks and spam scoring in one
+      # process; the legacy per-check daemons it replaces are switched off.
+      - ENABLE_RSPAMD=1
+      - ENABLE_OPENDKIM=0
+      - ENABLE_OPENDMARC=0
+      - ENABLE_POLICYD_SPF=0
+      - ENABLE_AMAVIS=0
+      - ENABLE_SPAMASSASSIN=0
+      # ClamAV needs ~1.5 GB RAM; the shared host has ~2.5 GB free.
+      - ENABLE_CLAMAV=0
+      - MOVE_SPAM_TO_JUNK=1
+      - ENABLE_FAIL2BAN=1
+      - ENABLE_POP3=0
+      - ENABLE_IMAP=1
+      # Authenticated users may only send as addresses they own.
+      - SPOOF_PROTECTION=1
+      # No unauthenticated relay for containers or the host.
+      - PERMIT_DOCKER=none
+    cap_add:
+      - NET_ADMIN   # fail2ban bans brute-force IPs via iptables
+    networks:
+      - app-network
+
 networks:
   app-network:
     driver: bridge

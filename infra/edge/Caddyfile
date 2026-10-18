@@ -10,6 +10,14 @@
 # deliberately does NOT roll on tenant deploys (the option-A rationale): apply
 # is a manual, reviewed step. No secrets live here: hostnames + loopback ports.
 
+# The mail server's hostname (MX target, IMAP/SMTP TLS name). Served here ONLY
+# so the edge — the one ACME client on this host — obtains and renews its
+# certificate; the `mailserver` compose service mounts that certificate
+# directory read-only. Nothing web-facing lives behind it.
+mail.beaconfolio.com {
+	respond "mail.beaconfolio.com: IMAP 993, SMTP submission 465/587" 200
+}
+
 beaconfolio.com, www.beaconfolio.com {
 	reverse_proxy https://127.0.0.1:18443 {
 		transport http {
