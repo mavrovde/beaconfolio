@@ -202,6 +202,21 @@ async def test_limit_caps_the_merged_result(db_session, vector_relevance):
     assert len(results) == 2
 
 
+@pytest.mark.asyncio
+async def test_keyword_fetch_is_wider_than_limit_so_ranking_sees_better_hits(
+    db_session, vector_relevance
+):
+    """The keyword query is ordered by recency, the RESULT by relevance. If it
+    fetched only ``limit`` rows, an older post with the verbatim phrase (the
+    higher score) would be cut before ranking ever saw it."""
+    vector_relevance({}, default=0.0)
+    await _post(db_session, "old-verbatim", content="alpha beta")
+    await _post(db_session, "new-split-1", content="alpha then beta")
+    await _post(db_session, "new-split-2", content="beta then alpha")
+    results = await _search(db_session, "alpha beta", limit=2)
+    assert results[0]["slug"] == "old-verbatim"
+
+
 # --- query handling --------------------------------------------------------
 
 

@@ -302,7 +302,8 @@ All notable changes to this project will be documented in this file.
   Search keeps `lang` only as a preference (+0.02 on vector scores, tie-break): keyword hits are
   found across ALL languages, every query term must appear (title, summary or content), `%`/`_`
   are matched literally, a verbatim phrase scores higher, keyword hits (0.85) rank above
-  vector-only hits (capped at 0.8), a hit found by both scores 0.95, and the default vector
+  vector-only hits (capped at 0.8), a hit also found by the vector search gains +0.1 (capped at
+  1.0), and the default vector
   floor is 0.5 — measured with `nomic-embed-text` on the real export, true matches scored
   0.53-0.72 and the best unrelated post per query 0.41-0.51. Existing rows keep their stored
   tag (the URN upsert does not rewrite `language`); search no longer depends on it. (The six
