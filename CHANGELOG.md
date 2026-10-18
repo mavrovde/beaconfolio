@@ -188,6 +188,28 @@ All notable changes to this project will be documented in this file.
   deferral, which is cheap”) that the body above it already contradicts, and the `[1.16.0]` entry
   described the lcov guard as checking “per-project resolvability” when what it asserts is prefix
   conformance — 46/46 `SF:` lines prefixed, 0 doubly prefixed, 46/46 resolving on disk.
+- **The public proxy compresses responses, redirects alias hostnames to the canonical host and
+  sends transport/privacy headers.** Measured on the live site: the 211 KB home page and its
+  49 KB stylesheet went out uncompressed, because the host edge adds a `Via` header and nginx's
+  `gzip_proxied` default (`off`) refuses to compress any request that carries one - so no layer
+  compressed anything. `proxy/default.conf.template` now sets `gzip on; gzip_proxied any` with a
+  text/JSON/SVG/font type list. `www.<domain>` answered `200` with a full duplicate of the site;
+  the first `PUBLIC_SERVER_NAME` entry is now the canonical host (derived in
+  `proxy/entrypoint.sh`, so a fork needs no template edit) and the others `301` to it with path
+  and query kept - the plain-HTTP redirect goes straight to the canonical HTTPS host too (one
+  hop). The public server sends `Strict-Transport-Security: max-age=31536000` (no
+  `includeSubDomains`, no `preload`), `Referrer-Policy: strict-origin-when-cross-origin` and
+  `Permissions-Policy: camera=(), geolocation=(), microphone=(self)` (the contact page records
+  voice). The canonical/alias split lives in a function in `proxy/entrypoint.sh` because `set --`
+  at script level rewrote `$@` - the image CMD - and nginx never started (caught in review; my
+  first check had run a copy of the logic, not the script). `proxy/test-entrypoint.sh` now builds
+  the real image and runs the real entrypoint offline with a stub CMD for one, two and three
+  names plus a whitespace-only value, asserts the rendered redirects, and carries a mutation
+  contract (2/2 killed: the original script-level `set --`, and the removed empty-list guard); it
+  runs in the `Proxy Config Audit` job. The integration tier pins the three behaviours
+  (`test_proxy_seo_edge.py`). Brotli and a CSP are not part of this
+  change: stock nginx has no brotli module, and a CSP needs the analytics/fonts/inline-script
+  inventory first.
 
 ### Fixed
 - **LinkedIn post images over 3 MB can be imported through the public host.** The importer's

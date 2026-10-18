@@ -618,6 +618,8 @@ jobs:
           echo "Proxy config is clean of legacy terms."
       - name: Admin config generator self-test (#336)
         run: sh proxy/test-generate-admin-config.sh
+      - name: Real entrypoint test + mutation contract (builds the proxy image, runs it offline)
+        run: sh proxy/test-entrypoint.sh --mutations
 
   # ============================================
   # BUILD ARTIFACTS (Parallel Builds)

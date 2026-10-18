@@ -1,10 +1,25 @@
 # nginx site config TEMPLATE.
 #
 # server_name values are injected at container start by /entrypoint.sh via envsubst
-# from the ${PUBLIC_SERVER_NAME} and ${ADMIN_SERVER_NAME} environment variables
+# from the ${PUBLIC_SERVER_NAME} and ${ADMIN_SERVER_NAME} environment variables, plus
+# ${PUBLIC_CANONICAL_HOST} (first public name) and ${PUBLIC_ALIAS_HOSTS} (the rest) derived from it
 # (defaults preserve the canonical beaconfolio.com hostnames). A forker sets their own
 # domain in the root .env — no edit to this file is needed. Only those two names are
 # substituted, so nginx runtime variables ($host, $remote_addr, ...) are left intact.
+
+# Compression for every response this proxy forwards (http context: this file is
+# included inside http{}). `gzip_proxied any` is the load-bearing line: the host edge in
+# front of this container adds a `Via` header, and nginx's default (`gzip_proxied off`)
+# refuses to compress any request that carries one - measured on the live site, a 211 KB
+# home page and its 49 KB stylesheet went out raw. text/html is always compressed.
+gzip on;
+gzip_vary on;
+gzip_proxied any;
+gzip_comp_level 5;
+gzip_min_length 512;
+gzip_types text/plain text/css text/xml application/xml application/rss+xml application/atom+xml
+           application/javascript text/javascript application/json application/ld+json
+           application/manifest+json image/svg+xml font/ttf font/otf application/vnd.ms-fontobject;
 
 # Default reject unknown hosts (HTTP)
 server {
@@ -13,18 +28,42 @@ server {
     return 444; # Connection Closed Without Response
 }
 
-# HTTP to HTTPS redirect for the public site
+# HTTP to HTTPS redirect for the public site. Straight to the CANONICAL host, so an alias
+# (www.<domain>) costs one hop, not two.
 server {
     listen 80;
     server_name ${PUBLIC_SERVER_NAME};
-    return 301 https://$host$request_uri;
+    return 301 https://${PUBLIC_CANONICAL_HOST}$request_uri;
+}
+
+# Alias hosts (e.g. www.<domain>) -> the canonical host, permanently. Without this the alias
+# answered 200 with a full copy of the site: two hostnames, one page set, split ranking
+# signals. Path and query are kept. Same certificate files as the main block (the host edge
+# terminates real TLS; see the note there).
+server {
+    listen 443 ssl;
+    server_name ${PUBLIC_ALIAS_HOSTS};
+    ssl_certificate /etc/nginx/ssl/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+    return 301 https://${PUBLIC_CANONICAL_HOST}$request_uri;
 }
 
 # Main Application Server
 server {
     listen 80; # For localhost
-    listen 443 ssl;
-    server_name ${PUBLIC_SERVER_NAME} localhost 127.0.0.1;
+    # default_server on 443: the alias block above is defined first and would otherwise
+    # silently become the 443 default, redirecting any unmatched Host instead of serving.
+    listen 443 ssl default_server;
+    server_name ${PUBLIC_CANONICAL_HOST} localhost 127.0.0.1;
+
+    # Response headers for the public site. Declared at server level: no public location
+    # below sets its own add_header (nginx drops inherited headers in a location that does),
+    # so these reach every public response. HSTS has no includeSubDomains/preload on purpose -
+    # sibling hostnames on the same domain are not this proxy's to commit. microphone=(self)
+    # because the contact page records voice messages.
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), geolocation=(), microphone=(self)" always;
 
     # SSL certificates. In CI/local, entrypoint.sh self-signs a dummy /CN=localhost
     # pair. In prod they come from whatever terminates TLS for this container:
