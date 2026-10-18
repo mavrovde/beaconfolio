@@ -7,6 +7,12 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Placeholder for next release.
 
+### Fixed
+- **`sitemap.xml` now lists every `/projects/:slug` page.** Only `/projects` itself was listed, so
+  Google reported `/projects/beaconfolio` as "URL is unknown to Google" right after five projects were
+  published. The slugs come from `toRenderableProjects`, the same projection the detail route uses,
+  with the profile's `lastmod`; a failed profile read just omits them.
+
 ## [1.17.1] - 2026-10-18
 
 ### Security

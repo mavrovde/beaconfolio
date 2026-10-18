@@ -18,6 +18,7 @@
  */
 
 import { SSR_BACKEND_ORIGIN } from '../ssr-backend-origin';
+import { type Project, toRenderableProjects } from '../projects-model/projects';
 import { fullPostTitle, trimTrailingSlashes } from './text';
 
 /** Injected JSON fetcher, so the render functions are testable without network. */
@@ -34,6 +35,8 @@ export const API_PREFIX = '/api/app';
  * because that is the browser layer's own source of truth for the prefix.
  */
 export const RESUME_PATH = `${API_PREFIX}/profile/resume.json`;
+/** The public profile — the `projects` array the `/projects/:slug` pages render. */
+export const PROFILE_PATH = `${API_PREFIX}/profile`;
 /** `page_size` is capped at 100 by the backend (`backend/app/api/posts.py`). */
 const POSTS_PAGE_SIZE = 100;
 /** Hard bound so a mis-reported `total_pages` can never loop the request forever. */
@@ -399,6 +402,22 @@ export async function fetchProfileLastmod(fetchJson: JsonFetcher): Promise<strin
     }
 }
 
+/**
+ * Slugs of the profile's projects, exactly as the `/projects/:slug` route
+ * resolves them: `toRenderableProjects` is the same projection the page uses,
+ * so a de-duplicated or title-derived slug in the sitemap is the slug that
+ * actually serves. A failure yields no project URLs, never an error.
+ */
+export async function fetchProjectSlugs(fetchJson: JsonFetcher): Promise<string[]> {
+    try {
+        const profile = (await fetchJson(PROFILE_PATH)) as { projects?: Project[] } | null;
+        return toRenderableProjects(profile?.projects).map((project) => project.slug);
+    } catch {
+        // The sitemap still lists every other route.
+        return [];
+    }
+}
+
 /** The newest of the given `YYYY-MM-DD` dates (ISO dates sort as strings). */
 function newest(dates: readonly (string | undefined)[]): string | undefined {
     let latest: string | undefined;
@@ -434,6 +453,7 @@ export function buildSitemapXml(
     siteUrl: string,
     posts: readonly SitemapPost[],
     dates: SitemapDates = {},
+    projectSlugs: readonly string[] = [],
 ): string {
     const base = stripTrailingSlash(siteUrl);
     const lastmodLine = (date: string | undefined) =>
@@ -446,6 +466,17 @@ export function buildSitemapXml(
                 lastmodLine(staticLastmod(route.lastmod, dates, posts)) +
                 `    <changefreq>${route.changefreq}</changefreq>\n` +
                 `    <priority>${route.priority}</priority>\n` +
+                `  </url>`,
+        ),
+        // #92 detail pages: they are reachable only through the /projects list,
+        // so without these entries a crawler finds them a full recrawl late.
+        ...projectSlugs.map(
+            (slug) =>
+                `  <url>\n` +
+                `    <loc>${escapeXml(`${base}/projects/${slug}`)}</loc>\n` +
+                lastmodLine(dates.profile) +
+                `    <changefreq>monthly</changefreq>\n` +
+                `    <priority>0.7</priority>\n` +
                 `  </url>`,
         ),
         ...posts.map(
@@ -593,10 +624,11 @@ export async function renderSitemapXml(
     fetchJson: JsonFetcher,
     fallbackOrigin: string,
 ): Promise<string> {
-    const [siteUrl, posts, profile] = await Promise.all([
+    const [siteUrl, posts, profile, projectSlugs] = await Promise.all([
         resolveSiteUrl(fetchJson, fallbackOrigin),
         fetchPublishedPosts(fetchJson),
         fetchProfileLastmod(fetchJson),
+        fetchProjectSlugs(fetchJson),
     ]);
-    return buildSitemapXml(siteUrl, posts, { profile });
+    return buildSitemapXml(siteUrl, posts, { profile }, projectSlugs);
 }
