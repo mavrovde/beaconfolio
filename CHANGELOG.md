@@ -103,9 +103,9 @@ All notable changes to this project will be documented in this file.
     (`stripTags` in `seo/text.ts`) is a single linear scan instead of one `/<[^>]*>/g` pass
     (CodeQL `js/incomplete-multi-character-sanitization`): its output never holds a `<` followed
     by a tag-name character, including a kept `<` that a removed tag would butt against text
-    (`<<b>b>`). The generated `robots.txt`, `llms.txt`, `llms-full.txt`, `sitemap.xml` and the
-    IndexNow key file now send `X-Content-Type-Options: nosniff` beside their explicit non-HTML
-    type (neither the proxy nor the app sent it). End-anchored and nested-quantifier regexes Sonar
+    (`<<b>b>`). A browser-tier E2E now pins that `robots.txt`, `llms.txt`, `llms-full.txt` and
+    `sitemap.xml` reach the client with their non-HTML type and exactly one
+    `X-Content-Type-Options: nosniff` (set by the frontend nginx). End-anchored and nested-quantifier regexes Sonar
     measured as super-linear (S8786/S5843) are string scans; the sitemap's newest-date pick no
     longer relies on a default `sort()` (S2871). A side effect of the sentence scan: "3.5 years."
     stays one sentence (the regex dropped the "3.").

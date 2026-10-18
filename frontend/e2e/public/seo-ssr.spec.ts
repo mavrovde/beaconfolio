@@ -250,7 +250,9 @@ test.describe('SEO & SSR Verification', () => {
     });
 
     // 5c. The generated files carry backend text (profile, post titles); each
-    // declares a non-HTML type AND forbids sniffing, through the real proxy.
+    // must declare a non-HTML type, and the frontend nginx (`nginx.conf`,
+    // `add_header … always`) must forbid sniffing — exactly ONCE: an app-level
+    // copy of the header showed up here as "nosniff, nosniff".
     for (const [path, type] of [
         ['/robots.txt', 'text/plain'],
         ['/llms.txt', 'text/plain'],
