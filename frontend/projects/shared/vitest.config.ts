@@ -7,6 +7,12 @@ export default defineConfig({
   root: __dirname,
   test: {
     globals: true,
+    // Vitest 5 persists transformed modules across runs by default. A cached transform of a
+    // component with inline `styles` imports the Analog plugin's virtual
+    // `virtual:angular:jit:style:inline;<hash>` module, which the plugin only registers while it
+    // transforms that file — so every SECOND run (incl. run_frontend_suites.sh's teardown retry)
+    // fails with "Cannot find module /@id/__x00__virtual:angular:jit:style:inline…".
+    fsModuleCache: false,
     environment: 'jsdom',
     setupFiles: ['src/test-setup.ts'],
     include: ['src/**/*.spec.ts', 'testing/**/*.spec.ts'],
