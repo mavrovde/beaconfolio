@@ -14,10 +14,18 @@ fi
 # Defaults preserve the canonical beaconfolio.com hostnames; a forker overrides via env.
 : "${PUBLIC_SERVER_NAME:=beaconfolio.com www.beaconfolio.com}"
 : "${ADMIN_SERVER_NAME:=admin.beaconfolio.com admin.localhost}"
-export PUBLIC_SERVER_NAME ADMIN_SERVER_NAME
+# The FIRST public name is the canonical host; every other public name is an alias that the
+# proxy 301-redirects to it (duplicate-content hygiene: www.<domain> must not serve a second
+# copy of the site). A single-name deployment has no alias, so a never-matching placeholder
+# keeps the alias server block syntactically valid.
+set -- ${PUBLIC_SERVER_NAME}
+PUBLIC_CANONICAL_HOST="$1"
+shift
+PUBLIC_ALIAS_HOSTS="${*:-alias.invalid}"
+export PUBLIC_SERVER_NAME ADMIN_SERVER_NAME PUBLIC_CANONICAL_HOST PUBLIC_ALIAS_HOSTS
 echo "Rendering nginx config (public='${PUBLIC_SERVER_NAME}', admin='${ADMIN_SERVER_NAME}')..."
-# Substitute ONLY our two names so nginx runtime vars ($host, $remote_addr, ...) survive.
-envsubst '${PUBLIC_SERVER_NAME} ${ADMIN_SERVER_NAME}' \
+# Substitute ONLY our names (the two configured lists + the canonical/alias split derived above) so nginx runtime vars ($host, $remote_addr, ...) survive.
+envsubst '${PUBLIC_SERVER_NAME} ${ADMIN_SERVER_NAME} ${PUBLIC_CANONICAL_HOST} ${PUBLIC_ALIAS_HOSTS}' \
     < /etc/nginx/templates/default.conf.template \
     > /etc/nginx/conf.d/default.conf
 

@@ -629,7 +629,12 @@ identifies you. Every knob has a safe default that preserves the canonical behav
 | `POSTGRES_PORT` | `.env` (compose) | `5433` | Postgres listen port + host mapping + backend `DATABASE_URL` |
 
 The reverse proxy renders its `server_name` from `PUBLIC_SERVER_NAME`/`ADMIN_SERVER_NAME` at
-container start (`proxy/entrypoint.sh` → envsubst on `proxy/default.conf.template`).
+container start (`proxy/entrypoint.sh` → envsubst on `proxy/default.conf.template`). **The first
+`PUBLIC_SERVER_NAME` entry is the canonical host; every further entry is an alias that the proxy
+301-redirects to it** (path and query kept), so `www.<domain>` never serves a second copy of the
+site. The proxy also gzips responses (including behind a host edge that adds a `Via` header) and
+sends `Strict-Transport-Security` (`max-age=31536000`, no `includeSubDomains`/`preload`),
+`Referrer-Policy` and `Permissions-Policy` on the public site.
 
 **Admin console access (#86).** The admin subdomain ships **CLOSED** to the public. Because Docker
 NAT masks every external client to the bridge gateway inside the container, the proxy first uses
