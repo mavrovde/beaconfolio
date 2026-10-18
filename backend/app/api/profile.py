@@ -33,6 +33,7 @@ _enforce_rate_limit = rate_limit_dependency(profile_rate_limiter)
 
 # Languages the site serves. Keep in sync with the frontend LanguageService.
 SUPPORTED_LANGUAGES = ("en", "de")
+_LANGUAGE_BY_CODE = {code: code for code in SUPPORTED_LANGUAGES}
 
 # Only these top-level fields are exposed publicly. The raw uploaded scraper JSON
 # is stored as-is but NEVER served as-is: a LinkedIn export can carry non-public
@@ -203,8 +204,15 @@ def public_profile_view(data: object) -> dict:
 
 
 def _validated_language(lang: str) -> str:
-    language = lang.lower()
-    if language not in SUPPORTED_LANGUAGES:
+    """The canonical code for ``lang``, taken FROM the allowlist.
+
+    The returned value is the constant in ``SUPPORTED_LANGUAGES``, never the
+    caller's string: it is interpolated into the bundled-profile URL
+    (``_bundled_profile``), so only a value this module owns may reach it
+    (Sonar pythonsecurity:S7044, API path traversal).
+    """
+    language = _LANGUAGE_BY_CODE.get(lang.lower())
+    if language is None:
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported language '{lang}'. Supported: {', '.join(SUPPORTED_LANGUAGES)}.",

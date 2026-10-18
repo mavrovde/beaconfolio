@@ -286,7 +286,7 @@ async def test_slug_collision_retries(
 ):
     # Force identical slug suffixes so the second create collides on (slug, language)
     # and takes the retry branch: A=1111, B first attempt 1111 (collide) then 2222.
-    with patch("app.api.linkedin.random.randint", side_effect=[1111, 1111, 2222]):
+    with patch("app.api.linkedin.slug_suffix", side_effect=["1111", "1111", "2222"]):
         a = await clean_client.post(
             URL, data={"content": "Same Title", "urn": "urn:a"}, headers=_hdr()
         )

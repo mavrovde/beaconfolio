@@ -14,6 +14,7 @@ from app.models.post import Post
 from app.models.user import User
 from app.services.auth import get_current_admin_user, get_current_user_optional
 from app.services.embeddings import get_embedding
+from app.services.slugs import slug_suffix
 
 logger = get_logger(__name__)
 
@@ -501,9 +502,7 @@ async def create_post(
     except Exception:
         await db.rollback()
         # Handle unique constraint on slug potentially
-        import random
-
-        post.slug = f"{post_data.slug}-{random.randint(1000, 9999)}"
+        post.slug = f"{post_data.slug}-{slug_suffix()}"
         db.add(post)
         try:
             await db.commit()
@@ -546,8 +545,8 @@ async def get_similar_posts(
         .limit(limit)
     )
 
-    result = await db.execute(similar_query)
-    similar_posts = result.all()
+    similar_result = await db.execute(similar_query)
+    similar_posts = similar_result.all()
 
     return [
         SimilarPostResponse(
@@ -653,9 +652,7 @@ async def generate_post_endpoint(
         print(f"DEBUG: create_post exception caught: {e}")
         await db.rollback()
         # Handle unique constraint on slug potentially
-        import random
-
-        post.slug = f"{slug}-{random.randint(1000, 9999)}"
+        post.slug = f"{slug}-{slug_suffix()}"
         db.add(post)
         try:
             await db.commit()

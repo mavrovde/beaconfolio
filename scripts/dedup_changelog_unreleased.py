@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Merge duplicated `[Unreleased]` sections in CHANGELOG.md after a rebase.
 
-    python3 scripts/dedup_changelog_unreleased.py [CHANGELOG.md]
+    python3 scripts/dedup_changelog_unreleased.py [CHANGELOG.md]   # from the repo root
 
 WHY IT EXISTS (v1.14.1 cycle): rebasing two branches that both wrote to
 `[Unreleased]` duplicates HEADINGS and ENTRIES independently. A heading-only
@@ -35,6 +35,12 @@ asked", never "silently dropped something":
     BYTE level (`cmp`, not a line-oriented string compare — that compare was
     blind to exactly the three differences named above).
   * A file with no `[Unreleased]` section is left untouched (exit 0, says so).
+  * It only ever rewrites `./CHANGELOG.md` of the working directory. The
+    optional argument is typed by an agent, so it is never used AS the path:
+    it may only name that same file (anything else — a `..` hop, an absolute
+    path elsewhere, another file — exits 2 with nothing touched), and a
+    `CHANGELOG.md` that is a symlink out of the tree is refused too. Run it
+    from the repository root, as `/prep-pr` does.
 
 It is idempotent: running it twice changes nothing the second time. Verify after
 a rebase that the branch adds only its OWN entries:
@@ -45,6 +51,7 @@ a rebase that the branch adds only its OWN entries:
 
 import re
 import sys
+from pathlib import Path
 
 # Conventional order for the headings we know; anything else keeps its own
 # position AFTER these, rather than being dropped.
@@ -98,7 +105,33 @@ def rstrip_block(block):
     return out
 
 
-def main(path):
+# The ONE file this tool rewrites, relative to the working directory. The
+# command-line argument never becomes the opened path: it can only confirm it.
+TARGET = "CHANGELOG.md"
+
+
+def refusal(raw_path):
+    """Why the run must not touch anything, or None when it may.
+
+    `raw_path` is optional and must name `./CHANGELOG.md` itself; `./CHANGELOG.md`
+    must be a regular file of the working directory, not a symlink out of it.
+    """
+    workdir = Path.cwd().resolve()
+    target = Path(TARGET)
+    if raw_path is not None and (workdir / raw_path).resolve() != workdir / TARGET:
+        return (f"{raw_path}: refusing — this tool only rewrites ./{TARGET} of the "
+                f"working directory {workdir}; run it from the repository root")
+    if target.is_symlink() or target.resolve().parent != workdir:
+        return f"{TARGET}: refusing — it is a symlink out of the working directory {workdir}"
+    return None
+
+
+def main(raw_path=None):
+    reason = refusal(raw_path)
+    if reason is not None:
+        print(reason, file=sys.stderr)
+        return 2
+    path = TARGET
     # newline="" disables universal-newline translation on BOTH ends. Without
     # it, reading turns CRLF and lone CR into "\n" and the write-back makes that
     # permanent — so a released entry containing a lone \r came back changed,
@@ -204,4 +237,4 @@ def main(path):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "CHANGELOG.md"))
+    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else None))

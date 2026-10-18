@@ -46,14 +46,10 @@ async def test_admin_sql_restore_forbidden(
 
 
 @pytest.mark.asyncio
-async def test_admin_sql_execute_commit_path(client: AsyncClient, admin_token_headers):
-    """Test SQL execution for non-SELECT query (commit path)."""
-    # We can use a harmless UPDATE or INSERT on a test table or rollback transaction if possible.
-    # But since we use a shared database in tests, ideally we shouldn't break data.
-    # We can try to UPDATE the admin user's updated_at timestamp or similar innocuous change.
-
-    # Or creating a temporary table?
-    # Let's try updating the current user (admin)
+async def test_admin_sql_execute_refuses_a_write_statement(
+    client: AsyncClient, admin_token_headers
+):
+    """The console is read-only: a DML statement is refused before it reaches the DB."""
     query = "UPDATE users SET is_active = true WHERE email = 'admin@example.com'"
 
     response = await client.post(
@@ -61,6 +57,5 @@ async def test_admin_sql_execute_commit_path(client: AsyncClient, admin_token_he
         headers=admin_token_headers,
         json={"query": query},
     )
-    assert response.status_code == 200
-    data = response.json()
-    assert data[0]["message"] == "Query executed successfully, no rows returned"
+    assert response.status_code == 400
+    assert "read-only" in response.json()["detail"]

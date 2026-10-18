@@ -48,6 +48,8 @@ from app.services.email import email_service
 # ``recent_events``). The event itself stores no identity data — the label is
 # read back from the record it points at, at render time, for the admin only.
 _CV_KINDS = ("cv_request", "cv_download")
+# The longest trend the dashboard may ask for (one year of weekly buckets).
+MAX_TREND_WEEKS = 52
 
 #: Emits currently holding OR waiting for a database connection (#326). Read
 #: and written only from the event loop, so a plain int is the whole
@@ -224,6 +226,11 @@ async def weekly_trend(db: AsyncSession, weeks: int) -> list[dict[str, Any]]:
     buckets on a server configured for Europe/Berlin. Pinning UTC makes the
     bucket boundary a property of the data, not of the deployment.
     """
+    # The loop below allocates one bucket per week, so the bound belongs to the
+    # function, not only to the HTTP layer's Query(le=...) — any other caller
+    # would otherwise size it freely (Sonar pythonsecurity:S6680).
+    if not 1 <= weeks <= MAX_TREND_WEEKS:
+        raise ValueError(f"weeks must be between 1 and {MAX_TREND_WEEKS}")
     first = week_start(datetime.now(UTC)) - timedelta(weeks=weeks - 1)
     window_start = datetime.combine(first, time.min, tzinfo=UTC)
     bucket_expr = func.date_trunc(
@@ -297,8 +304,8 @@ async def _labels_for(
                 )
             )
         ).all()
-        for row_id, name, company in interaction_rows:
-            labels[row_id] = _display_label(name, company)
+        for row_id, interaction_name, interaction_company in interaction_rows:
+            labels[row_id] = _display_label(interaction_name, interaction_company)
     return labels
 
 

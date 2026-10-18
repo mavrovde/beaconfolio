@@ -14,6 +14,30 @@
 set -u
 
 SCRIPT="$(cd "$(dirname "$0")" && pwd)/dedup_changelog_unreleased.py"
+ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+# Every fixture lives in one scratch directory, removed on exit. BSD/macOS
+# `mktemp` ignores TMPDIR, so the wrapper passes an explicit template
+# (portable across GNU and BSD).
+WORK="$(cd "$(command mktemp -d)" && pwd -P)"
+trap 'rm -rf "$WORK"' EXIT
+mktemp() {
+  if [ "${1:-}" = "-d" ]; then command mktemp -d "$WORK/tmp.XXXXXX"
+  else command mktemp "$WORK/tmp.XXXXXX"; fi
+}
+cd "$WORK" || exit 1
+
+# The script only ever rewrites ./CHANGELOG.md of its working directory (the
+# path-traversal guard: an argument never becomes the opened path). So each
+# case runs it the one way it works — the fixture is moved in as CHANGELOG.md
+# of a fresh directory, the script runs there, and the file is moved back, so
+# the assertions below still read "$f" itself.
+dedup_at() { # script file [python-flags...]
+  local s="$1" f="$2" d rc; shift 2
+  d="$(mktemp -d)"; mv "$f" "$d/CHANGELOG.md"
+  ( cd "$d" && python3 "$@" "$s" ); rc=$?
+  mv "$d/CHANGELOG.md" "$f"; rmdir "$d"
+  return $rc
+}
 pass=0; fail=0
 ok()  { pass=$((pass+1)); printf '  ✓ %s\n' "$1"; }
 bad() { fail=$((fail+1)); printf '  ✗ %s\n     %s\n' "$1" "$2"; }
@@ -31,7 +55,7 @@ bad() { fail=$((fail+1)); printf '  ✗ %s\n     %s\n' "$1" "$2"; }
 # 19 passed / 0 failed / exit 0 — the fourth fake-green in this file. The rc
 # check only works if it runs in the PARENT shell.
 run() {
-  RUN_OUT="$(python3 "$SCRIPT" "$1" 2>&1)"; RUN_RC=$?
+  RUN_OUT="$(dedup_at "$SCRIPT" "$1" 2>&1)"; RUN_RC=$?
   if [ "$RUN_RC" -ne 0 ]; then
     bad "script exited $RUN_RC (a crash leaves the file untouched — do not read that as success)" "$RUN_OUT"
   fi
@@ -316,7 +340,7 @@ rm -f "$f"
 
 # --- 8. NO WARNINGS on stderr (the SyntaxWarning the first draft emitted) ---
 f="$(mktemp)"; printf '# Changelog\n\n## [Unreleased]\n\n### Added\n- **a** — x.\n\n## [1.0.0] - 2026-01-01\n- old\n' > "$f"
-warn="$(python3 -W error::SyntaxWarning "$SCRIPT" "$f" 2>&1 >/dev/null)"
+warn="$(dedup_at "$SCRIPT" "$f" -W error::SyntaxWarning 2>&1 >/dev/null)"
 [ -z "$warn" ] && ok "no SyntaxWarning / stderr noise" || bad "stderr noise" "$warn"
 rm -f "$f"
 
@@ -442,7 +466,7 @@ open(sys.argv[1], "w", encoding="utf-8", newline="").write(data)' "$f" "$_mode"
 done
 
 # --- 9. THE REAL FILE: running it on the repo's own CHANGELOG loses nothing -
-ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
+# ($ROOT is computed at the top, before the cd into $WORK.)
 if [ -f "$ROOT/CHANGELOG.md" ]; then
   f="$(mktemp)"; cp "$ROOT/CHANGELOG.md" "$f"
   before_entries="$(grep -c '^- ' "$f")"
@@ -459,6 +483,47 @@ if [ -f "$ROOT/CHANGELOG.md" ]; then
   rm -f "$f"
 fi
 
+# --- 10. PATH GUARD: only ./CHANGELOG.md is ever rewritten -------------------
+# The argument is typed by an agent and the script REWRITES files (Sonar
+# pythonsecurity:S8707 / Snyk python/PT), so the argument is never the opened
+# path. Every spelling of "somewhere else" — a `..` hop, an absolute path, a
+# different in-tree file, a CHANGELOG.md that is a symlink out — must exit 2
+# and leave every file byte-identical. The fixtures HAVE a duplicate, so a
+# run that wrongly went ahead would visibly change them.
+OUTSIDE="$(dirname "$WORK")/dedup-outside-$$.md"
+DUP_FIXTURE='# Changelog\n\n## [Unreleased]\n\n### Added\n- **a** — x.\n\n### Added\n- **a** — x.\n\n## [1.0.0] - 2026-01-01\n- old\n'
+G="$(mktemp -d)"
+refused_untouched() { # argument-or-empty label
+  printf "$DUP_FIXTURE" > "$OUTSIDE"; cp "$OUTSIDE" "$OUTSIDE.orig"
+  [ -L "$G/CHANGELOG.md" ] || { printf "$DUP_FIXTURE" > "$G/CHANGELOG.md"; }
+  printf "$DUP_FIXTURE" > "$G/other.md"
+  cp "$G/other.md" "$G/other.orig"
+  if [ -n "$1" ]; then out="$(cd "$G" && python3 "$SCRIPT" "$1" 2>&1)"; rc=$?
+  else out="$(cd "$G" && python3 "$SCRIPT" 2>&1)"; rc=$?; fi
+  if [ "$rc" -eq 2 ] && cmp -s "$OUTSIDE" "$OUTSIDE.orig" && cmp -s "$G/other.md" "$G/other.orig" \
+     && printf '%s' "$out" | grep -q 'refusing'; then
+    ok "path guard: $2 is refused (exit 2), nothing touched"
+  else
+    bad "path guard: $2 was not refused" "rc=$rc out=$out"
+  fi
+  rm -f "$OUTSIDE.orig" "$G/other.orig"
+}
+refused_untouched "../../$(basename "$OUTSIDE")" "a ../ hop"
+refused_untouched "$OUTSIDE" "an absolute path outside the tree"
+refused_untouched "other.md" "a different file inside the tree"
+# ... while the file it owns, named or not, IS processed:
+for arg in "CHANGELOG.md" "./CHANGELOG.md" "$G/CHANGELOG.md" ""; do
+  printf "$DUP_FIXTURE" > "$G/CHANGELOG.md"
+  if [ -n "$arg" ]; then (cd "$G" && python3 "$SCRIPT" "$arg" >/dev/null 2>&1); rc=$?
+  else (cd "$G" && python3 "$SCRIPT" >/dev/null 2>&1); rc=$?; fi
+  [ "$rc" -eq 0 ] && [ "$(grep -c '^- \*\*a\*\*' "$G/CHANGELOG.md")" = 1 ] \
+    && ok "path guard: ${arg:-<no argument>} names ./CHANGELOG.md and is deduplicated" \
+    || bad "path guard: ${arg:-<no argument>} was not processed" "rc=$rc"
+done
+rm -f "$G/CHANGELOG.md"; ln -s "$OUTSIDE" "$G/CHANGELOG.md"
+refused_untouched "" "a CHANGELOG.md symlinked out of the tree"
+rm -rf "$G" "$OUTSIDE"
+
 # ---------------------------------------------------------------------------
 # Mutation contract (#393): neuter ONE arm at a time in a COPY of the script
 # and require the pinned behaviour to break. Four of this repo's five
@@ -468,7 +533,7 @@ fi
 # ---------------------------------------------------------------------------
 if [ "${1:-}" = "--mutations" ]; then
   KILLED=0; SURVIVED=0; INVALID=0
-  MDIR="$(mktemp -d)"; trap 'rm -rf "$MDIR"' EXIT
+  MDIR="$(mktemp -d)"  # inside $WORK, removed by the top-level trap
   mutate() { # name needle replacement assert-fn
     local name="$1" needle="$2" repl="$3" assertfn="$4" M="$MDIR/mut.py"
     python3 - "$SCRIPT" "$M" "$needle" "$repl" <<'PY'
@@ -512,9 +577,9 @@ PY
 MD
   }
   assert_dedup() { local g="$MDIR/f"; fix_dup "$g"
-    python3 "$1" "$g" >/dev/null 2>&1 && [ "$(grep -c 'A (#1)' "$g")" = 1 ]; }
+    dedup_at "$1" "$g" >/dev/null 2>&1 && [ "$(grep -c 'A (#1)' "$g")" = 1 ]; }
   assert_released() { local g="$MDIR/f"; fix_dup "$g"
-    python3 "$1" "$g" >/dev/null 2>&1 && grep -q '^## \[1.0.0\] - 2026-01-01' "$g"; }
+    dedup_at "$1" "$g" >/dev/null 2>&1 && grep -q '^## \[1.0.0\] - 2026-01-01' "$g"; }
   assert_whole_key() { local g="$MDIR/f"; cat > "$g" <<'MD'
 # Changelog
 
@@ -529,7 +594,7 @@ MD
 ## [1.0.0] - 2026-01-01
 - old
 MD
-    python3 "$1" "$g" >/dev/null 2>&1 && grep -q 'continuation ONE' "$g" && grep -q 'continuation TWO' "$g"; }
+    dedup_at "$1" "$g" >/dev/null 2>&1 && grep -q 'continuation ONE' "$g" && grep -q 'continuation TWO' "$g"; }
   assert_fenced_heading() { local g="$MDIR/f"; cat > "$g" <<'MD'
 # Changelog
 
@@ -545,7 +610,7 @@ MD
 - old
 MD
     cp "$g" "$g.orig"
-    python3 "$1" "$g" >/dev/null 2>&1 || return 1
+    dedup_at "$1" "$g" >/dev/null 2>&1 || return 1
     # No duplicates in the fixture, so the correct script round-trips it
     # byte-identically; a torn-out fenced heading changes the bytes.
     cmp -s "$g" "$g.orig"; }
@@ -567,7 +632,7 @@ MD
 ## [1.0.0] - 2026-01-01
 - old
 MD
-    python3 "$1" "$g" >/dev/null 2>&1 && [ "$(grep -c '^- make build' "$g")" = 2 ]; }
+    dedup_at "$1" "$g" >/dev/null 2>&1 && [ "$(grep -c '^- make build' "$g")" = 2 ]; }
   assert_preamble() { local g="$MDIR/f"; cat > "$g" <<'MD'
 # Changelog
 
@@ -580,7 +645,7 @@ Nothing released yet; see the sections below.
 ## [1.0.0] - 2026-01-01
 - old
 MD
-    python3 "$1" "$g" >/dev/null 2>&1 && grep -q "Nothing released yet" "$g"; }
+    dedup_at "$1" "$g" >/dev/null 2>&1 && grep -q "Nothing released yet" "$g"; }
   assert_nonstandard() { local g="$MDIR/f"; cat > "$g" <<'MD'
 # Changelog
 
@@ -595,8 +660,25 @@ MD
 ## [1.0.0] - 2026-01-01
 - old
 MD
-    python3 "$1" "$g" >/dev/null 2>&1 && grep -q 'doc entry' "$g" && grep -qF '### Docs' "$g"; }
+    dedup_at "$1" "$g" >/dev/null 2>&1 && grep -q 'doc entry' "$g" && grep -qF '### Docs' "$g"; }
 
+  assert_arg_refused() { # an argument naming another file exits 2
+    local d; d="$(mktemp -d)"; fix_dup "$d/CHANGELOG.md"; fix_dup "$d/other.md"
+    (cd "$d" && python3 "$1" other.md >/dev/null 2>&1); local rc=$?
+    rm -rf "$d"; [ "$rc" -eq 2 ]; }
+  assert_symlink_refused() { # a CHANGELOG.md symlinked out is never written through
+    local d out; d="$(mktemp -d)"; out="$(dirname "$WORK")/dedup-mut-outside-$$.md"
+    fix_dup "$out"; cp "$out" "$out.orig"; ln -s "$out" "$d/CHANGELOG.md"
+    (cd "$d" && python3 "$1" >/dev/null 2>&1); local rc=$?
+    cmp -s "$out" "$out.orig"; local same=$?
+    rm -rf "$d" "$out" "$out.orig"
+    [ "$rc" -eq 2 ] && [ "$same" -eq 0 ]; }
+
+  mutate "argument guard removed (an argument naming another file is not refused)" \
+    'if raw_path is not None and (workdir / raw_path).resolve() != workdir / TARGET:' \
+    'if False:' assert_arg_refused
+  mutate "symlink guard removed (a CHANGELOG.md symlinked out of the tree is written through)" \
+    'if target.is_symlink() or target.resolve().parent != workdir:' 'if False:' assert_symlink_refused
   mutate "entry dedup removed (a rebase-duplicated entry ships doubled)" \
     'if key in seen:' 'if False:' assert_dedup
   mutate "whole-entry key becomes first-line key (the documented first-draft bug)" \

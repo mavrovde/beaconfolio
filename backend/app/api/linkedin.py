@@ -1,6 +1,5 @@
 import json
 import logging
-import random
 import re
 import secrets
 from datetime import datetime
@@ -23,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db
+from app.logger import log_safe
 from app.models.post import Post
 from app.models.user import User
 from app.services.auth import get_current_admin_user, get_current_user_optional
@@ -41,6 +41,7 @@ from app.services.post_metadata import (
     legacy_derive_summary,
     legacy_derive_title,
 )
+from app.services.slugs import slug_suffix
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
@@ -186,7 +187,7 @@ async def _create_post_from_transfer(post_data: TransferPostRequest) -> Post:
     slug_base = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
     if not slug_base:
         slug_base = "linkedin-post"
-    slug = f"{slug_base}-{random.randint(1000, 9999)}"
+    slug = f"{slug_base}-{slug_suffix()}"
 
     text_for_embedding = f"{title}\n\n{post_data.content}"
     embedding = await get_embedding(text_for_embedding)
@@ -223,10 +224,10 @@ async def transfer_linkedin_post(
     """
     logger.info(
         "[LinkedIn] transfer-post: user=%s, content_len=%d, has_image=%s, urn=%s",
-        current_user.username,
+        log_safe(current_user.username),
         len(post_data.content),
         bool(post_data.image_url),
-        post_data.urn or "none",
+        log_safe(post_data.urn or "none"),
     )
     try:
         post = await _create_post_from_transfer(post_data)
@@ -394,7 +395,7 @@ async def _upsert_linkedin_post(
 
     post = Post(
         title=title,
-        slug=f"{_slug_base(title)}-{random.randint(1000, 9999)}",
+        slug=f"{_slug_base(title)}-{slug_suffix()}",
         content=content,
         summary=summary,
         language=language,
@@ -413,7 +414,7 @@ async def _upsert_linkedin_post(
     except Exception:
         # Slug collision on (slug, language) — retry once with a fresh suffix.
         await db.rollback()
-        post.slug = f"{_slug_base(title)}-{random.randint(1000, 9999)}"
+        post.slug = f"{_slug_base(title)}-{slug_suffix()}"
         db.add(post)
         await db.commit()
     await db.refresh(post)
@@ -475,10 +476,10 @@ async def import_linkedin_post(
 
     logger.info(
         "[LinkedIn] import-post: urn=%s, has_image=%s, content_len=%d, lang=%s",
-        urn,
+        log_safe(urn),
         image_bytes is not None,
         len(clean_content),
-        language,
+        log_safe(language),
     )
 
     post, created = await _upsert_linkedin_post(

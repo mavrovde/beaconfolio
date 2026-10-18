@@ -24,6 +24,62 @@ All notable changes to this project will be documented in this file.
   (`Web:InputWithoutLabelCheck`, `Web:MouseEventWithoutKeyboardEquivalentCheck`). The internal
   `http://backend:8000` SSR origin is a compose-network-only hop and is justified in place
   (`S5332`).
+- **Seven open Dependabot alerts closed, in one pass instead of eight PRs.** Frontend lockfile:
+  `proxy-addr` 2.0.7 to 2.0.8 (critical, IPv4-mapped IPv6 trust-subnet spoofing), `piscina` 5.2.0 to
+  5.3.2 (critical, prototype-pollution gadget), `source-map-js` 1.2.1 to 1.2.2 (high, event-loop DoS),
+  `@angular/router` 22.1.6 to 22.2.3 (high, SSR numeric-URL DoS); `ip-address` (medium) and
+  `@modelcontextprotocol/sdk` are not upgraded but REMOVED - the regenerated lockfile no longer
+  contains either package, so neither advisory has anything left to match. **`python-jose` (critical, algorithm-confusion guard bypass) has no patched release, so it is
+  replaced, not bumped:** `app/services/auth.py` now uses PyJWT 2.15.1 (`jwt.PyJWTError` for
+  `JWTError`; the call shape is otherwise identical), and three new tests pin the advisory's class - an
+  unsigned `alg=none` token and an HS512-signed token are both rejected by the explicit
+  `algorithms=[...]` allow-list, and a valid token round-trips its claims. The same pass applies the
+  open Dependabot groups so none is left stranded: all `@angular/*` packages together (the exact-peer
+  rule, lessons section 14, which is why the 13-update group PR failed CI when only some moved),
+  `ng-packagr`, the frontend minor group (`express`, `jsdom`, `vitest`, `eslint`, `stylelint`,
+  `typescript-eslint`, Playwright, `@analogjs/vite-plugin-angular`, ...), the backend minor group
+  (`fastapi`, `uvicorn`, `python-dotenv`, `asyncpg`, `pgvector`, `alembic`, `cryptography`,
+  `google-genai`, `pytest-mock`, `ruff`, and `mypy` 2.3.1 to 2.4.0 from Dependabot #485) and the
+  GitHub Actions group (`actions/setup-python` 7, Snyk action pins). `linkedin-api` stays at 2.2.1
+  (rule 6).
+- **`sqlalchemy` 2.0.52 to 2.1.4** (owner-approved full upgrade). Its stricter typing surfaced two
+  latent variable-reuse bugs that mypy had been unable to see: a reused loop variable in
+  `services/engagement.py` (`company` was `str` in one loop and `str | None` in the next), and in the
+  similar-posts query of `api/posts.py` the name `result` was bound first to the `select(Post)` lookup
+  and then rebound to the `(Post, distance)` query, so mypy kept the first binding's `Result[Post]`
+  type and rejected the pair unpacking. The second binding is now `similar_result`; no cast. Measured:
+  full backend suite 1646 passed, 7 skipped, 100.00% coverage (`pytest -n auto`, as CI); mypy 2.4.0,
+  ruff and bandit clean. Frontend: build of all three projects, 679 + 459 + 166 tests at 100% coverage, ESLint
+  and `npm ci` against the regenerated lockfile all pass.
+- **Every Snyk Code, CodeQL and SonarCloud vulnerability in `backend/`, `importer/` and `scripts/`
+  fixed at its cause.** The admin SQL console (Snyk `python/Sqli`, CodeQL `py/sql-injection`) is
+  now READ-ONLY at the database: a statement must open with `SELECT`/`WITH`/`EXPLAIN`/`SHOW`/
+  `VALUES`/`TABLE` (no `COPY`, `DO`, `SET`, DDL or DML), it runs inside `SET TRANSACTION READ ONLY`
+  with a 30 s `statement_timeout`, and the transaction is always rolled back, with session advisory
+  locks released explicitly (`pg_advisory_unlock_all()`, since they survive a rollback). The layers
+  work together: the keyword check alone would pass `WITH x AS (DELETE ... RETURNING *) SELECT`;
+  it is the READ ONLY transaction that refuses it and `EXPLAIN ANALYZE` writes, and the rollback
+  keeps a session setting off the pool. Data changes go through the app's endpoints or restore.
+  Known residual, out of scope here: the app connects as a database superuser, so superuser-only
+  functions legal in a read-only transaction (`pg_read_file`, `pg_ls_dir`, `pg_reload_conf`,
+  `pg_terminate_backend`, ...) stay callable from this admin-only console; the real fix is a
+  dedicated non-superuser console role on the production database. Running admin-authored SQL
+  remains the feature, so that one sink keeps an inline justification instead of being
+  "sanitised". The
+  importer only fetches post images from `https://media.licdn.com/dms/image/...` - the request is
+  rebuilt from that constant origin and a validated, `..`-free path - and checks every redirect hop
+  by hand - the URL comes from scraped page content and the request carries the LinkedIn session
+  cookie, so an unchecked URL was both an SSRF and a credential leak (Sonar S5144). `POSTS_JSON`/
+  `IMPORT_STATE` are confined to the working directory on the resolved path, and the CHANGELOG
+  fixer only ever rewrites `./CHANGELOG.md` - its optional argument may name that file and nothing
+  else (Snyk `python/PT`, Sonar S8707). Request- and export-supplied values are escaped
+  before they reach a log line (Sonar S5145, `app.logger.log_safe`). `?lang=` is mapped onto the
+  module's own constant before it is put in the bundled-profile URL (Sonar S7044), the engagement
+  trend bounds its own week count (Sonar S6680), and slug suffixes come from `secrets` (Sonar
+  S2245). Each guard has a regression test that was mutation-checked by removing the guard.
+- **Not fixed, and why:** `npm audit` still reports `braces` (and `micromatch`/`fast-glob`/`globby`
+  above it) under `stylelint` - dev-only lint tooling that never ships, the advisory affects every
+  published `braces` version and npm's only suggested "fix" is downgrading `stylelint` to 7.7.0.
 
 ### Added
 - **Imported posts carry their real publication date to search engines.** Every public post

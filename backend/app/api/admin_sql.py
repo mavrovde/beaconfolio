@@ -1,7 +1,9 @@
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -17,8 +19,53 @@ router = APIRouter(
 )
 
 
+# The console is a READ-ONLY query tool. Admin-authored SQL from the request
+# body is the feature, so the bound is not "which SQL" but "what the SQL can
+# do". The layers work TOGETHER — none of them alone is the guarantee:
+#   1. the statement must open with a read keyword: no COPY (it reaches the
+#      server filesystem and, as a superuser, `TO PROGRAM`), DO, CALL, SET,
+#      GRANT, VACUUM or any DDL/DML verb. This alone does NOT keep the data
+#      unchanged — `WITH x AS (DELETE ... RETURNING *) SELECT ...` passes it;
+#   2. it runs inside `SET TRANSACTION READ ONLY`, so PostgreSQL itself refuses
+#      every write the keyword check cannot see (that CTE, `EXPLAIN ANALYZE
+#      UPDATE ...`, `nextval()`), and refuses a switch back to read-write once
+#      the statement's snapshot is taken;
+#   3. the transaction is ALWAYS rolled back, so a session-level setting
+#      smuggled through a function (`set_config(..., false)`) cannot leak onto
+#      the pooled connection; session advisory locks are not transactional, so
+#      they are released explicitly (`pg_advisory_unlock_all()`) as well;
+#   4. `statement_timeout` bounds how long one statement may hold a connection.
+# asyncpg runs the statement as ONE prepared statement, so a chained
+# `SELECT 1; DROP TABLE users` is refused by the driver before layer 2.
+# Data changes go through the app's own endpoints or the restore path.
+#
+# KNOWN RESIDUAL: the app connects as a database SUPERUSER, so superuser-only
+# functions that are legal in a read-only transaction (`pg_read_file`,
+# `pg_ls_dir`, `pg_reload_conf`, `pg_terminate_backend`, ...) stay callable
+# from this admin-only console. READ ONLY bounds data changes, not superuser
+# powers; the real fix is a dedicated non-superuser role for the console on the
+# production database, which is outside this change.
+READ_ONLY_KEYWORDS = frozenset({"select", "with", "explain", "show", "values", "table"})
+_LEADING_KEYWORD = re.compile(r"\s*([A-Za-z]+)")
+# A runaway read (an accidental cross join) must not pin a pool connection.
+STATEMENT_TIMEOUT_MS = 30_000
+
+
 class SqlQuery(BaseModel):
     query: str
+
+
+def _read_only_statement(query: str) -> str:
+    """Return ``query`` if it opens with a read keyword, else raise 400."""
+    match = _LEADING_KEYWORD.match(query)
+    keyword = match.group(1).lower() if match else ""
+    if keyword not in READ_ONLY_KEYWORDS:
+        allowed = ", ".join(sorted(k.upper() for k in READ_ONLY_KEYWORDS))
+        raise HTTPException(
+            status_code=400,
+            detail=f"The SQL console is read-only: a statement must start with {allowed}.",
+        )
+    return query
 
 
 @router.post("/execute", response_model=list[dict[str, Any]])
@@ -27,34 +74,40 @@ async def execute_sql(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_admin_user),
 ):
-    from sqlalchemy import text
-
+    statement = _read_only_statement(sql.query)
     try:
-        # User-supplied SQL is intentional for admin tool. Wait, we should also prevent exposing full SQLite/Postgres error traces.
-        # codeql[py/sql-injection]
-        result = await db.execute(text(sql.query))
-
-        # Handle queries that don't return rows (e.g., INSERT, UPDATE)
-        if not getattr(result, "returns_rows", True):
-            await db.commit()
-            return [{"message": "Query executed successfully, no rows returned"}]
-
-        # Convert rows to a list of dicts
+        await db.execute(text("SET TRANSACTION READ ONLY"))
+        await db.execute(text(f"SET LOCAL statement_timeout = {STATEMENT_TIMEOUT_MS}"))
+        # Executing admin-authored SQL is this endpoint's purpose (admin-only
+        # router, see `dependencies=` above). It is bounded by the layers in
+        # the module comment, which together keep the data unchanged.
+        # deepcode ignore Sqli: admin-only console, read-only at the DB level (READ ONLY transaction, keyword allowlist, unconditional rollback)
+        result = await db.execute(text(statement))
+        # Every allowlisted statement returns rows (SHOW and EXPLAIN included).
         rows = result.fetchall()
-
-        # We need to map row data to dicts using keys() for robustness over _mapping
-        if rows:
-            keys = result.keys()
-            return [dict(zip(keys, row)) for row in rows]
-
-        return []
+        keys = list(result.keys())
+        return [dict(zip(keys, row)) for row in rows]
     except Exception as e:
         logger.exception("SQL execution error")
-        # Return generic 501 with a stripped error message if needed or just generic Error to prevent stack trace exposure
-        error_msg = str(e).split("\n")[0][
-            :200
-        ]  # Provide minimal info for frontend, omit stack traces
+        # First line only, capped: enough for the operator, no stack trace.
+        error_msg = str(e).split("\n")[0][:200]
         raise HTTPException(status_code=501, detail=f"SQL Execution Error: {error_msg}")
+    finally:
+        await db.rollback()
+        # Session-level advisory locks survive a rollback and would stay held
+        # by the pooled connection; release any the statement took. If that
+        # cannot be done (the database is unreachable), the connection is
+        # INVALIDATED instead — discarded, never returned to the pool still
+        # holding a lock — and the statement's own error is what the caller
+        # sees, not the cleanup's.
+        try:
+            await db.execute(text("SELECT pg_advisory_unlock_all()"))
+            await db.rollback()
+        except Exception:
+            logger.exception(
+                "Could not release advisory locks; discarding the connection"
+            )
+            await db.invalidate()
 
 
 def _get_db_url():

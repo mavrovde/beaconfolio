@@ -20,11 +20,28 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, quote, urljoin, urlparse, urlsplit
 
 import httpx
 
 log = logging.getLogger("importer")
+
+# C0 controls other than CR/LF (escaped first, by name) plus DEL.
+_CONTROL_CHARS = re.compile(r"[\x00-\x09\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _log_safe(value: object) -> str:
+    """Render an export- or server-supplied value for one log line (CWE-117).
+
+    URNs and image URLs come from scraped LinkedIn content and error bodies
+    from the server, so a raw newline could append a forged record. Line
+    breaks and control characters are escaped visibly, not dropped. (Mirrors
+    the backend's ``app.logger.log_safe``: the importer is a standalone package
+    with its own requirements and never imports the backend.)
+    """
+    text = str(value).replace("\r", "\\r").replace("\n", "\\n")
+    return _CONTROL_CHARS.sub(lambda m: f"\\x{ord(m.group()):02x}", text)
+
 
 # Language heuristic (en/de). The previous one flipped a post to "de" on a
 # SINGLE hit of an umlaut or a German-looking word, and six English posts were
@@ -80,11 +97,18 @@ class Config:
         base = Path(os.getenv("SCRAPER_DIR", "scraper"))
         api_url = os.getenv("BEACONFOLIO_API_URL", "http://localhost:8000").rstrip("/")
         state_env = os.getenv("IMPORT_STATE")
+        posts_env = os.getenv("POSTS_JSON") or str(base / "posts_data.json")
         cfg = dict(
             api_url=api_url,
             token=os.getenv("LINKEDIN_IMPORT_TOKEN", ""),
-            posts_json=Path(os.getenv("POSTS_JSON", base / "posts_data.json")),
-            state_path=Path(state_env) if state_env else default_state_path(api_url),
+            # Both files are named by the environment and then READ (posts) and
+            # WRITTEN (ledger), so each is confined to the working directory.
+            posts_json=confine_to_workdir(posts_env, "POSTS_JSON"),
+            state_path=(
+                confine_to_workdir(state_env, "IMPORT_STATE")
+                if state_env
+                else default_state_path(api_url)
+            ),
             default_language=os.getenv("IMPORT_DEFAULT_LANGUAGE", "en"),
             publish=os.getenv("IMPORT_PUBLISH", "").lower() in ("1", "true", "yes"),
             retries=int(os.getenv("IMPORT_RETRIES", "3")),
@@ -94,6 +118,37 @@ class Config:
         )
         cfg.update(overrides)
         return cls(**cfg)
+
+
+class UnsafePathError(ValueError):
+    """A configured file path resolves outside the working directory."""
+
+
+def confine_to_workdir(raw: str, setting: str) -> Path:
+    """``raw`` as a path RELATIVE to the working directory, or raise.
+
+    The importer runs from the repository root (``python -m importer``) and its
+    inputs live there (``scraper/posts_data.json``, ``importer/state.*.json``).
+    A ``..`` hop, an absolute path elsewhere, or a symlink that points out of
+    the tree is refused instead of being read or overwritten (CWE-22). The
+    check is on the RESOLVED path, so ``scraper/../../etc`` cannot slip past a
+    string test.
+
+    Snyk Code still reports this env-to-path flow as a ``python/PT`` NOTE: its
+    taint model does not recognise a realpath containment check as a sanitiser
+    (measured on PR #495 with both ``Path.resolve().is_relative_to`` and this
+    ``realpath``/``startswith`` form). The guard is the fix; it is pinned by
+    ``importer/tests/test_security.py`` and mutation-checked. The source is an
+    environment variable set by the operator who runs this local CLI.
+    """
+    workdir = os.path.realpath(os.getcwd())
+    resolved = os.path.realpath(os.path.join(workdir, raw))
+    if not resolved.startswith(workdir + os.sep):
+        raise UnsafePathError(
+            f"{setting}={raw!r} resolves outside the working directory {workdir}; "
+            "run the importer from the repository root with a path inside it"
+        )
+    return Path(os.path.relpath(resolved, workdir))
 
 
 def default_state_path(api_url: str) -> Path:
@@ -188,24 +243,70 @@ def _retry(fn: Callable[[], httpx.Response], cfg: Config) -> httpx.Response:
     raise last_exc if last_exc else RuntimeError("request failed")
 
 
+# The only origin a post image is ever fetched from. The URL comes from the
+# scraped JSON, i.e. from LinkedIn page content, and the request carries the
+# LinkedIn SESSION COOKIE — so an unchecked URL is both an SSRF (any internal
+# host the importer can reach) and a credential leak to whoever it names
+# (CWE-918). Every real export uses this origin (31 of 31 images measured).
+# The check is on the PARSED scheme and hostname, so "https://media.licdn.com@evil/"
+# (hostname "evil") and "https://media.licdn.com.evil/" do not pass.
+IMAGE_URL_SCHEMES = ("https",)
+IMAGE_URL_HOSTS = ("media.licdn.com",)
+# The request itself is REBUILT from this constant origin plus a validated path,
+# never sent as the exported string: the path must be a media path made of
+# plain segments (no `..`, no `%`-escapes that could decode into one), and the
+# query string travels as parameters, not as part of the path (API path
+# traversal, Sonar S7044). Real exports all match `/dms/image/...`.
+IMAGE_ORIGIN = "https://media.licdn.com"
+_IMAGE_PATH = re.compile(r"/dms/image/[A-Za-z0-9_\-./]+")
+# Redirects are followed by hand so each hop is checked against the allowlist.
+_MAX_IMAGE_REDIRECTS = 3
+
+
 def download_image(
     client: httpx.Client, url: Optional[str], cfg: Config
 ) -> Optional[tuple[bytes, str]]:
     """Download image bytes (authenticated with the LinkedIn session cookie). Returns
-    (bytes, content_type) or None if there's no image or the download fails/oversized."""
+    (bytes, content_type) or None if there's no image, the URL (or a redirect) is
+    off the LinkedIn media origin, or the download fails/oversized."""
     if not url:
         return None
-    cookies = {"li_at": cfg.li_at} if cfg.li_at else None
-    try:
-        resp = client.get(url, cookies=cookies, follow_redirects=True)
-    except httpx.HTTPError as exc:
-        log.warning("image download failed %s: %s", url, exc)
+    # Sent as an explicit header on each allowlisted hop only — never stored on
+    # the shared client, so it cannot ride along to any other request.
+    headers = {"Cookie": f"li_at={cfg.li_at}"} if cfg.li_at else None
+    for _ in range(_MAX_IMAGE_REDIRECTS + 1):
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme not in IMAGE_URL_SCHEMES
+            or parsed.hostname not in IMAGE_URL_HOSTS
+            or not _IMAGE_PATH.fullmatch(parsed.path)
+            or ".." in parsed.path.split("/")
+        ):
+            log.warning(
+                "image URL not a https://media.licdn.com/dms/image/ path, skipping: %s",
+                _log_safe(url),
+            )
+            return None
+        request_url = IMAGE_ORIGIN + quote(parsed.path)
+        params = parse_qsl(parsed.query, keep_blank_values=True)
+        try:
+            resp = client.get(
+                request_url, params=params, headers=headers, follow_redirects=False
+            )
+        except httpx.HTTPError as exc:
+            log.warning("image download failed %s: %s", _log_safe(url), _log_safe(exc))
+            return None
+        if not resp.is_redirect:
+            break
+        url = urljoin(url, resp.headers.get("location", ""))
+    else:
+        log.warning("image download %s: too many redirects", _log_safe(url))
         return None
     if resp.status_code != 200:
-        log.warning("image download %s -> HTTP %s", url, resp.status_code)
+        log.warning("image download %s -> HTTP %s", _log_safe(url), resp.status_code)
         return None
     if len(resp.content) > cfg.max_image_mb * 1024 * 1024:
-        log.warning("image too large, skipping: %s", url)
+        log.warning("image too large, skipping: %s", _log_safe(url))
         return None
     ctype = resp.headers.get("content-type", "image/jpeg").split(";")[0].strip()
     return resp.content, ctype
@@ -218,11 +319,11 @@ def import_one(client: httpx.Client, cfg: Config, post: dict, ledger: Ledger) ->
     content = post.get("content", "")
 
     if ledger.unchanged(urn, fp):
-        log.info("skip (unchanged): %s", urn)
+        log.info("skip (unchanged): %s", _log_safe(urn))
         return "skipped"
 
     if cfg.dry_run:
-        log.info("[dry-run] would import: urn=%s len=%d", urn, len(content))
+        log.info("[dry-run] would import: urn=%s len=%d", _log_safe(urn), len(content))
         return "skipped"
 
     image = download_image(client, post.get("imageUrl"), cfg)
@@ -251,22 +352,22 @@ def import_one(client: httpx.Client, cfg: Config, post: dict, ledger: Ledger) ->
     try:
         resp = _retry(_do, cfg)
     except Exception as exc:  # noqa: BLE001 - one bad post must not abort the batch
-        log.error("import FAILED urn=%s: %s", urn, exc)
+        log.error("import FAILED urn=%s: %s", _log_safe(urn), _log_safe(exc))
         return "failed"
 
     if resp.status_code != 200:
         log.error(
             "import FAILED urn=%s -> HTTP %s: %s",
-            urn,
+            _log_safe(urn),
             resp.status_code,
-            resp.text[:200],
+            _log_safe(resp.text[:200]),
         )
         return "failed"
 
     ledger.mark(urn, fp)
     created = bool(resp.json().get("created"))
     action = "created" if created else "updated"
-    log.info("%s: urn=%s", action, urn)
+    log.info("%s: urn=%s", action, _log_safe(urn))
     return action
 
 

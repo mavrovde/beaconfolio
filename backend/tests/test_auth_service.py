@@ -35,7 +35,7 @@ def test_token_operations():
     # Test expired token logic (mocking time? or just setting negative delta)
     token_exp = create_access_token(data, expires_delta=timedelta(minutes=-5))
     # decode_access_token doesn't check expiry explicitly, jwt.decode does if verify_exp=True (default)
-    # It raises JWTError which decode_access_token catches and returns None
+    # It raises PyJWTError which decode_access_token catches and returns None
     assert decode_access_token(token_exp) is None
 
 
