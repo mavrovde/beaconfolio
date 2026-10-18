@@ -289,6 +289,30 @@ class Settings(BaseSettings):
     brand_font_family: str = Field(
         default="", validation_alias="BEACONFOLIO_BRAND_FONT_FAMILY"
     )
+    # Search-engine ownership verification. The TOKEN each console hands out
+    # for the HTML-tag method — Google Search Console's
+    # `<meta name="google-site-verification" content="…">` and Bing Webmaster
+    # Tools' `<meta name="msvalidate.01" content="…">` — served on
+    # GET {api_prefix}/config/site so the SSR head can carry it on a PREBUILT
+    # image. Empty (the default) means no tag. Public by design: the token is
+    # printed into every page's HTML, which is how verification works.
+    google_site_verification: str = Field(
+        default="", validation_alias="BEACONFOLIO_GOOGLE_SITE_VERIFICATION"
+    )
+    bing_site_verification: str = Field(
+        default="", validation_alias="BEACONFOLIO_BING_SITE_VERIFICATION"
+    )
+    # SEO overrides. The site's <title>, meta description and keywords are
+    # COMPOSED by the frontend from the identity above (OWNER_NAME,
+    # OWNER_HEADLINE, OWNER_DESCRIPTION) and the profile data, so a forker who
+    # sets nothing still gets correct, owner-specific metadata. These exist only
+    # for an owner who wants to word one of them by hand; empty (the default)
+    # means "compose it". Keywords are a comma-separated list.
+    seo_title: str = Field(default="", validation_alias="BEACONFOLIO_SEO_TITLE")
+    seo_description: str = Field(
+        default="", validation_alias="BEACONFOLIO_SEO_DESCRIPTION"
+    )
+    seo_keywords: str = Field(default="", validation_alias="BEACONFOLIO_SEO_KEYWORDS")
     # AI-crawler policy (#252) — "allow" (default) or "deny", served on
     # GET {api_prefix}/config/site and rendered into the SSR robots.txt.
     # Allow-by-default is the product thesis: recruiter research runs through AI

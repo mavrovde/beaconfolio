@@ -208,6 +208,23 @@ Then open <http://localhost:4200> (public site) and <http://admin.localhost:4200
    than files in the bundle. The terminal preset's shell chrome (`user@your-site:~$`, the `>_`
    wordmark prefix) is derived from `SITE_NAME`/`OWNER_NAME` and disappears entirely under the
    four document presets.
+
+   **Search engines** — five more `.env` knobs, all empty by default and served on the same
+   `GET /api/app/config/site`:
+
+   | Knob | What it does | Empty = |
+   |---|---|---|
+   | `BEACONFOLIO_GOOGLE_SITE_VERIFICATION` | the `content` token of Search Console's HTML-tag method (`google-site-verification`) | no tag |
+   | `BEACONFOLIO_BING_SITE_VERIFICATION` | the `content` token of Bing Webmaster Tools' HTML-tag method (`msvalidate.01`) | no tag |
+   | `BEACONFOLIO_SEO_TITLE` | a hand-worded site `<title>` | composed from `OWNER_*`/`SITE_*` + the profile |
+   | `BEACONFOLIO_SEO_DESCRIPTION` | a hand-worded meta description | composed the same way |
+   | `BEACONFOLIO_SEO_KEYWORDS` | a comma-separated keyword list | composed the same way |
+
+   Leave the three overrides empty unless you really want to word one by hand — the composed
+   values follow your identity and profile automatically. Imported LinkedIn posts carry their
+   ORIGINAL date (`posted_at`) in every public post payload, and the blog's default order is
+   newest-first by `COALESCE(posted_at, created_at)`, so an import batch never makes every post
+   look published on import day.
 3. Admin panel: upload your **Profile Data** JSON and your **CV** (Content → replaces the demo).
    Your **portrait** is a runtime upload too (#333), but has **no panel button yet** — it is one
    authenticated API call: `POST /api/app/admin/profile/photo` (JPEG/PNG ≤ 5 MB, checked by

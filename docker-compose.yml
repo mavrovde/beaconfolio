@@ -221,6 +221,13 @@ services:
       - BEACONFOLIO_BRAND_OG_IMAGE_URL=${BEACONFOLIO_BRAND_OG_IMAGE_URL:-}
       - BEACONFOLIO_BRAND_FONT_CSS_URL=${BEACONFOLIO_BRAND_FONT_CSS_URL:-}
       - BEACONFOLIO_BRAND_FONT_FAMILY=${BEACONFOLIO_BRAND_FONT_FAMILY:-}
+      # Search engines: verification tokens + optional SEO overrides. All empty
+      # by default; empty overrides mean "compose from the identity above".
+      - BEACONFOLIO_GOOGLE_SITE_VERIFICATION=${BEACONFOLIO_GOOGLE_SITE_VERIFICATION:-}
+      - BEACONFOLIO_BING_SITE_VERIFICATION=${BEACONFOLIO_BING_SITE_VERIFICATION:-}
+      - BEACONFOLIO_SEO_TITLE=${BEACONFOLIO_SEO_TITLE:-}
+      - BEACONFOLIO_SEO_DESCRIPTION=${BEACONFOLIO_SEO_DESCRIPTION:-}
+      - BEACONFOLIO_SEO_KEYWORDS=${BEACONFOLIO_SEO_KEYWORDS:-}
       # AI-crawler policy (#252): allow (default) | deny — rendered into the
       # SSR robots.txt via GET /config/site.
       - AI_CRAWLER_POLICY=${AI_CRAWLER_POLICY:-}

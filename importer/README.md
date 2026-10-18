@@ -61,6 +61,33 @@ global `importer/state.json` is ignored with a log note. Every run logs
 upsert) is unaffected — deleting a ledger file only costs re-sent requests,
 never duplicates.
 
+## Titles, summaries and dates of imported posts
+
+The importer sends only the body; the backend DERIVES the title (the first readable
+sentence of the first line, ≤ 70 chars, cut at a clause or word boundary — "…" only
+when text really was dropped) and the summary/meta description (the cleaned body,
+≤ 150 chars on a word boundary). Emoji, hashtag runs and generic share boilerplate
+(`LINKEDIN_BOILERPLATE_PATTERNS` in `backend/app/services/post_metadata.py`) are
+stripped first. `posted_at` (LinkedIn's date) is stored and served as the post's
+publication date.
+
+A re-import updates the title/summary only while the stored value is still machine
+output for the stored body, so an edit made in the admin survives every re-import.
+
+Posts imported before this derivation keep their old titles until the owner moves
+them deliberately — dry run first, it changes nothing:
+
+```bash
+curl -X POST -H "X-Import-Token: $LINKEDIN_IMPORT_TOKEN" \
+  "$BEACONFOLIO_API_URL/api/app/linkedin/rederive-metadata"              # dry run: lists old → new
+curl -X POST -H "X-Import-Token: $LINKEDIN_IMPORT_TOKEN" \
+  "$BEACONFOLIO_API_URL/api/app/linkedin/rederive-metadata?dry_run=false" # apply
+```
+
+Only fields that still equal the PREVIOUS derivation (or are empty) change; anything a
+human edited is counted in `kept_human_title`/`kept_human_summary` and left alone.
+Slugs never change (they are published URLs). A second apply reports `changed: 0`.
+
 ## Test
 
 ```bash

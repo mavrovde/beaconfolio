@@ -241,7 +241,8 @@ async def test_long_title_truncated_and_invalid_date_ignored(
     )
     assert r.status_code == 200
     post = await _get_post(db_session, "urn:li:activity:long")
-    assert post.title.endswith("…") and len(post.title) <= 61
+    # TITLE_MAX_CHARS (70) INCLUDING the ellipsis, cut on a word boundary.
+    assert post.title.endswith("word…") and len(post.title) <= 70
     assert post.posted_at is None  # unparseable date ignored
 
 

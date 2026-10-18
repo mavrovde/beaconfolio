@@ -33,6 +33,7 @@ from app.api.tailored_links import public_router as tailored_links_router
 from app.api.years import router as years_router
 from app.config import settings
 from app.database import async_session, get_db
+from app.robots_header import ApiNoindexMiddleware
 from app.services.readiness import schema_ready
 
 
@@ -318,6 +319,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# API JSON is the material pages are rendered from, not a search result —
+# see app/robots_header.py for what is exempt and why.
+app.add_middleware(ApiNoindexMiddleware, api_prefix=settings.api_prefix)
 
 app.include_router(auth_router, prefix=settings.api_prefix)
 app.include_router(posts_router, prefix=settings.api_prefix)
