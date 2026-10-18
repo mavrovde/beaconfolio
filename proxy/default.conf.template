@@ -51,7 +51,9 @@ server {
 # Main Application Server
 server {
     listen 80; # For localhost
-    listen 443 ssl;
+    # default_server on 443: the alias block above is defined first and would otherwise
+    # silently become the 443 default, redirecting any unmatched Host instead of serving.
+    listen 443 ssl default_server;
     server_name ${PUBLIC_CANONICAL_HOST} localhost 127.0.0.1;
 
     # Response headers for the public site. Declared at server level: no public location

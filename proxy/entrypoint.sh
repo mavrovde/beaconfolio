@@ -18,10 +18,22 @@ fi
 # proxy 301-redirects to it (duplicate-content hygiene: www.<domain> must not serve a second
 # copy of the site). A single-name deployment has no alias, so a never-matching placeholder
 # keeps the alias server block syntactically valid.
-set -- ${PUBLIC_SERVER_NAME}
-PUBLIC_CANONICAL_HOST="$1"
-shift
-PUBLIC_ALIAS_HOSTS="${*:-alias.invalid}"
+#
+# This MUST stay inside a function: `set --` rewrites the positional parameters, and at
+# script level that would destroy "$@" - the image CMD that the final `exec "$@"` runs.
+# (A first version did exactly that and nginx never started; a function has its own
+# positional parameters, the script's are untouched. proxy/test-entrypoint.sh pins it.)
+derive_public_hosts() {
+    set -- ${PUBLIC_SERVER_NAME}
+    if [ "$#" -lt 1 ]; then
+        echo "entrypoint: PUBLIC_SERVER_NAME is empty - set it to '<your-domain> www.<your-domain>'" >&2
+        return 1
+    fi
+    PUBLIC_CANONICAL_HOST="$1"
+    shift
+    PUBLIC_ALIAS_HOSTS="${*:-alias.invalid}"
+}
+derive_public_hosts || exit 1
 export PUBLIC_SERVER_NAME ADMIN_SERVER_NAME PUBLIC_CANONICAL_HOST PUBLIC_ALIAS_HOSTS
 echo "Rendering nginx config (public='${PUBLIC_SERVER_NAME}', admin='${ADMIN_SERVER_NAME}')..."
 # Substitute ONLY our names (the two configured lists + the canonical/alias split derived above) so nginx runtime vars ($host, $remote_addr, ...) survive.

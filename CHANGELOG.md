@@ -200,9 +200,14 @@ All notable changes to this project will be documented in this file.
   hop). The public server sends `Strict-Transport-Security: max-age=31536000` (no
   `includeSubDomains`, no `preload`), `Referrer-Policy: strict-origin-when-cross-origin` and
   `Permissions-Policy: camera=(), geolocation=(), microphone=(self)` (the contact page records
-  voice). Verified by rendering the template exactly as the entrypoint does in a throwaway nginx
-  container with a stub upstream, for a two-name and a one-name `PUBLIC_SERVER_NAME`, and pinned
-  in the integration tier (`test_proxy_seo_edge.py`). Brotli and a CSP are not part of this
+  voice). The canonical/alias split lives in a function in `proxy/entrypoint.sh` because `set --`
+  at script level rewrote `$@` - the image CMD - and nginx never started (caught in review; my
+  first check had run a copy of the logic, not the script). `proxy/test-entrypoint.sh` now builds
+  the real image and runs the real entrypoint offline with a stub CMD for one, two and three
+  names plus a whitespace-only value, asserts the rendered redirects, and carries a mutation
+  contract (2/2 killed: the original script-level `set --`, and the removed empty-list guard); it
+  runs in the `Proxy Config Audit` job. The integration tier pins the three behaviours
+  (`test_proxy_seo_edge.py`). Brotli and a CSP are not part of this
   change: stock nginx has no brotli module, and a CSP needs the analytics/fonts/inline-script
   inventory first.
 
