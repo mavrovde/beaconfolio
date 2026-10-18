@@ -259,6 +259,17 @@ All notable changes to this project will be documented in this file.
   inventory first.
 
 ### Fixed
+- **Derived post titles no longer stop at "vs." or "L.A.", badge-only posts get a real title, and
+  `rederive-metadata` never downgrades a title to the fallback.** A prod dry run of
+  `POST /linkedin/rederive-metadata` over 82 imported posts showed "Provincial Code vs" and
+  `When you rewatch "L.A`: every "." + space was a sentence end, and "vs." survived only when
+  the text up to the next "." happened to fit the 70-character budget. Sentence splitting now
+  skips a "." after a generic English/German abbreviation (`SENTENCE_ABBREVIATIONS`: vs, e.g.,
+  etc., Dr., z.B., bzw., usw. …), after a dotted initialism (L.A., U.S.) and before a lowercase
+  letter or digit. A body that is nothing but a badge share derives its title and summary from
+  the share itself ("Verified achievement from Coursera") instead of "LinkedIn Post". The
+  re-derive keeps a stored non-empty title/summary when the new derivation could only offer the
+  fallback, counted as `kept_over_fallback_title`/`kept_over_empty_summary`.
 - **LinkedIn post images over 3 MB can be imported through the public host.** The importer's
   `POST /api/app/linkedin/import-post` takes a post image up to `IMPORT_MAX_IMAGE_MB` (10 MB),
   but the public `/api/app/` proxy location caps bodies at 3 MB, so a 3.8 MB feed image was

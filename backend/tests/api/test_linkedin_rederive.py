@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.post import Post
 from app.services.post_metadata import (
+    DEFAULT_TITLE,
     derive_summary,
     derive_title,
     legacy_derive_summary,
@@ -350,3 +351,55 @@ async def test_rederive_leaves_empty_summary_alone_when_nothing_derives(
     await db_session.commit()
     r = await clean_client.post(f"{REDERIVE_URL}?dry_run=false", headers=HDR)
     assert r.json()["changed"] == 0
+
+
+# --- rederive never downgrades a real value to the fallback (prod dry run) ----
+
+BADGE = "View my verified achievement from Coursera.\n\n#learning #datascience"
+EMOJI_ONLY = "🎉🎉 #yay"
+
+
+async def test_rederive_never_replaces_a_real_title_with_the_fallback(
+    clean_client: AsyncClient, db_session: AsyncSession
+):
+    """The 2026-10-18 prod dry run would have rewritten badge posts' titles to
+    DEFAULT_TITLE. A row whose body now derives only the fallback keeps its
+    stored (legacy) title and summary, and both are counted."""
+    rows = {
+        # Legacy title "🎉🎉 #yay" is real stored text; the new derivation
+        # can only offer DEFAULT_TITLE and an empty summary.
+        "emoji": _legacy_row("urn:li:activity:f1", EMOJI_ONLY),
+        # An EMPTY title is not a real value: the fallback may fill it.
+        "empty_title": _legacy_row("urn:li:activity:f2", EMOJI_ONLY, title=""),
+        # A badge-only body now derives the badge phrase, not the fallback.
+        "badge": _legacy_row("urn:li:activity:f3", BADGE),
+    }
+    db_session.add_all(rows.values())
+    await db_session.commit()
+    ids = {k: v.id for k, v in rows.items()}
+
+    r = await clean_client.post(f"{REDERIVE_URL}?dry_run=false", headers=HDR)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["kept_over_fallback_title"] == 1
+    # "emoji" and "empty_title" both hold a legacy summary that would blank.
+    assert body["kept_over_empty_summary"] == 2
+    assert body["kept_human_title"] == 0 and body["kept_human_summary"] == 0
+    by_id = {item["id"]: item for item in body["items"]}
+    assert set(by_id) == {ids["empty_title"], ids["badge"]}
+    assert by_id[ids["empty_title"]]["title"] == {"old": "", "new": DEFAULT_TITLE}
+    assert by_id[ids["empty_title"]]["summary"] is None
+
+    db_session.expire_all()
+    emoji = await db_session.get(Post, ids["emoji"])
+    assert emoji is not None
+    assert emoji.title == legacy_derive_title(EMOJI_ONLY) == "🎉🎉 #yay"
+    assert emoji.summary == legacy_derive_summary(EMOJI_ONLY)
+    badge = await db_session.get(Post, ids["badge"])
+    assert badge is not None
+    assert badge.title == "Verified achievement from Coursera"
+    assert badge.summary == "Verified achievement from Coursera"
+
+    again = await clean_client.post(f"{REDERIVE_URL}?dry_run=false", headers=HDR)
+    assert again.json()["changed"] == 0
+    assert again.json()["kept_over_fallback_title"] == 1

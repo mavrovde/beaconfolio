@@ -213,6 +213,194 @@ def test_derivation_is_deterministic_and_idempotent_on_its_own_output():
     assert derive_title(title) == title
 
 
+# --- sentence boundaries: abbreviations and initialisms (prod dry run) ---------
+#
+# The rederive-metadata DRY RUN over 82 real posts (2026-10-18) produced
+# "Provincial Code vs" and 'When you rewatch "L.A' — a "." after an
+# abbreviation was read as a full stop. Whether "vs." survived depended on
+# the NEXT fragment: the greedy sentence accumulation re-joined it only when
+# the text up to the next "." still fit in TITLE_MAX_CHARS, which is why
+# "AI vs. Bureaucracy: …" and "Whiteboard architecture vs. …" kept theirs.
+# The prefixes below are the owner's public posts verbatim; each continuation
+# (after the prefix) makes the line long enough that the old splitter broke
+# at the abbreviation, as it did on the real, longer bodies.
+
+PROVINCIAL = (
+    "Provincial Code vs. Football FAANG: How Grit and Agility"
+    " beat pedigree when the stakes are high and the deadlines are real"
+)
+LA_CONFIDENTIAL = (
+    'When you rewatch "L.A. Confidential" 1997, you suddenly'
+    " notice how much of it is about institutions protecting themselves"
+)
+WHITEBOARD = (
+    "Whiteboard architecture vs. production reality - the"
+    " distance between them is where most systems quietly fail"
+)
+AI_VS = (
+    "AI vs. Bureaucracy: How One Prompt"
+    " replaced a week of forms, approvals and status meetings for good"
+)
+
+
+@pytest.mark.parametrize(
+    "content,expected",
+    [
+        (PROVINCIAL, "Provincial Code vs. Football FAANG"),
+        (
+            LA_CONFIDENTIAL,
+            'When you rewatch "L.A. Confidential" 1997, you suddenly notice how…',
+        ),
+        (WHITEBOARD, "Whiteboard architecture vs. production reality"),
+        (AI_VS, "AI vs. Bureaucracy: How One Prompt replaced a week of forms…"),
+        # The verbatim prefixes alone (the dry-run strings as reported).
+        (
+            "Provincial Code vs. Football FAANG: How Grit and Agility…",
+            "Provincial Code vs. Football FAANG: How Grit and Agility…",
+        ),
+        (
+            'When you rewatch "L.A. Confidential" 1997, you suddenly…',
+            'When you rewatch "L.A. Confidential" 1997, you suddenly…',
+        ),
+    ],
+    ids=["provincial", "la_confidential", "whiteboard", "ai_vs", "p_short", "la_short"],
+)
+def test_prod_dry_run_abbreviation_regressions(content: str, expected: str):
+    title = derive_title(content)
+    assert title == expected
+    assert len(title) <= TITLE_MAX_CHARS
+
+
+def test_the_dry_run_regressions_were_real_on_the_old_splitter():
+    """The fixtures reproduce the bug: a splitter that breaks at EVERY "."
+    + whitespace yields exactly the truncated titles the dry run showed."""
+    naive = re.compile(r"(?<=[.!?])\s+")
+    assert naive.split(PROVINCIAL)[0] == "Provincial Code vs."
+    assert naive.split(LA_CONFIDENTIAL)[0] == 'When you rewatch "L.A.'
+
+
+@pytest.mark.parametrize("abbr", sorted(pm.SENTENCE_ABBREVIATIONS))
+def test_a_dot_after_an_abbreviation_does_not_end_the_sentence(abbr: str):
+    for word in (abbr, abbr.capitalize(), abbr.upper()):
+        text = f"Before {word}. After"
+        assert pm.split_sentences(text) == [text], word
+
+
+def test_abbreviation_list_is_generic_and_complete():
+    """The brief's list, English + German — a removed entry is a regression."""
+    assert pm.SENTENCE_ABBREVIATIONS >= {
+        "vs", "e.g", "i.e", "etc", "mr", "mrs", "ms", "dr", "prof", "st", "no",
+        "approx", "incl", "inc", "ltd", "jr", "sr",
+        "z.b", "bzw", "ca", "d.h", "usw",
+    }  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Moved to the U.S. Then it began", ["Moved to the U.S. Then it began"]),
+        ("Grew up in L.A. Then moved", ["Grew up in L.A. Then moved"]),
+        ('Rewatch "L.A. Confidential" now', ['Rewatch "L.A. Confidential" now']),
+        ("Use a queue (E.G. Kafka) here", ["Use a queue (E.G. Kafka) here"]),
+        ("Built at N.A.S.A. Back then", ["Built at N.A.S.A. Back then"]),
+        # The initialism is skipped; the real full stop after it still splits.
+        ("Moved to the U.S. Then. Done", ["Moved to the U.S. Then.", "Done"]),
+    ],
+)
+def test_dotted_initialisms_do_not_end_a_sentence(text: str, expected: list[str]):
+    assert pm.split_sentences(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Mehr Tools, z.B. Docker und Podman",
+        "Rust bzw. Go sind schnell",
+        "Es dauerte ca. Fünf Tage",
+        "Das heißt d.h. Weniger Arbeit",
+        "Äpfel, Birnen usw. Alles frisch",
+    ],
+)
+def test_german_abbreviations_do_not_end_a_sentence(text: str):
+    assert pm.split_sentences(text) == [text]
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("Done. Next", ["Done.", "Next"]),
+        ("Plan A. Then plan B", ["Plan A.", "Then plan B"]),  # a lone letter
+        ("Wait... Then it shipped", ["Wait...", "Then it shipped"]),
+        ("Wow! next one", ["Wow!", "next one"]),  # "!"/"?" always end one
+        ("Really? 3 times", ["Really?", "3 times"]),
+        ("Hmm ... Then", ["Hmm ...", "Then"]),
+        ("It ended. and then more", ["It ended. and then more"]),  # lowercase
+        ("Chapter one. 2 more to go", ["Chapter one. 2 more to go"]),  # digit
+        ("Trailing gap. ", ["Trailing gap.", ""]),
+        ("No boundary at all", ["No boundary at all"]),
+    ],
+)
+def test_split_sentences(text: str, expected: list[str]):
+    assert pm.split_sentences(text) == expected
+
+
+def test_a_real_sentence_end_still_splits_the_title():
+    long_second = "Next " + "words " * 20
+    assert derive_title(f"Done. {long_second}") == "Done"
+
+
+def test_a_title_ending_in_an_abbreviation_keeps_its_dot():
+    assert derive_title("We moved to the U.S.") == "We moved to the U.S."
+    assert derive_title("Tools, libraries etc.") == "Tools, libraries etc."
+    assert derive_title("A plain sentence.") == "A plain sentence"
+
+
+# --- badge-only posts -----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "content,expected",
+    [
+        (
+            "View my verified achievement from Coursera.",
+            "Verified achievement from Coursera",
+        ),
+        (
+            "View my verified achievement from Coursera.\n\n#learning #datascience",
+            "Verified achievement from Coursera",
+        ),
+        (
+            "🎓 View my verified achievement from Coursera. #learning",
+            "Verified achievement from Coursera",
+        ),
+        (
+            "#certified\nView my verified achievement on Credly!",
+            "Verified achievement on Credly",
+        ),
+        (
+            "View the verified credential on Example.",
+            "Verified credential on Example",
+        ),
+        ("view verified badge from Acme", "Verified badge from Acme"),
+        # No full stop: the pattern runs to the end of the line, hashtags
+        # included — they are tags, not part of the phrase.
+        (
+            "View my verified achievement from Coursera #learning #ml",
+            "Verified achievement from Coursera",
+        ),
+    ],
+)
+def test_badge_only_post_is_titled_by_its_share_phrase(content: str, expected: str):
+    assert derive_title(content) == expected
+    assert derive_summary(content) == expected
+
+
+def test_badge_share_beside_real_text_is_still_boilerplate():
+    body = "View my verified achievement from Coursera.\nShipped my first model"
+    assert derive_title(body) == "Shipped my first model"
+    assert derive_summary(body) == "Shipped my first model"
+
+
 # --- summary ------------------------------------------------------------------
 
 
@@ -403,6 +591,15 @@ def test_is_machine_title_recognises_both_derivations_and_empty():
     assert is_machine_title("", LIVE_SAMPLE)
     assert is_machine_title(None, LIVE_SAMPLE)
     assert not is_machine_title("A title a human wrote", LIVE_SAMPLE)
+
+
+def test_the_fallback_title_is_always_machine_output():
+    """A row stored with DEFAULT_TITLE (e.g. a badge post derived before the
+    badge phrase existed) must be replaceable by the better derivation — it
+    describes no body, so no human wrote it for this one."""
+    badge = "View my verified achievement from Coursera."
+    assert derive_title(badge) != DEFAULT_TITLE
+    assert is_machine_title(DEFAULT_TITLE, badge)
 
 
 def test_is_machine_summary_recognises_both_derivations_and_empty():

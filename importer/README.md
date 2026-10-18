@@ -86,6 +86,9 @@ curl -X POST -H "X-Import-Token: $LINKEDIN_IMPORT_TOKEN" \
 
 Only fields that still equal the PREVIOUS derivation (or are empty) change; anything a
 human edited is counted in `kept_human_title`/`kept_human_summary` and left alone.
+A field is also left alone when the new derivation could only offer its fallback (the
+generic default title, or an empty summary) while the row holds real text — counted in
+`kept_over_fallback_title`/`kept_over_empty_summary`; a re-derive never downgrades a title.
 Slugs never change (they are published URLs). A second apply reports `changed: 0`.
 
 ## Language of imported posts
