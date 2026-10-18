@@ -79,7 +79,12 @@ export interface BlogPostVm {
                 <article class="prose prose-invert prose-p:text-primary prose-a:text-terminal-highlight prose-headings:text-primary prose-pre:bg-terminal-dim/20 prose-pre:border prose-pre:border-terminal-dim max-w-none">
                   @if (vm.post!.image_url) {
                     <div class="mb-8">
-                      <img [src]="vm.post!.image_url" [alt]="headline(vm.post!)" decoding="async" fetchpriority="high" class="w-full h-auto rounded border border-terminal-dim shadow-lg object-cover max-h-[500px]">
+                      <!-- A fixed 16:9 frame, cropped with object-cover from the TOP:
+                      the old w-full h-auto max-h-[500px] upscaled a portrait upload to the full
+                      column width and then cut its MIDDLE, so a 480x596 photo lost the subject's
+                      head. object-top keeps the upper part, where a face/headline usually sits;
+                      width/height reserve the 16:9 box before the image loads (no layout shift). -->
+                      <img [src]="vm.post!.image_url" [alt]="headline(vm.post!)" decoding="async" fetchpriority="high" width="1200" height="675" class="post-cover-image block w-full h-auto aspect-video rounded border border-terminal-dim shadow-lg object-cover object-top">
                     </div>
                   }
                   <div [innerHTML]="vm.post!.content" class="whitespace-pre-wrap"></div>
