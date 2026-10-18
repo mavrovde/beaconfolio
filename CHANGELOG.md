@@ -93,8 +93,9 @@ All notable changes to this project will be documented in this file.
   - **robots.txt:** the AI-crawler list is one `{agent, purpose}` table (21 agents, adding
     Claude-SearchBot, Claude-User, Perplexity-User, DuckAssistBot, Amazonbot,
     Meta-ExternalFetcher, MistralAI-User, Bytespider, cohere-ai) and understands a third policy,
-    `search-only` (search + user-requested fetchers allowed, training crawlers refused). Googlebot
-    and Bingbot are never named.
+    `search-only` (search + user-requested fetchers allowed, training crawlers refused) — the
+    frontend half of the backend's `AI_CRAWLER_POLICY=search-only` (#493, under Changed below),
+    which therefore takes effect with this release. Googlebot and Bingbot are never named.
   - **`/llms-full.txt`** — the whole public profile and excerpts of the 20 newest posts as clean
     Markdown, linked from `/llms.txt`; `llms.txt` post titles no longer carry the importer's `…`
     and are dated by publication.
@@ -149,8 +150,9 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - **`AI_CRAWLER_POLICY` accepts `search-only`** besides `allow`/`deny` (`config.py`
   `_normalize_ai_crawler_policy`; an unknown value still falls back to `allow`), and
-  `GET /api/app/config/site` passes it through, and the SSR `robots.txt` (#494, same release)
-  renders it: training crawlers `Disallow: /`, search and user-requested agents allowed.
+  `GET /api/app/config/site` passes it through. The backend half only: `robots.txt` honours
+  `search-only` once the frontend SEO PR (#494) is deployed — until then the current frontend
+  folds any value other than `deny` to `allow`, the safe direction. #494 merges after this PR.
   Compose comments and `.env.example` list the three values.
 - **A LinkedIn re-import no longer overwrites a summary a human edited**, and now upgrades a title
   or summary that is still untouched machine output. Explicitly passed `title`/`summary` always
