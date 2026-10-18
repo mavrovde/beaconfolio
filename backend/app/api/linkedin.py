@@ -33,6 +33,7 @@ from app.services.linkedin import (
     normalize_linkedin_text,
 )
 from app.services.post_metadata import (
+    DEFAULT_TITLE,
     derive_summary,
     derive_title,
     is_machine_summary,
@@ -735,6 +736,11 @@ class RederiveResult(BaseModel):
     # i.e. a human edited them.
     kept_human_title: int
     kept_human_summary: int
+    # Fields left alone because the new derivation could only offer its
+    # fallback (DEFAULT_TITLE / an empty summary) where the row holds real
+    # text: a re-derive must never replace a title with the fallback.
+    kept_over_fallback_title: int
+    kept_over_empty_summary: int
     items: list[RederiveItem]
 
 
@@ -753,7 +759,10 @@ async def rederive_metadata(
     derivation (no migration rewrites production rows). A field changes ONLY
     while it still equals the PREVIOUS derivation of the stored body
     (``legacy_derive_title``/``legacy_derive_summary``) or is empty, so
-    anything a human edited is counted and left alone. Slugs are never
+    anything a human edited is counted and left alone. Nor does a field change
+    when the new derivation has nothing better than its fallback
+    (``DEFAULT_TITLE``, an empty summary) and the row holds real text — that
+    would be a regression, so it is counted and left alone. Slugs are never
     touched — they are published URLs. Idempotent: a second apply changes
     nothing. Auth mirrors ``/import-post`` (machine token or admin session).
     """
@@ -770,17 +779,26 @@ async def rederive_metadata(
     items: list[RederiveItem] = []
     kept_title = 0
     kept_summary = 0
+    kept_fallback_title = 0
+    kept_empty_summary = 0
     for post in posts:
         item = RederiveItem(id=post.id, slug=post.slug)
         new_title = derive_title(post.content)
         if post.title != new_title:
-            if not post.title or post.title == legacy_derive_title(post.content):
+            if post.title and new_title == DEFAULT_TITLE:
+                kept_fallback_title += 1
+            elif not post.title or post.title == legacy_derive_title(post.content):
                 item.title = FieldChange(old=post.title, new=new_title)
             else:
                 kept_title += 1
         new_summary = derive_summary(post.content)
         if (post.summary or "") != new_summary:
-            if not post.summary or post.summary == legacy_derive_summary(post.content):
+            # Only reachable with a non-empty stored summary (they differ).
+            if not new_summary:
+                kept_empty_summary += 1
+            elif not post.summary or post.summary == legacy_derive_summary(
+                post.content
+            ):
                 item.summary = FieldChange(old=post.summary, new=new_summary)
             else:
                 kept_summary += 1
@@ -798,12 +816,15 @@ async def rederive_metadata(
 
     logger.info(
         "[LinkedIn] rederive-metadata: dry_run=%s scanned=%d changed=%d "
-        "kept_human_title=%d kept_human_summary=%d",
+        "kept_human_title=%d kept_human_summary=%d "
+        "kept_over_fallback_title=%d kept_over_empty_summary=%d",
         dry_run,
         len(posts),
         len(items),
         kept_title,
         kept_summary,
+        kept_fallback_title,
+        kept_empty_summary,
     )
     return RederiveResult(
         dry_run=dry_run,
@@ -811,5 +832,7 @@ async def rederive_metadata(
         changed=len(items),
         kept_human_title=kept_title,
         kept_human_summary=kept_summary,
+        kept_over_fallback_title=kept_fallback_title,
+        kept_over_empty_summary=kept_empty_summary,
         items=items,
     )

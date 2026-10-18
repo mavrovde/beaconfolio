@@ -41,7 +41,11 @@ ELLIPSIS = "…"
 # become a title or a meta description. Each entry is matched
 # case-insensitively and removed up to the end of its sentence/line. Keep this
 # list GENERIC — a phrase only one owner writes does not belong here.
-LINKEDIN_BOILERPLATE_PATTERNS: tuple[re.Pattern[str], ...] = (
+#
+# The badge-share subset is named on its own: when a post is NOTHING but such a
+# share, the phrase itself is the best generic title there is
+# (:func:`_badge_phrase`).
+BADGE_BOILERPLATE_PATTERNS: tuple[re.Pattern[str], ...] = (
     # Credly/Accredible-style badge shares: "View my verified achievement from X."
     # The leading \b is load-bearing: without it "review"/"preview" matched
     # and the rest of the sentence was deleted (PR #493 review, round 2).
@@ -53,6 +57,9 @@ LINKEDIN_BOILERPLATE_PATTERNS: tuple[re.Pattern[str], ...] = (
         r"\bview (?:the )?verified (?:achievement|credential|badge)[^.!?\n]*[.!?]?",
         re.IGNORECASE,
     ),
+)
+LINKEDIN_BOILERPLATE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    *BADGE_BOILERPLATE_PATTERNS,
     # LinkedIn's own collapsed-text artefact when a scraped body was truncated.
     re.compile(r"…\s*(?:see more|more)\s*$", re.IGNORECASE),
     # Reshare chrome copied with the text.
@@ -80,8 +87,50 @@ _OPENERS = frozenset("\"'“‘([«")
 _CLAUSE_BOUNDARY = re.compile(r"(?::|;| —| –| -)\s")
 # A clause head shorter than this says too little to be a title.
 _MIN_CLAUSE_HEAD = 30
-# Sentence boundary: terminal punctuation followed by whitespace.
-_SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
+# A CANDIDATE sentence boundary: terminal punctuation followed by whitespace.
+# Whether a "." candidate really ends a sentence is decided by
+# :func:`_ends_sentence` — "vs.", "e.g." and "L.A." do not.
+_SENTENCE_GAP = re.compile(r"[.!?]\s+")
+# Words after which a "." does NOT end the sentence, compared
+# case-insensitively with the word before the dot (that dot removed). Keep
+# this list GENERIC — common English and German abbreviations, nothing one
+# owner happens to write. Dotted initialisms ("L.A.", "U.S.", "z.B.") need no
+# entry: :data:`_INITIALISM` recognises them by shape.
+SENTENCE_ABBREVIATIONS: frozenset[str] = frozenset(
+    {
+        # English
+        "vs",
+        "e.g",
+        "i.e",
+        "mr",
+        "mrs",
+        "ms",
+        "dr",
+        "prof",
+        "st",
+        "approx",
+        "incl",
+        "jr",
+        "sr",
+        # German
+        "z.b",
+        "bzw",
+        "ca",
+        "d.h",
+    }
+)
+# NOT listed, deliberately: "no", "etc", "inc", "ltd", "usw". Each often ENDS a
+# sentence ("I said no. Then…", "AWS, GCP etc. All…", "Google Inc. After…"),
+# and their mid-sentence uses are already covered by the lowercase/digit rule
+# in :func:`_ends_sentence` ("No. 1", "etc. and") — listing them only fused
+# real sentences into run-ons (PR #498 review, round 1).
+# Two or more single letters each followed by a dot: "L.A.", "U.S.", "e.g.",
+# "z.B.", "d.h.". A lone "A." is NOT one — "Plan A. Then" ends a sentence.
+_INITIALISM = re.compile(r"(?:[^\W\d_]\.){2,}")
+# Leading punctuation of the word before a dot: the quote of '"L.A.'.
+_LEADING_NON_WORD = re.compile(r"^\W+")
+# The imperative that opens a badge share ("View my", "View the", "View").
+_BADGE_LEAD = re.compile(r"^view\s+(?:(?:my|the)\s+)?", re.IGNORECASE)
 # Punctuation that must not dangle before an ellipsis.
 _TRAILING_JOINERS = " ,;:-–—(/&"
 
@@ -259,6 +308,75 @@ def truncate_on_word(text: str, max_chars: int) -> str:
     return cut + ELLIPSIS
 
 
+#: Characters before a candidate "." searched for the word it closes. Longer
+#: than any abbreviation or realistic initialism ("N.A.S.A.", '("e.g.').
+_ABBREVIATION_LOOKBACK = 40
+
+
+def _is_abbreviation(text: str) -> bool:
+    """Whether ``text`` ends in a word whose final "." is an abbreviation's
+    or an initialism's, not a full stop (see :data:`SENTENCE_ABBREVIATIONS`).
+    An ellipsis ("Wait...", "etc...") never qualifies: with its last dot
+    removed it still ends in "." and so matches neither test."""
+    # Callers pass text ending in "." — never empty or all-whitespace.
+    word = _LEADING_NON_WORD.sub("", text.rsplit(None, 1)[-1])
+    if not word.endswith("."):
+        return False
+    return (
+        word[:-1].lower() in SENTENCE_ABBREVIATIONS
+        or _INITIALISM.fullmatch(word) is not None
+    )
+
+
+def _ends_sentence(text: str, gap: re.Match[str]) -> bool:
+    """Whether the candidate boundary ``gap`` (punctuation + whitespace) in
+    ``text`` really ends a sentence. "!" and "?" always do. A "." does not
+    when the next character is a lowercase letter or a digit ("approx. 5",
+    "Inc. and"), nor when it closes an abbreviation or initialism."""
+    if text[gap.start()] != ".":
+        return True
+    nxt = text[gap.end()] if gap.end() < len(text) else ""
+    if nxt.islower() or nxt.isdecimal():
+        return False
+    # Only the word before the dot matters, so look back over a bounded window:
+    # slicing from the start of the text made each candidate O(n) and the
+    # whole split quadratic on a long first line.
+    window = text[max(0, gap.start() + 1 - _ABBREVIATION_LOOKBACK) : gap.start() + 1]
+    return not _is_abbreviation(window)
+
+
+def split_sentences(text: str) -> list[str]:
+    """``text`` split into sentences at the boundaries :func:`_ends_sentence`
+    accepts; the whitespace between sentences is dropped."""
+    sentences = []
+    start = 0
+    for gap in _SENTENCE_GAP.finditer(text):
+        if _ends_sentence(text, gap):
+            sentences.append(text[start : gap.start() + 1])
+            start = gap.end()
+    sentences.append(text[start:])
+    return sentences
+
+
+def _badge_phrase(content: str) -> str:
+    """The first badge-share phrase of ``content`` made into a title:
+    "View my verified achievement from Coursera." -> "Verified achievement
+    from Coursera". The platform name comes from the post text itself, so
+    nothing deployment-specific is involved. "" when there is none."""
+    for line in content.splitlines():
+        text = _strip_symbols(line)
+        for pattern in BADGE_BOILERPLATE_PATTERNS:
+            match = pattern.search(text)
+            if match is None:
+                continue
+            phrase = _BADGE_LEAD.sub("", match.group(0))
+            phrase = _HASHTAG_INLINE.sub(r"\1", _strip_trailing_hashtags(phrase))
+            phrase = _WHITESPACE.sub(" ", phrase).strip().rstrip(".!?").rstrip()
+            phrase = phrase[:1].upper() + phrase[1:]
+            return truncate_on_word(phrase, TITLE_MAX_CHARS)
+    return ""
+
+
 def derive_title(content: str) -> str:
     """The title of a post derived from its body.
 
@@ -267,12 +385,16 @@ def derive_title(content: str) -> str:
     its last clause boundary (":", ";", a spaced dash) that fits — that head
     reads as complete, so it gets no ellipsis — and otherwise on a word
     boundary, marked with "…" because text really was dropped. A single trailing full stop is dropped
-    (titles do not end in one); "!" and "?" are kept.
+    (titles do not end in one; an abbreviation's dot, "U.S.", is kept); "!"
+    and "?" are kept. Sentences are split by :func:`split_sentences`, so
+    "vs." or "L.A." never ends one. A body that is nothing but a badge share
+    is titled by the share's own phrase ("Verified achievement from X").
     """
     lines = clean_lines(content)
     if not lines:
-        return DEFAULT_TITLE
-    sentences = _SENTENCE_END.split(lines[0])
+        # Nothing but boilerplate: a badge share still names its own subject.
+        return _badge_phrase(content) or DEFAULT_TITLE
+    sentences = split_sentences(lines[0])
     title = sentences[0]
     for sentence in sentences[1:]:
         candidate = f"{title} {sentence}"
@@ -286,7 +408,7 @@ def derive_title(content: str) -> str:
             if _MIN_CLAUSE_HEAD <= m.start() <= TITLE_MAX_CHARS
         ]
         title = heads[-1] if heads else truncate_on_word(title, TITLE_MAX_CHARS)
-    if title.endswith(".") and not title.endswith(".."):
+    if title.endswith(".") and not title.endswith("..") and not _is_abbreviation(title):
         title = title[:-1].rstrip()
     return title or DEFAULT_TITLE
 
@@ -294,8 +416,10 @@ def derive_title(content: str) -> str:
 def derive_summary(content: str) -> str:
     """The meta description / card blurb derived from a body: the readable
     lines joined into prose, cut on a word boundary at
-    :data:`SUMMARY_MAX_CHARS`. "" when the body has no readable text."""
-    text = " ".join(clean_lines(content))
+    :data:`SUMMARY_MAX_CHARS`. A body that is nothing but a badge share is
+    described by the share's phrase, as its title is. "" when the body has no
+    readable text."""
+    text = " ".join(clean_lines(content)) or _badge_phrase(content)
     return truncate_on_word(text, SUMMARY_MAX_CHARS)
 
 
@@ -322,8 +446,10 @@ def legacy_derive_summary(content: str) -> str:
 
 def is_machine_title(title: str | None, content: str) -> bool:
     """True when ``title`` is what a derivation — old or current — produces
-    for ``content``, i.e. no human has edited it since it was derived."""
-    if not title:
+    for ``content``, i.e. no human has edited it since it was derived. The
+    fallback :data:`DEFAULT_TITLE` always counts: it describes no body, so a
+    better derivation may replace it."""
+    if not title or title == DEFAULT_TITLE:
         return True
     return title in (legacy_derive_title(content), derive_title(content))
 
