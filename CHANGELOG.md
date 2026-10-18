@@ -17,7 +17,8 @@ All notable changes to this project will be documented in this file.
   explicit non-HTML type (`tssecurity:S5131`; the remaining taint, admin-authored content served
   as text behind nginx's `nosniff`, is acknowledged in code). The admin app drops the unused
   cdnjs Font Awesome stylesheet that loaded without SRI (`Web:S5725`), the stats readout uses
-  Web Crypto instead of `Math.random` (`S2245`), every fire-and-forget router/async call is an
+  rejection-sampled Web Crypto instead of `Math.random` (`S2245`; no modulo bias, CodeQL
+  `js/biased-cryptographic-random`), every fire-and-forget router/async call is an
   explicit `void` (`S9383`), every unlabeled input has a label, sortable table headers are real
   buttons, and the inbox row and the LLM terminal answer Enter as well as a click
   (`Web:InputWithoutLabelCheck`, `Web:MouseEventWithoutKeyboardEquivalentCheck`). The internal
