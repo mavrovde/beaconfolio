@@ -106,6 +106,20 @@ describe('SystemStatsComponent - Browser', () => {
     expect(component.memoryUsage).toBeLessThanOrEqual(60);
   });
 
+  // The readout is drawn from the Web Crypto CSPRNG (Sonar S2245) by
+  // rejection sampling (CodeQL js/biased-cryptographic-random).
+  it('draws the readout from cryptoRandomInt', () => {
+    const spy = vi.spyOn(crypto, 'getRandomValues').mockImplementation(
+      <T extends ArrayBufferView | null>(array: T): T => {
+        (array as unknown as Uint32Array)[0] = 40;
+        return array;
+      });
+    vi.advanceTimersByTime(5001);
+    expect(spy).toHaveBeenCalled();
+    expect(component.memoryUsage).toBe(60);
+    spy.mockRestore();
+  });
+
   it('should pad single digits correctly', () => {
     const result = (component as any).formatTime(1000);
     expect(result).toBe('00:00:01');

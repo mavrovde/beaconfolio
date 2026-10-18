@@ -49,7 +49,7 @@ export class LoginComponent {
           console.log('Login successful, navigating...');
           const returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/dashboard';
           console.log('Navigating to:', returnUrl);
-          this.router.navigate([returnUrl]);
+          void this.router.navigate([returnUrl]);
         },
         error: (error: HttpErrorResponse) => {
           console.error('Login error in component:', error);

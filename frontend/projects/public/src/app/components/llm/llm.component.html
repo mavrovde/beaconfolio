@@ -20,14 +20,16 @@
   }
 
   <!-- Single Agent Mode (Original) -->
-  <!-- Click-anywhere-to-focus is a pointer convenience only; keyboard users
-  tab straight into the prompt input, so this container is deliberately
-  not itself focusable/keyable. -->
+  <!-- Click-anywhere-to-focus is a pointer convenience; keyboard users tab
+  straight into the prompt input, so the container itself is deliberately not
+  focusable. Its keyboard equivalent is Enter bubbling up from anything inside
+  it (the header link, the prompt) — it returns focus to the prompt, as a
+  click does. -->
   @if (!isMultiAgentMode) {
-    <!-- eslint-disable-next-line @angular-eslint/template/click-events-have-key-events, @angular-eslint/template/interactive-supports-focus -->
+    <!-- eslint-disable-next-line @angular-eslint/template/interactive-supports-focus -->
     <div
       class="terminal-container font-mono text-sm md:text-base p-4 bg-black text-terminal-dim flex flex-col flex-grow h-full overflow-hidden"
-      (click)="focusInput()">
+      (click)="focusInput()" (keyup.enter)="focusInput()">
       <!-- Header -->
       <div
         class="mb-4 text-secondary border-b border-dashed border-terminal-dim pb-2 flex justify-between items-center">
@@ -81,7 +83,8 @@
           @if (prompt$ | async; as prompt) {
             <span class="text-terminal-highlight whitespace-nowrap">{{ prompt }}</span>
           }
-          <input type="text" [(ngModel)]="userInput" (keydown.enter)="sendMessage()"
+          <label for="llm-prompt" class="sr-only">Message</label>
+          <input id="llm-prompt" type="text" [(ngModel)]="userInput" (keydown.enter)="sendMessage()"
             class="flex-grow bg-transparent border-none outline-none text-primary placeholder-transparent focus:ring-0 p-0 m-0"
             #terminalInput>
           @if (userInput.length === 0) {

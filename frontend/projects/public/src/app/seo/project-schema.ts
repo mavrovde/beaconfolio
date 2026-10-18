@@ -1,5 +1,6 @@
 import { RenderableProject } from '../projects-model/projects';
 import { SiteConfig } from '../services/site-config.service';
+import { trimTrailingSlashes } from './text';
 
 /**
  * schema.org structured data for one project detail page (#92, cross-ref #71).
@@ -61,7 +62,7 @@ export function buildTemporalCoverage(
 
 /** `/projects/<slug>` resolved against the configured site URL, if there is one. */
 export function buildProjectUrl(siteUrl: string | undefined, slug: string): string | undefined {
-    const base = (siteUrl ?? '').trim().replace(/\/+$/, '');
+    const base = trimTrailingSlashes((siteUrl ?? '').trim());
     return base ? `${base}/projects/${slug}` : undefined;
 }
 

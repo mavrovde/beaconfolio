@@ -1,10 +1,41 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, of } from 'rxjs';
 import { catchError, map, shareReplay, switchMap } from 'rxjs/operators';
 import { LanguageService } from '@beaconfolio/shared';
 import { environment } from '../../environments/environment';
 import { Project } from '../projects-model/projects';
+import { decodeEntities } from '../seo/text';
+
+/**
+ * Decode HTML character references in every string of a loaded profile.
+ *
+ * ROOT CAUSE of the live `&amp;amp;` meta description: the LinkedIn export
+ * stores text HTML-escaped (`about: "Engineer &amp; Architect"`). This app
+ * treats profile fields as TEXT — Angular escapes on render — so the stored
+ * reference was escaped a second time everywhere: visitors read a literal
+ * `&amp;` in the About section and the head carried `&amp;amp;`. Decoding at
+ * the one place the data enters the app fixes every consumer at once.
+ */
+export function decodeProfileText<T>(value: T): T {
+  if (typeof value === 'string') {
+    return decodeEntities(value) as T;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => decodeProfileText(item)) as T;
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, decodeProfileText(item)]),
+    ) as T;
+  }
+  return value;
+}
+
+/** The slice of the JSON Resume document (#252) this app reads. */
+interface ResumeMeta {
+  meta?: { lastModified?: string | null };
+}
 
 export interface Profile {
   name: string;
@@ -63,6 +94,8 @@ export interface Certification {
   date?: string;
   /** What the LinkedIn scraper writes (`"Sep 2026"`); copied into `date`. */
   issueDate?: string;
+  expirationDate?: string;
+  credentialId?: string;
   credentialUrl?: string;
 }
 
@@ -124,7 +157,29 @@ export class ProfileService {
           .get<Profile>(apiUrl)
           .pipe(catchError(() => this.http.get<Profile>(`${this.dataUrlBase}_${lang}.json`)));
       }),
-      map(normalizeProfile),
+      // Entities decoded first, then the display normalization (#497) runs on
+      // the decoded text.
+      map((profile) => normalizeProfile(decodeProfileText(profile))),
+      shareReplay(1),
+    );
+  }
+
+  /**
+   * When the active profile was last changed (ISO 8601), from the JSON Resume
+   * `meta.lastModified` the backend already serves — the `ProfilePage`
+   * `dateModified`. `null` when unknown (bundled fallback profile, or the
+   * request failed): a missing date is honest, "now" would be a lie.
+   */
+  getLastModified(): Observable<string | null> {
+    return this.languageService.currentLang$.pipe(
+      switchMap((lang) =>
+        this.http
+          .get<ResumeMeta>(`${environment.apiUrl}${environment.apiPrefix}/profile/resume.json?lang=${lang}`)
+          .pipe(
+            map((resume) => resume?.meta?.lastModified || null),
+            catchError(() => of(null)),
+          ),
+      ),
       shareReplay(1),
     );
   }

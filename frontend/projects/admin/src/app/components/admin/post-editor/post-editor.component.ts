@@ -296,16 +296,16 @@ export class PostEditorComponent implements OnInit {
         if (this.selectedFile && savedPost.id) {
           this.blogService.uploadImage(savedPost.id, this.selectedFile).subscribe({
             next: () => {
-              this.router.navigate(['/posts']);
+              void this.router.navigate(['/posts']);
             },
             error: (err) => {
               console.error('Image upload failed', err);
               // Navigate anyway, but maybe show warning?
-              this.router.navigate(['/posts']);
+              void this.router.navigate(['/posts']);
             }
           });
         } else {
-          this.router.navigate(['/posts']);
+          void this.router.navigate(['/posts']);
         }
       },
       error: (error) => {
@@ -322,7 +322,7 @@ export class PostEditorComponent implements OnInit {
   }
 
   cancel(): void {
-    this.router.navigate(['/posts']);
+    void this.router.navigate(['/posts']);
   }
 
   deletePost(): void {
@@ -336,7 +336,7 @@ export class PostEditorComponent implements OnInit {
 
     this.blogService.deletePostById(this.currentId).subscribe({
       next: () => {
-        this.router.navigate(['/posts']);
+        void this.router.navigate(['/posts']);
       },
       error: (error) => {
         this.deleting = false;

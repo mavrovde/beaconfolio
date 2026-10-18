@@ -119,7 +119,10 @@ test.describe('Projects showcase', () => {
             .locator('script[type="application/ld+json"]')
             .last()
             .textContent();
-        const node = JSON.parse(raw ?? '{}');
+        // One `@graph`: the project node plus its BreadcrumbList.
+        const graph = JSON.parse(raw ?? '{}') as { '@graph': Record<string, unknown>[] };
+        const node = graph['@graph'].find((n) => n['@type'] === 'SoftwareSourceCode') ?? {};
+        expect(graph['@graph'].map((n) => n['@type'])).toContain('BreadcrumbList');
         expect(node['@type']).toBe('SoftwareSourceCode');
         expect(node['name']).toBe('Beaconfolio');
         expect(node['codeRepository']).toBe('https://github.com/janedoe/beaconfolio');

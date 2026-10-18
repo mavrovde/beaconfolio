@@ -7,8 +7,8 @@
   <!-- Search & Controls -->
   <div class="controls-bar">
     <div class="search-box">
-      <span class="prompt">> SEARCH:</span>
-      <input type="text" [(ngModel)]="table.searchText" (keyup.enter)="table.setSearch(table.searchText)"
+      <label for="post-list-search" class="prompt">> SEARCH:</label>
+      <input id="post-list-search" type="text" [(ngModel)]="table.searchText" (keyup.enter)="table.setSearch(table.searchText)"
         placeholder="Enter keywords..." class="terminal-input" />
     </div>
   </div>
@@ -29,19 +29,19 @@
     <table>
       <thead>
         <tr>
-          <th (click)="table.toggleSort('id')" class="sortable">ID {{ table.isSorted('id') ?
+          <th class="sortable"><button type="button" class="sort-button" (click)="table.toggleSort('id')">ID {{ table.isSorted('id') ?
             (table.getSortDirection('id')
-            === 'asc' ? '▲' : '▼') : '' }}</th>
-          <th (click)="table.toggleSort('title')" class="sortable">Title {{ table.isSorted('title') ?
-            (table.getSortDirection('title') === 'asc' ? '▲' : '▼') : '' }}</th>
-          <th (click)="table.toggleSort('slug')" class="sortable">Slug {{ table.isSorted('slug') ?
-            (table.getSortDirection('slug') === 'asc' ? '▲' : '▼') : '' }}</th>
-          <th (click)="table.toggleSort('language')" class="sortable">Language {{ table.isSorted('language') ?
-            (table.getSortDirection('language') === 'asc' ? '▲' : '▼') : '' }}</th>
-          <th (click)="table.toggleSort('published')" class="sortable">Status {{ table.isSorted('published') ?
-            (table.getSortDirection('published') === 'asc' ? '▲' : '▼') : '' }}</th>
-          <th (click)="table.toggleSort('created_at')" class="sortable">Created {{ table.isSorted('created_at') ?
-            (table.getSortDirection('created_at') === 'asc' ? '▲' : '▼') : '' }}</th>
+            === 'asc' ? '▲' : '▼') : '' }}</button></th>
+          <th class="sortable"><button type="button" class="sort-button" (click)="table.toggleSort('title')">Title {{ table.isSorted('title') ?
+            (table.getSortDirection('title') === 'asc' ? '▲' : '▼') : '' }}</button></th>
+          <th class="sortable"><button type="button" class="sort-button" (click)="table.toggleSort('slug')">Slug {{ table.isSorted('slug') ?
+            (table.getSortDirection('slug') === 'asc' ? '▲' : '▼') : '' }}</button></th>
+          <th class="sortable"><button type="button" class="sort-button" (click)="table.toggleSort('language')">Language {{ table.isSorted('language') ?
+            (table.getSortDirection('language') === 'asc' ? '▲' : '▼') : '' }}</button></th>
+          <th class="sortable"><button type="button" class="sort-button" (click)="table.toggleSort('published')">Status {{ table.isSorted('published') ?
+            (table.getSortDirection('published') === 'asc' ? '▲' : '▼') : '' }}</button></th>
+          <th class="sortable"><button type="button" class="sort-button" (click)="table.toggleSort('created_at')">Created {{ table.isSorted('created_at') ?
+            (table.getSortDirection('created_at') === 'asc' ? '▲' : '▼') : '' }}</button></th>
           <th>Actions</th>
         </tr>
       </thead>

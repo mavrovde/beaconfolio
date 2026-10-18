@@ -8,6 +8,15 @@ import { Profile, ProfileService } from '../../services/profile.service';
 import { Project } from '../../projects-model/projects';
 import { TranslatePipe } from '@beaconfolio/shared';
 import { MockTranslatePipe, provideTestBrand } from '@beaconfolio/shared/testing';
+import { SeoService } from '../../services/seo.service';
+import { DEFAULT_SITE_CONFIG, SiteConfig, SiteConfigService } from '../../services/site-config.service';
+
+const SITE: SiteConfig = {
+    ...DEFAULT_SITE_CONFIG,
+    siteUrl: 'https://example.com',
+    ownerName: 'Jane Doe',
+    ownerHeadline: 'Staff Engineer @ Acme',
+};
 
 const PROJECTS: Project[] = [
     {
@@ -39,8 +48,10 @@ async function render(options: {
     standalone: boolean;
     profile?: Profile | null;
     served?: Profile;
+    site?: SiteConfig;
 }) {
     const getProfile = vi.fn().mockReturnValue(of(options.served ?? profileWith(PROJECTS)));
+    const seo = { updateSeo: vi.fn(), setJsonLd: vi.fn() };
     await TestBed.configureTestingModule({
         imports: [ProjectsComponent],
         providers: [
@@ -51,6 +62,8 @@ async function render(options: {
             ...provideTestBrand(),
             provideRouter([]),
             { provide: ProfileService, useValue: { getProfile } },
+            { provide: SeoService, useValue: seo },
+            { provide: SiteConfigService, useValue: { config$: of(options.site ?? SITE) } },
         ],
     })
         // House idiom (see `education.component.spec.ts`): without this the real
@@ -68,7 +81,7 @@ async function render(options: {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-    return { fixture, getProfile, el: fixture.nativeElement as HTMLElement };
+    return { fixture, getProfile, seo, el: fixture.nativeElement as HTMLElement };
 }
 
 describe('ProjectsComponent', () => {
@@ -105,6 +118,12 @@ describe('ProjectsComponent', () => {
         // Embedded, the component must not fetch: the page that hosts it has
         // already loaded the profile, and a second request would be a duplicate
         // round trip on every home-page render.
+        it('leaves the head to the home page', async () => {
+            const { seo, el } = await render({ standalone: false, profile: profileWith(PROJECTS) });
+            expect(seo.updateSeo).not.toHaveBeenCalled();
+            expect(el.querySelector('h1')).toBeNull();
+        });
+
         it('does not call the profile service', async () => {
             const { getProfile } = await render({
                 standalone: false,
@@ -120,6 +139,31 @@ describe('ProjectsComponent', () => {
     });
 
     describe('on its own /projects route', () => {
+        // The bug: without its own updateSeo the page inherited the default
+        // `{site}/` canonical — declaring /projects a duplicate of home.
+        it('declares its own canonical, title, description and breadcrumb', async () => {
+            const { seo, el } = await render({ standalone: true });
+            expect(seo.updateSeo).toHaveBeenCalledWith({
+                title: 'Projects',
+                description: 'Projects and case studies by Jane Doe, Staff Engineer.',
+                url: '/projects',
+            });
+            const graph = seo.setJsonLd.mock.calls[0][0];
+            expect(graph['@graph'][0]['itemListElement'].map((i: { item: string }) => i.item)).toEqual([
+                'https://example.com/',
+                'https://example.com/projects',
+            ]);
+            // Its own route: the section title is the page's one h1.
+            expect(el.querySelectorAll('h1')).toHaveLength(1);
+        });
+
+        it('omits the role clause when the headline names none', async () => {
+            const { seo } = await render({ standalone: true, site: { ...SITE, ownerHeadline: '' } });
+            expect(seo.updateSeo).toHaveBeenCalledWith(
+                expect.objectContaining({ description: 'Projects and case studies by Jane Doe.' }),
+            );
+        });
+
         it('fetches the profile and renders the cards', async () => {
             const { el, getProfile } = await render({ standalone: true });
             expect(getProfile).toHaveBeenCalled();

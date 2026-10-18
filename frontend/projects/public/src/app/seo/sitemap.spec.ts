@@ -19,7 +19,7 @@ import {
 
 const CONFIG_PATH = '/api/app/config/site';
 const postsPath = (page: number) =>
-    `/api/app/posts?published_only=true&page=${page}&page_size=100`;
+    `/api/app/posts?published_only=true&page=${page}&page_size=100&sort_by=published_at&sort_order=desc`;
 
 /** A fetcher answering from a path→payload map; unmapped paths reject like a 404 would. */
 const fetcherFor = (routes: Record<string, unknown>): JsonFetcher =>
@@ -227,9 +227,10 @@ describe('fetchPublishedPosts', () => {
             [postsPath(2)]: { total_pages: 2, items: [{ slug: 'second', created_at: '2026-02-03' }] },
         });
 
+        // Newest publication first, whatever order the pages arrived in.
         await expect(fetchPublishedPosts(fetchJson)).resolves.toEqual([
-            { slug: 'first', lastmod: '2026-01-02' },
-            { slug: 'second', lastmod: '2026-02-03' },
+            { slug: 'second', lastmod: '2026-02-03', published: '2026-02-03' },
+            { slug: 'first', lastmod: '2026-01-02', published: '2026-01-02T10:00:00+00:00' },
         ]);
     });
 
@@ -291,7 +292,7 @@ describe('fetchPublishedPosts', () => {
 
         expect(fetchJson).toHaveBeenCalledTimes(1);
         expect(fetchJson).toHaveBeenCalledWith(
-            '/api/app/posts?published_only=true&page=1&page_size=25',
+            '/api/app/posts?published_only=true&page=1&page_size=25&sort_by=published_at&sort_order=desc',
         );
     });
 
@@ -321,7 +322,7 @@ describe('fetchPublishedPosts', () => {
 
         await expect(fetchPublishedPosts(fetchJson)).resolves.toHaveLength(3);
         expect(fetchJson).toHaveBeenCalledWith(
-            '/api/app/posts?published_only=true&page=1&page_size=100',
+            '/api/app/posts?published_only=true&page=1&page_size=100&sort_by=published_at&sort_order=desc',
         );
     });
 });
@@ -345,8 +346,10 @@ describe('buildSitemapXml', () => {
             expect(xml).toContain(`<loc>${loc}</loc>`);
         }
         expect(xml).toContain('<lastmod>2026-02-03</lastmod>');
-        // The dateless post must not emit an empty <lastmod/>.
-        expect(xml.match(/<lastmod>/g)).toHaveLength(1);
+        // The dateless post must not emit an empty <lastmod/>. Three dates:
+        // the post itself, plus `/` and `/blog`, which take the NEWEST post's
+        // date; the profile-dated routes have no profile date here, so none.
+        expect(xml.match(/<lastmod>/g)).toHaveLength(3);
         expect(xml).not.toContain('beaconfolio.com');
         expect(xml.trimEnd().endsWith('</urlset>')).toBe(true);
     });

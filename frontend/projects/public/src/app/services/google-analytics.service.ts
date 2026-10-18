@@ -1,9 +1,7 @@
-import { Injectable, PLATFORM_ID, inject } from '@angular/core';
+import { DOCUMENT, Injectable, PLATFORM_ID, inject } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { Router, NavigationEnd } from '@angular/router';
-import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
-import { Observable } from 'rxjs';
-import { filter, map, take } from 'rxjs/operators';
+import { filter, take } from 'rxjs/operators';
 import { SiteConfigService } from './site-config.service';
 
 /** A container id is interpolated into a script URL and an iframe src, so it
@@ -26,6 +24,19 @@ export function safeTagId(value: unknown): string {
     return typeof value === 'string' && TAG_ID_PATTERN.test(value) ? value : '';
 }
 
+/** The `id` of the server-rendered GTM `<noscript>` element (#447). */
+export const GTM_NOSCRIPT_ID = 'gtm-noscript';
+
+/**
+ * The GTM `<noscript>` iframe URL for a container id, or null when the id is
+ * absent or unsafe. A constant https origin + a `TAG_ID_PATTERN`-validated id:
+ * nothing else can reach the URL.
+ */
+export function gtmNoscriptUrl(containerId: unknown): string | null {
+    const id = safeTagId(containerId);
+    return id ? `https://www.googletagmanager.com/ns.html?id=${id}` : null;
+}
+
 // Declare gtag as a global variable
 declare const gtag: (...args: unknown[]) => void;
 
@@ -36,7 +47,7 @@ export class GoogleAnalyticsService {
     private platformId = inject(PLATFORM_ID);
     private router = inject(Router);
     private siteConfig = inject(SiteConfigService);
-    private sanitizer = inject(DomSanitizer);
+    private document = inject(DOCUMENT);
 
     // The measurement id comes from the runtime site config (#65) — empty
     // disables analytics entirely; no id is ever baked into the bundle.
@@ -46,36 +57,52 @@ export class GoogleAnalyticsService {
     // container is installed and the gtag path is NOT taken: GTM and gtag are
     // two installs of the SAME measurement, and running both double-counts
     // every pageview. Browser-side only — the <noscript> half does NOT read
-    // this field, because initialize() never assigns it off-browser; it comes
-    // off `gtmNoscriptUrl$` below instead.
+    // this field, because initialize() never assigns it off-browser; it reads
+    // the config itself in `renderNoscript()` below.
     public gtmContainerId = '';
 
     private isInitialized = false;
 
     /**
-     * The <noscript> half of the container install (#447), as a stream the root
-     * template renders with the async pipe.
+     * The <noscript> half of the container install (#447), written into the
+     * SERVER-rendered document as the first child of `<body>` — where Google's
+     * snippet puts it.
      *
-     * Deliberately NOT derived from `initialize()`: that method returns early
-     * off-browser, so anything it sets is absent from the server-rendered HTML
-     * — and a <noscript> iframe injected by JavaScript is a contradiction in
-     * terms. This path runs on BOTH platforms, which is the only way the tag
-     * reaches a visitor whose browser runs no script.
+     * Deliberately NOT part of `initialize()`: that method returns early
+     * off-browser, and a <noscript> iframe injected by JavaScript is a
+     * contradiction in terms. A visitor whose browser runs no script never
+     * runs Angular, so the server-rendered HTML is the only place this tag can
+     * reach them — and in a browser that DOES run script, a DOM-built iframe
+     * would load and count the pageview a second time. Hence server-only.
      *
-     * Emits null when no container is configured, so the template renders
-     * nothing at all rather than an iframe pointing at an empty id.
+     * Built with `createElement`/`setAttribute` on the injected document
+     * rather than an Angular `[src]` binding: an iframe `src` is a
+     * resource-URL context, which Angular only accepts through
+     * `bypassSecurityTrustResourceUrl` (Sonar `typescript:S6268`). The URL is
+     * `gtmNoscriptUrl` — a constant origin plus a pattern-validated id — so
+     * there is nothing for the sanitizer to protect and no bypass to justify.
      */
-    public readonly gtmNoscriptUrl$: Observable<SafeResourceUrl | null> =
-        this.siteConfig.config$.pipe(
-            map((cfg) => {
-                const id = safeTagId(cfg.gtmContainerId);
-                return id
-                    ? this.sanitizer.bypassSecurityTrustResourceUrl(
-                          `https://www.googletagmanager.com/ns.html?id=${id}`
-                      )
-                    : null;
-            })
-        );
+    public renderNoscript(): void {
+        if (isPlatformBrowser(this.platformId)) {
+            return;
+        }
+        this.siteConfig.config$.pipe(take(1)).subscribe((cfg) => {
+            const url = gtmNoscriptUrl(cfg.gtmContainerId);
+            const body = this.document.body;
+            if (!url || this.document.getElementById(GTM_NOSCRIPT_ID)) {
+                return;
+            }
+            const noscript = this.document.createElement('noscript');
+            noscript.id = GTM_NOSCRIPT_ID;
+            const iframe = this.document.createElement('iframe');
+            iframe.setAttribute('src', url);
+            iframe.setAttribute('height', '0');
+            iframe.setAttribute('width', '0');
+            iframe.setAttribute('style', 'display:none;visibility:hidden');
+            noscript.appendChild(iframe);
+            body.insertBefore(noscript, body.firstChild);
+        });
+    }
 
     public initialize() {
         if (!isPlatformBrowser(this.platformId) || this.isInitialized) {

@@ -8,7 +8,10 @@
     @if (profile) {
       <div>
         <div class="relative w-32 h-32 md:w-40 md:h-40 mx-auto mb-8">
-          <img [src]="photoFailed ? placeholderUrl : photoUrl" (error)="onPhotoError()" alt="Profile Photo"
+          <!-- Above the fold and the likeliest LCP element: fetched at high
+               priority, with intrinsic dimensions so it reserves its box (no CLS). -->
+          <img [src]="photoFailed ? placeholderUrl : photoUrl" (error)="onPhotoError()" [alt]="profile.name"
+            width="160" height="160" fetchpriority="high"
             data-testid="profile-photo"
             class="relative w-full h-full object-cover rounded-none border-2 border-primary grayscale hover:grayscale-0 transition-all duration-500" />
         </div>
@@ -24,8 +27,14 @@
             <span class="text-sm font-sans text-secondary">{{ profile.location }}</span>
           }
         </div>
+        <!-- The heading's accessible name is plain words: the shell prompt and
+             the blinking cursor are decoration (aria-hidden), and the role is
+             part of the heading itself, composed from the headline. -->
         <h1 class="text-3xl md:text-5xl font-bold mb-6 font-sans text-primary">
-          {{ 'SECTION.HI' | translate }} {{ profile.name }}<span class="terminal-cursor"></span>
+          @if (chrome$ | async) {<span aria-hidden="true">&gt; </span>}{{ 'SECTION.HI' | translate }} {{ profile.name }}<span class="terminal-cursor" aria-hidden="true"></span>
+          @if (role) {
+            <span class="block mt-3 text-xl md:text-2xl font-normal text-secondary" data-testid="hero-role">{{ role }}</span>
+          }
         </h1>
         <p class="text-lg md:text-xl text-secondary max-w-3xl mx-auto mb-10 leading-relaxed font-sans">
           // {{ profile.headline }}

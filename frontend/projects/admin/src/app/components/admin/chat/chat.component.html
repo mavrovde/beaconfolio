@@ -34,7 +34,8 @@
   </div>
 
   <div class="flex gap-2">
-    <input [(ngModel)]="userInput" (keydown.enter)="sendMessage()" [disabled]="isLoading" type="text"
+    <label for="admin-chat-input" class="sr-only">Message</label>
+    <input id="admin-chat-input" [(ngModel)]="userInput" (keydown.enter)="sendMessage()" [disabled]="isLoading" type="text"
       placeholder="Type a message..."
       class="flex-1 bg-black border border-terminal-dim rounded-md px-4 py-2 text-terminal-text focus:outline-none focus:border-terminal-highlight disabled:opacity-50" />
     <button (click)="sendMessage()" [disabled]="isLoading || !userInput.trim()"

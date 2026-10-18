@@ -1,5 +1,7 @@
-import { Education, Experience, Profile } from '../services/profile.service';
+import { Certification, Education, Experience, Profile } from '../services/profile.service';
 import { SiteConfig } from '../services/site-config.service';
+import { MAX_SCHEMA_SKILLS, primaryRole, rankSkills } from './identity';
+import { decodeEntities, toPlainText, trimTrailingSlashes } from './text';
 
 /**
  * schema.org `Person` structured data for the home page (#71).
@@ -51,21 +53,49 @@ export type DemandSchema = {
     name: string;
 };
 
+export type CredentialSchema = {
+    '@type': 'EducationalOccupationalCredential';
+    name: string;
+    credentialCategory: 'certificate';
+    recognizedBy?: OrganizationSchema;
+    dateCreated?: string;
+    expires?: string;
+    url?: string;
+};
+
+/**
+ * A node inside an `@graph`: no `@context` of its own — the graph's envelope
+ * carries the one context (see `seo/graph.ts`).
+ */
 export type PersonSchema = {
-    '@context': 'https://schema.org';
     '@type': 'Person';
+    '@id'?: string;
     name: string;
     jobTitle?: string;
     url?: string;
+    image?: string;
     description?: string;
     sameAs?: string[];
     knowsAbout?: string[];
+    knowsLanguage?: string[];
     hasOccupation?: OccupationSchema;
+    hasCredential?: CredentialSchema[];
     worksFor?: OrganizationSchema;
     alumniOf?: EducationalOrganizationSchema[];
     address?: PostalAddressSchema;
     seeks?: DemandSchema;
 };
+
+/** How many credentials `hasCredential` carries — the newest verifiable ones. */
+export const MAX_CREDENTIALS = 10;
+
+/** Path of the uploaded portrait (#333), the same URL the hero renders. */
+export const PROFILE_PHOTO_PATH = '/api/app/profile/photo';
+
+/** `https://site` → `https://site/#person` — ONE identifier for every page's graph. */
+export function personId(siteUrl: string): string {
+    return `${trimTrailingSlashes(siteUrl)}/#person`;
+}
 
 /**
  * A four-digit year anywhere in `endDate` means the role has ENDED; its absence
@@ -88,7 +118,7 @@ export function isOngoingRole(experience: Experience): boolean {
 
 /** `"Berlin, Germany"` → locality + country; a single token yields locality only. */
 export function buildAddress(location: string | undefined): PostalAddressSchema | undefined {
-    const parts = (location ?? '')
+    const parts = decodeEntities(location ?? '')
         .split(',')
         .map((part) => part.trim())
         .filter((part) => part.length > 0);
@@ -108,7 +138,10 @@ export function buildWorksFor(experience: Experience[] | undefined): Organizatio
     if (!current) {
         return undefined;
     }
-    const organization: OrganizationSchema = { '@type': 'Organization', name: current.company };
+    const organization: OrganizationSchema = {
+        '@type': 'Organization',
+        name: decodeEntities(current.company),
+    };
     const url = (current.companyLinkedInUrl ?? '').trim();
     if (url) {
         organization.url = url;
@@ -120,7 +153,7 @@ export function buildAlumniOf(
     education: Education[] | undefined,
 ): EducationalOrganizationSchema[] | undefined {
     const schools = (education ?? [])
-        .map((entry) => (entry.school ?? '').trim())
+        .map((entry) => decodeEntities(entry.school ?? '').trim())
         .filter((school) => school.length > 0);
     return schools.length
         ? schools.map((name) => ({ '@type': 'EducationalOrganization' as const, name }))
@@ -132,6 +165,97 @@ export function buildSeeks(availability: string): DemandSchema | undefined {
     return name ? { '@type': 'Demand', name } : undefined;
 }
 
+const MONTHS: Record<string, string> = {
+    jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+    jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+    // German profile exports (the de demo persona): the abbreviations that
+    // differ from English.
+    mär: '03', mrz: '03', mai: '05', okt: '10', dez: '12',
+};
+
+/**
+ * A free-text profile date as ISO 8601, or `undefined` when it is not one.
+ * `"Aug 2026"` → `"2026-08"`, `"2024"` → `"2024"`, `"2024-05-01"` as-is. A
+ * value schema.org would reject is OMITTED, never guessed.
+ */
+export function toIsoDate(value: string | undefined): string | undefined {
+    const text = (value ?? '').trim();
+    if (/^\d{4}(-\d{2}){0,2}$/.test(text)) {
+        return text;
+    }
+    const match = /^(\p{L}{3})\p{L}*\.?\s+(\d{4})$/iu.exec(text);
+    const month = match ? MONTHS[match[1].toLowerCase()] : undefined;
+    return month ? `${match![2]}-${month}` : undefined;
+}
+
+/** HTTPS only, deduplicated on host+path (case, `www.` and trailing `/` ignored). */
+export function buildSameAs(urls: readonly (string | undefined)[]): string[] | undefined {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const raw of urls) {
+        const url = (raw ?? '').trim();
+        if (!/^https:\/\//i.test(url)) {
+            continue;
+        }
+        const key = trimTrailingSlashes(url.toLowerCase().replace(/^https:\/\/(www\.)?/, ''));
+        if (!seen.has(key)) {
+            seen.add(key);
+            result.push(url);
+        }
+    }
+    return result.length ? result : undefined;
+}
+
+/**
+ * The owner's certifications as schema.org credentials: the VERIFIABLE ones
+ * (with a credential URL) first, newest first within that, at most ten — a
+ * long tail of course-completion records adds bytes, not trust.
+ */
+export function buildCredentials(
+    certifications: readonly Certification[] | undefined,
+): CredentialSchema[] | undefined {
+    const ranked = (certifications ?? [])
+        .map((cert, index) => ({
+            cert,
+            index,
+            date: toIsoDate(cert.issueDate ?? cert.date) ?? '',
+            name: toPlainText(cert.name),
+        }))
+        .filter(({ name }) => name.length > 0)
+        .sort(
+            (a, b) =>
+                Number(Boolean(b.cert.credentialUrl)) - Number(Boolean(a.cert.credentialUrl)) ||
+                b.date.localeCompare(a.date) ||
+                a.index - b.index,
+        )
+        .slice(0, MAX_CREDENTIALS);
+    if (!ranked.length) {
+        return undefined;
+    }
+    return ranked.map(({ cert, date, name }) => {
+        const credential: CredentialSchema = {
+            '@type': 'EducationalOccupationalCredential',
+            name,
+            credentialCategory: 'certificate',
+        };
+        const issuer = toPlainText(cert.issuer);
+        if (issuer) {
+            credential.recognizedBy = { '@type': 'Organization', name: issuer };
+        }
+        if (date) {
+            credential.dateCreated = date;
+        }
+        const expires = toIsoDate(cert.expirationDate);
+        if (expires) {
+            credential.expires = expires;
+        }
+        if (/^https:\/\//i.test(cert.credentialUrl ?? '')) {
+            credential.url = cert.credentialUrl;
+        }
+        return credential;
+    });
+}
+
 /**
  * Assemble the enriched `Person` node. Every optional property is OMITTED
  * rather than emitted empty — a `"worksFor": {}` or `"address": null` fails
@@ -139,29 +263,52 @@ export function buildSeeks(availability: string): DemandSchema | undefined {
  */
 export function buildPersonSchema(profile: Profile, site: SiteConfig): PersonSchema {
     const schema: PersonSchema = {
-        '@context': 'https://schema.org',
         '@type': 'Person',
-        name: profile.name,
+        name: toPlainText(profile.name) || site.ownerName,
     };
+    const siteUrl = trimTrailingSlashes(site.siteUrl);
+    // The TOP skills, not all of them: the headline/about decide what matters
+    // (see `rankSkills`), and 77 undifferentiated terms dilute every one.
+    const skills = rankSkills(profile.skills, profile.headline, profile.about).slice(
+        0,
+        MAX_SCHEMA_SKILLS,
+    );
+    // `jobTitle` is the ROLE ("Principal Engineer"), never the whole pipe-joined
+    // LinkedIn headline with its employer and skill list.
+    const role = primaryRole(profile.headline);
 
-    if (profile.headline) {
-        schema.jobTitle = profile.headline;
-        schema.hasOccupation = { '@type': 'Occupation', name: profile.headline };
-        if (profile.skills?.length) {
-            schema.hasOccupation.skills = profile.skills;
+    if (siteUrl) {
+        schema['@id'] = personId(siteUrl);
+        schema.url = `${siteUrl}/`;
+        schema.image = `${siteUrl}${PROFILE_PHOTO_PATH}`;
+    }
+    if (role) {
+        schema.jobTitle = role;
+        schema.hasOccupation = { '@type': 'Occupation', name: role };
+        if (skills.length) {
+            schema.hasOccupation.skills = skills;
         }
     }
-    if (site.siteUrl) {
-        schema.url = site.siteUrl;
+    const about = toPlainText(profile.about);
+    if (about) {
+        schema.description = about;
     }
-    if (profile.about) {
-        schema.description = profile.about;
+    const sameAs = buildSameAs([...(site.socialLinks ?? []), profile.contact?.linkedin]);
+    if (sameAs) {
+        schema.sameAs = sameAs;
     }
-    if (site.socialLinks?.length) {
-        schema.sameAs = site.socialLinks;
+    if (skills.length) {
+        schema.knowsAbout = skills;
     }
-    if (profile.skills?.length) {
-        schema.knowsAbout = profile.skills;
+    const languages = (profile.languages ?? [])
+        .map((language) => toPlainText(language.name))
+        .filter(Boolean);
+    if (languages.length) {
+        schema.knowsLanguage = languages;
+    }
+    const credentials = buildCredentials(profile.certifications);
+    if (credentials) {
+        schema.hasCredential = credentials;
     }
 
     const worksFor = buildWorksFor(profile.experience);

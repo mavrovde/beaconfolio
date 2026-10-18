@@ -17,6 +17,11 @@ export interface BlogPost {
   tags: string[];
   created_at: string;
   updated_at?: string;
+  /** When the post was ORIGINALLY published (e.g. the LinkedIn post date), as
+   *  an ISO string. Optional: absent on a backend that predates it and on
+   *  hand-written posts — consumers fall back to `created_at`, which for an
+   *  imported post is the IMPORT date, not the publication date. */
+  posted_at?: string;
   similarity?: number; // For search results
 }
 

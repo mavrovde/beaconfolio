@@ -6,6 +6,12 @@ import { TranslatePipe } from '@beaconfolio/shared';
 import { Router, RouterModule } from '@angular/router';
 import { SeoService } from '../../services/seo.service';
 import { SiteConfigService, DEFAULT_SITE_CONFIG, SiteConfig } from '../../services/site-config.service';
+import { buildKeywords, rolesLabel } from '../../seo/identity';
+import { buildBreadcrumbs, toGraph } from '../../seo/graph';
+import { affix } from '../../seo/text';
+
+/** Backend sort key for "newest original publication first" (posted_at ?? created_at). */
+export const PUBLISHED_ORDER = 'published_at';
 
 import { HeaderComponent } from '../header/header.component';
 
@@ -79,12 +85,26 @@ export class BlogComponent implements OnInit {
       // the server-rendered head carries the real identity.
       const seo$ = this.siteConfig?.config$ ?? of(DEFAULT_SITE_CONFIG);
       seo$.pipe(take(1)).subscribe((site) => {
+        // Composed from the configured identity only (template product): the
+        // topics used to be a hard-coded "Cloud Architecture, AI, and Software
+        // Engineering", true for one owner and false for every forker.
+        const role = rolesLabel(site.ownerHeadline);
         this.seoService.updateSeo({
           title: 'Blog',
-          description: `Read the latest insights and professional reflections from ${site.ownerName}, covering Cloud Architecture, AI, and Software Engineering.`,
+          description: `Articles and professional reflections by ${site.ownerName}${affix(', ', role)}.`,
           url: '/blog',
-          keywords: `Blog, Technology, Software Engineering, AI, Cloud, ${site.ownerName}`
+          keywords: ['Blog', site.ownerName, buildKeywords({ name: site.ownerName, headline: site.ownerHeadline }, {})]
+            .filter(Boolean)
+            .join(', ')
         });
+        this.seoService.setJsonLd(
+          toGraph([
+            buildBreadcrumbs(site, [
+              { name: 'Home', path: '/' },
+              { name: 'Blog', path: '/blog' },
+            ]),
+          ])
+        );
       });
     }
     this.loadInitialPosts();
@@ -119,11 +139,15 @@ export class BlogComponent implements OnInit {
 
     // Use native fetch on browser to bypass Angular HttpClient SSR hydration issues
     if (isPlatformBrowser(this.platformId)) {
-      this.loadMoreWithFetch(apiPage, apiPageSize);
+      void this.loadMoreWithFetch(apiPage, apiPageSize);
       return;
     }
 
-    this.blogService.getPosts(true, null, this.activeTag, apiPage, apiPageSize).subscribe({
+    // Newest ORIGINAL publication first (`COALESCE(posted_at, created_at)`
+    // on the backend): imported LinkedIn posts appear in their LinkedIn order,
+    // not in the order one import run happened to insert them. A backend that
+    // predates the `published_at` key ignores an unknown sort column.
+    this.blogService.getPosts(true, null, this.activeTag, apiPage, apiPageSize, PUBLISHED_ORDER).subscribe({
       next: (response) => {
         const existingIds = new Set(this.posts.map(p => p.id));
         const newPosts = response.items.filter(p => !existingIds.has(p.id));
@@ -150,7 +174,7 @@ export class BlogComponent implements OnInit {
       const params = new URLSearchParams({
         page: apiPage.toString(),
         page_size: apiPageSize.toString(),
-        sort_by: 'created_at',
+        sort_by: PUBLISHED_ORDER,
         sort_order: 'desc',
         published_only: 'true',
       });
@@ -261,7 +285,7 @@ export class BlogComponent implements OnInit {
 
   toggleOrNavigate(post: BlogPost) {
     if (this.isExpanded(post.id)) {
-      this.router.navigate(['/blog', post.slug]);
+      void this.router.navigate(['/blog', post.slug]);
     } else {
       this.togglePost(post.id);
     }

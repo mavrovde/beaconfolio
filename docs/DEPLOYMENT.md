@@ -90,6 +90,9 @@ cp .env.example .env
 #    renders the demo identity and SSR advertises example.com og:url/canonical.
 #    The backend prints an IDENTITY line at every startup and flags
 #    "DEFAULTS IN USE" loudly when the demo persona is live (#335).
+#    Search engines (optional): INDEXNOW_KEY (your own key, `openssl rand -hex 16`)
+#    makes the frontend serve /<key>.txt for IndexNow; the backend's site-config
+#    google/bing verification fields add the Search Console / Bing Webmaster meta.
 #    ⚠️ PUBLIC_URL is NOT site identity — it only names the freshness/rollout
 #    probe target; SITE_URL is the knob SEO/og:url read. Startup warns when
 #    PUBLIC_URL is set while SITE_URL is not (#335, measured 2026-09-10).

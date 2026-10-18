@@ -3,19 +3,62 @@ import { Title, Meta } from '@angular/platform-browser';
 import { BehaviorSubject } from 'rxjs';
 import { SiteConfigService, SiteConfig, DEFAULT_SITE_CONFIG } from './site-config.service';
 import { environment } from '../../environments/environment';
+import { buildHomeTitle, buildKeywords, buildPageTitle } from '../seo/identity';
+import { toMetaDescription, toPlainText } from '../seo/text';
+import { jsonForScriptBlock } from '../seo/json-ld';
+
+/** Open Graph `article:*` facts for a blog post (og:type=article). */
+export interface SeoArticle {
+    /** ISO 8601. The ORIGINAL publication date (`posted_at`), not the import. */
+    publishedTime: string;
+    modifiedTime?: string;
+    tags?: string[];
+}
 
 export interface SeoData {
+    /** The page's own name; the `<title>` becomes `"{title} | {owner}"` when that fits. */
     title?: string;
+    /** A complete `<title>`, used verbatim (the composed home title). */
+    fullTitle?: string;
     description?: string;
     image?: string;
+    /** Alt text for the share card; defaults to the social title. */
+    imageAlt?: string;
     url?: string;
     type?: string;
     keywords?: string;
     twitterCard?: string;
+    /** Content language when it differs from the UI language (a German post). */
+    locale?: string;
+    article?: SeoArticle;
+}
+
+/**
+ * The bundled card's REAL pixel size — measured on the committed file
+ * (`sips -g pixelWidth -g pixelHeight projects/public/src/assets/og-image.png`
+ * → 1200 × 630), and pinned by a spec that reads the PNG header. Emitted only
+ * for that file: a configured or per-page image has dimensions this app does
+ * not know, and a wrong `og:image:width` is worse than none.
+ */
+export const OG_IMAGE_WIDTH = 1200;
+export const OG_IMAGE_HEIGHT = 630;
+
+/** The robots directive every INDEXABLE page carries (noindex pages override it). */
+export const INDEXABLE_ROBOTS =
+    'index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1';
+
+/** UI/content language → Open Graph locale. Unknown languages fall back to English. */
+const OG_LOCALES: Record<string, string> = { en: 'en_US', de: 'de_DE' };
+
+export function ogLocale(lang: string | undefined): string {
+    return OG_LOCALES[(lang ?? '').slice(0, 2).toLowerCase()] ?? OG_LOCALES['en'];
 }
 
 /** A schema.org JSON-LD node, serialized verbatim into a `<script type="application/ld+json">`. */
 export type JsonLd = Record<string, unknown>;
+
+/** The one JSON-LD block this service owns, in <head>. */
+const JSON_LD_SELECTOR = 'script[type="application/ld+json"]';
 
 /**
  * Path of the bundled social-share card, relative to the configured site URL
@@ -52,11 +95,20 @@ export class SeoService {
     // Same reasoning for a deliberately unlisted page (#250's /for/:slug): its
     // `noindex` must survive the config arrival that re-applies the SEO data.
     private noIndex = false;
+    /** The rendered UI language, pushed in by `setLanguage` (AppComponent). */
+    private lang = 'en';
 
     public jsonLdSchema$ = new BehaviorSubject<JsonLd | null>(null);
 
     constructor() {
         const siteConfig = inject(SiteConfigService);
+
+        // The page's structured data, as ONE `<script type="application/ld+json">`
+        // in <head>. A DOM write through the injected document (present in the
+        // server-rendered HTML, zoneless-safe — nothing template-bound) instead
+        // of an `[innerHTML]` binding, which needed `bypassSecurityTrustHtml`
+        // (Sonar `typescript:S6268`).
+        this.jsonLdSchema$.subscribe((schema) => this.renderJsonLd(schema));
 
         siteConfig.config$.subscribe((cfg) => {
             // eslint-disable-next-line no-restricted-syntax -- cd-safety-ok: writes go to the Title/Meta DOM services, never to a template-bound property — no repaint needed.
@@ -88,8 +140,12 @@ export class SeoService {
         });
     }
 
+    /** A page with no title of its own: the composed identity title, from config alone. */
     private get baseTitle(): string {
-        return `${this.site.ownerName} | ${this.site.ownerHeadline}`;
+        return buildHomeTitle(
+            { name: this.site.ownerName, headline: this.site.ownerHeadline },
+            this.site,
+        );
     }
     private get defaultDescription(): string {
         return this.site.ownerDescription;
@@ -104,12 +160,25 @@ export class SeoService {
         // A `robots: noindex` written by a PREVIOUS page (a not-found body, or
         // an unlisted /for/ link) lives in the document, not in the route, so a
         // client-side navigation used to carry it onto the next, perfectly
-        // indexable page. Declaring a normal page clears it; pages that must
-        // stay unlisted call `setNoIndex()` right after (#250).
+        // indexable page. Declaring a normal page REPLACES it with the
+        // indexable directive; pages that must stay unlisted call
+        // `setNoIndex()` right after (#250), which overwrites the same tag.
         this.noIndex = false;
-        this.metaService.removeTag("name='robots'");
-        const fullTitle = data.title ? `${data.title} | ${this.site.ownerName}` : this.baseTitle;
-        const description = data.description || this.defaultDescription;
+        this.metaService.updateTag({ name: 'robots', content: INDEXABLE_ROBOTS });
+        const pageName = toPlainText(data.title);
+        let fullTitle = this.baseTitle;
+        if (data.fullTitle) {
+            fullTitle = data.fullTitle;
+        } else if (pageName) {
+            fullTitle = buildPageTitle(pageName, this.site.ownerName);
+        }
+        // The share title is the page's OWN name, untruncated: the brand
+        // travels in og:site_name, and a social card has room a SERP lacks.
+        const socialTitle = data.fullTitle || pageName || fullTitle;
+        // Plain text, word-cut, entity-decoded: the profile's `about` arrives
+        // HTML-escaped (`&amp;`) and Meta escapes once more (the live head read
+        // `&amp;amp;`) — see `seo/text.ts`.
+        const description = toMetaDescription(data.description || this.defaultDescription);
         // Absolute URLs need a configured site URL. Until the runtime config
         // arrives (or when the backend is unreachable and the neutral default
         // with its empty siteUrl applies) we emit NO og:url / og:image /
@@ -124,33 +193,104 @@ export class SeoService {
         // strings for one page.
         const url = this.baseUrl ? `${this.baseUrl}${data.url || '/'}` : '';
         const type = data.type || 'website';
-        const keywords = data.keywords || 'Software Engineering, Angular, Python, AI, Cloud Architecture';
+        const keywords =
+            data.keywords ||
+            buildKeywords({ name: this.site.ownerName, headline: this.site.ownerHeadline }, this.site);
 
         this.titleService.setTitle(fullTitle);
 
         // Standard Meta
         this.metaService.updateTag({ name: 'description', content: description });
-        this.metaService.updateTag({ name: 'keywords', content: keywords });
+        this.upsertOrRemove({ name: 'keywords' }, keywords);
+        this.upsertOrRemove({ name: 'author' }, this.site.ownerName);
+        // Search-engine ownership (Search Console / Bing Webmaster Tools).
+        // Optional site-config fields; absent or '' = no tag at all.
+        this.upsertOrRemove({ name: 'google-site-verification' }, this.site.googleSiteVerification);
+        this.upsertOrRemove({ name: 'msvalidate.01' }, this.site.bingSiteVerification);
 
         // Open Graph
-        this.metaService.updateTag({ property: 'og:title', content: fullTitle });
+        this.metaService.updateTag({ property: 'og:title', content: socialTitle });
         this.metaService.updateTag({ property: 'og:description', content: description });
         this.metaService.updateTag({ property: 'og:type', content: type });
+        this.upsertOrRemove({ property: 'og:site_name' }, this.site.siteName || this.site.ownerName);
+        this.metaService.updateTag({ property: 'og:locale', content: ogLocale(data.locale ?? this.lang) });
+        this.applyArticle(type === 'article' ? data.article : undefined);
 
         // Twitter
         this.metaService.updateTag({ name: 'twitter:card', content: data.twitterCard || 'summary_large_image' });
-        this.metaService.updateTag({ name: 'twitter:title', content: fullTitle });
+        this.metaService.updateTag({ name: 'twitter:title', content: socialTitle });
         this.metaService.updateTag({ name: 'twitter:description', content: description });
 
+        const imageAlt = toPlainText(data.imageAlt) || socialTitle;
         if (image) {
             this.metaService.updateTag({ property: 'og:image', content: image });
+            this.metaService.updateTag({ property: 'og:image:alt', content: imageAlt });
             this.metaService.updateTag({ name: 'twitter:image', content: image });
+            this.metaService.updateTag({ name: 'twitter:image:alt', content: imageAlt });
         }
+        const bundledCard = image !== '' && image === this.bundledCardUrl();
+        this.upsertOrRemove({ property: 'og:image:width' }, bundledCard ? String(OG_IMAGE_WIDTH) : '');
+        this.upsertOrRemove({ property: 'og:image:height' }, bundledCard ? String(OG_IMAGE_HEIGHT) : '');
 
         if (url) {
             this.metaService.updateTag({ property: 'og:url', content: url });
             this.updateCanonicalUrl(url);
             this.updateAgentLinks();
+        }
+    }
+
+    /**
+     * Push the rendered UI language. Language is a CLIENT toggle on the same
+     * URLs — there are no `/de/...` routes — so the honest signals are
+     * `<html lang>` and `og:locale` for what was rendered, and NOT `hreflang`
+     * alternates, which would claim distinct per-language URLs that do not
+     * exist.
+     */
+    setLanguage(lang: string): void {
+        this.lang = lang;
+        this.document.documentElement.setAttribute('lang', lang);
+        this.metaService.updateTag({
+            property: 'og:locale',
+            content: ogLocale(this.lastSeoData?.locale ?? lang),
+        });
+    }
+
+    /** The URL the bundled card resolves to, for the width/height decision. */
+    private bundledCardUrl(): string {
+        return `${this.baseUrl}${OG_IMAGE_PATH}`;
+    }
+
+    /** `article:*` for a post; every one of them REMOVED on any other page. */
+    private applyArticle(article: SeoArticle | undefined): void {
+        for (const property of ['article:published_time', 'article:modified_time', 'article:author']) {
+            this.metaService.removeTag(`property='${property}'`);
+        }
+        for (const tag of this.metaService.getTags("property='article:tag'")) {
+            this.metaService.removeTagElement(tag);
+        }
+        if (!article) {
+            return;
+        }
+        this.metaService.addTag({ property: 'article:published_time', content: article.publishedTime });
+        this.metaService.addTag({
+            property: 'article:modified_time',
+            content: article.modifiedTime || article.publishedTime,
+        });
+        // The author's profile URL (Open Graph wants a profile), else the name.
+        const author = this.baseUrl ? `${this.baseUrl}/` : this.site.ownerName;
+        this.metaService.addTag({ property: 'article:author', content: author });
+        this.metaService.addTags(
+            (article.tags ?? []).map((tag) => ({ property: 'article:tag', content: tag })),
+        );
+    }
+
+    /** Write a meta tag when `content` is non-empty, remove it otherwise. */
+    private upsertOrRemove(key: { name: string } | { property: string }, content: string | undefined): void {
+        const value = (content ?? '').trim();
+        if (value) {
+            this.metaService.updateTag({ ...key, content: value });
+        } else {
+            this.metaService.removeTag('name' in key ? `name='${key.name}'` : `property='${key.property}'`);
         }
     }
 
@@ -209,6 +349,28 @@ export class SeoService {
         );
     }
 
+    /**
+     * Write (or remove, for null) the head's JSON-LD block. The text goes in
+     * through `textContent`, never parsed as markup; `jsonForScriptBlock`
+     * still escapes every `<`, because the server serializes a script's text
+     * verbatim and the browser's HTML parser decides where the element ends.
+     */
+    private renderJsonLd(schema: JsonLd | null): void {
+        const head = this.document.head;
+        const existing = head.querySelector<HTMLScriptElement>(JSON_LD_SELECTOR);
+        if (!schema) {
+            existing?.remove();
+            return;
+        }
+        let script = existing;
+        if (!script) {
+            script = this.document.createElement('script');
+            script.setAttribute('type', 'application/ld+json');
+            head.appendChild(script);
+        }
+        script.textContent = jsonForScriptBlock(schema);
+    }
+
     setJsonLd(schema: JsonLd): void {
         this.jsonLdSchema$.next(schema);
     }
@@ -256,6 +418,9 @@ export class SeoService {
     setNotFound(subject: string = 'Post'): void {
         this.notFound = true;
         this.notFoundSubject = subject;
+        // A 404 body carries no structured data: the previous page's graph
+        // (a client-side navigation keeps it) would describe a page this is not.
+        this.jsonLdSchema$.next(null);
         this.titleService.setTitle(`${subject} not found | ${this.site.ownerName}`);
         this.metaService.updateTag({ name: 'robots', content: 'noindex' });
         this.removeCanonicalUrl();

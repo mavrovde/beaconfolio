@@ -21,8 +21,10 @@
   <link id="brand-font" href="https://fonts.googleapis.com/css2?family=VT323&display=swap"
     rel="stylesheet" />
 
-  <!-- Font Awesome -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <!-- No icon-font stylesheet: no admin template uses a Font Awesome class, so
+       the cdnjs `all.min.css` that used to load here was a render-blocking
+       third-party fetch with no integrity check and no glyph to show
+       (Sonar Web:S5725). Same removal as the public app's. -->
 </head>
 
 <body>

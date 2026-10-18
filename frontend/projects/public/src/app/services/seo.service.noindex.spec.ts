@@ -3,7 +3,7 @@ import { Meta, Title } from '@angular/platform-browser';
 import { BehaviorSubject } from 'rxjs';
 import { vi } from 'vitest';
 
-import { SeoService } from './seo.service';
+import { INDEXABLE_ROBOTS, SeoService } from './seo.service';
 import { DEFAULT_SITE_CONFIG, SiteConfig, SiteConfigService } from './site-config.service';
 
 /**
@@ -70,10 +70,11 @@ describe('SeoService — noindex for unlisted pages', () => {
         expect(robots()).toBe('noindex, nofollow');
 
         // A client-side navigation to an indexable page: meta tags live in the
-        // document, not in the route, so the tag has to be cleared explicitly.
+        // document, not in the route, so the tag has to be REPLACED explicitly
+        // with the indexable directive.
         seo.updateSeo({ title: 'Home', url: '/' });
 
-        expect(robots()).toBeNull();
+        expect(robots()).toBe(INDEXABLE_ROBOTS);
     });
 
     it('drops a stale noindex left by a not-found page', () => {
@@ -82,7 +83,7 @@ describe('SeoService — noindex for unlisted pages', () => {
 
         seo.updateSeo({ title: 'Home', url: '/' });
 
-        expect(robots()).toBeNull();
+        expect(robots()).toBe(INDEXABLE_ROBOTS);
     });
 
     it('names the missing subject in the not-found title', () => {

@@ -18,7 +18,9 @@
  * `- [name](url): notes`.
  */
 
+import type { Profile } from '../services/profile.service';
 import {
+    API_PREFIX,
     fetchPublishedPosts,
     JsonFetcher,
     RESUME_PATH,
@@ -27,6 +29,7 @@ import {
     SsrSiteConfig,
     stripTrailingSlash,
 } from './sitemap';
+import { decodeEntities, toPlainText, truncateAtWord } from './text';
 
 /**
  * How many posts the blog section names individually.
@@ -110,6 +113,11 @@ export function buildLlmsTxt(site: SsrSiteConfig, posts: readonly SitemapPost[])
             'the whole candidate in one fetch — experience, education, skills, ' +
                 'languages, certificates, references, availability and contact route',
         ),
+        link(
+            'Full profile as Markdown',
+            `${base}/llms-full.txt`,
+            'summary, experience, skills, certifications, education, languages and recent posts in one file',
+        ),
         link('Home', `${base}/`, 'summary, current availability and the contact form'),
         link('CV', `${base}/cv`, 'the rendered CV, filterable by year'),
         link('Contact', `${base}/#contact`, 'how to reach the owner about a role'),
@@ -119,7 +127,8 @@ export function buildLlmsTxt(site: SsrSiteConfig, posts: readonly SitemapPost[])
     lines.push('## Blog', '', link('All posts', `${base}/blog`, 'the complete index'));
     for (const post of posts.slice(0, LLMS_TXT_MAX_POSTS)) {
         lines.push(
-            link(post.title || post.slug, `${base}/blog/${post.slug}`, post.lastmod),
+            // The publication date (`posted_at ?? created_at`), not the last edit.
+            link(post.title || post.slug, `${base}/blog/${post.slug}`, post.published?.slice(0, 10)),
         );
     }
     lines.push('');
@@ -148,4 +157,163 @@ export async function renderLlmsTxt(
         fetchPublishedPosts(fetchJson, LLMS_TXT_MAX_POSTS),
     ]);
     return buildLlmsTxt(site, posts);
+}
+
+/** Path of the expanded companion file (llmstxt.org's `llms-full.txt` convention). */
+export const LLMS_FULL_PATH = '/llms-full.txt';
+/** How many posts `llms-full.txt` excerpts. */
+export const LLMS_FULL_MAX_POSTS = 20;
+/** Per-post excerpt bound, in characters of plain text. */
+export const LLMS_FULL_EXCERPT = 1500;
+/**
+ * Whole-file bound. The file is for an assistant's CONTEXT WINDOW; past this
+ * the remaining posts are named by link only, and `/blog` has the rest.
+ */
+export const LLMS_FULL_MAX_CHARS = 60000;
+
+function heading(level: 2 | 3, text: string): string {
+    return `${'#'.repeat(level)} ${text.replace(/\s+/g, ' ').trim()}`;
+}
+
+/** `parts`, each as plain text, joined with an em dash — empties dropped. */
+function joinPlain(parts: readonly (string | null | undefined)[]): string {
+    return parts
+        .map((part) => toPlainText(part))
+        .filter(Boolean)
+        .join(' — ');
+}
+
+/** A `## title` section; nothing at all when `body` is empty. */
+function section(title: string, body: readonly string[]): string[] {
+    return body.length ? [heading(2, title), '', ...body, ''] : [];
+}
+
+function headerLines(site: SsrSiteConfig, profile: Profile | null, base: string): string[] {
+    const name = toPlainText(profile?.name) || site.ownerName || site.siteName || 'Portfolio';
+    const headline = toPlainText(profile?.headline) || site.ownerHeadline;
+    const availability = AVAILABILITY_NOTE[site.availability];
+    const facts = [
+        profile?.location ? `- Location: ${toPlainText(profile.location)}` : '',
+        availability ? `- Availability: ${availability}` : '',
+        `- Website: ${base}/`,
+        `- Structured profile (JSON Resume): ${base}${RESUME_PATH}`,
+        `- Contact: ${base}/#contact`,
+    ].filter(Boolean);
+    return [`# ${name}`, '', ...(headline ? [`> ${headline}`, ''] : []), ...facts, ''];
+}
+
+function experienceLines(experience: Profile['experience'] | undefined): string[] {
+    const lines: string[] = [];
+    for (const role of experience ?? []) {
+        lines.push(heading(3, joinPlain([role.title, role.company]) || 'Role'));
+        const period = [role.startDate, role.endDate]
+            .map((d) => toPlainText(d))
+            .filter(Boolean)
+            .join(' – ');
+        const meta = [period, toPlainText(role.location)].filter(Boolean).join(' · ');
+        if (meta) {
+            lines.push('', meta);
+        }
+        const description = decodeEntities(role.description ?? '').trim();
+        if (description) {
+            lines.push('', description);
+        }
+        lines.push('');
+    }
+    // `section` closes with its own blank line; drop the last role's.
+    return lines.slice(0, -1);
+}
+
+function certificationLines(certifications: Profile['certifications'] | undefined): string[] {
+    return (certifications ?? []).map((cert) => {
+        const label = joinPlain([cert.name, cert.issuer, cert.issueDate ?? cert.date]);
+        return cert.credentialUrl ? link(label, cert.credentialUrl) : `- ${label}`;
+    });
+}
+
+/**
+ * The "Recent posts" section. `offset` is the length of the file before it
+ * (joined text plus the joining newline), so the whole-file bound
+ * `LLMS_FULL_MAX_CHARS` is measured on the file as it will be served.
+ */
+function postLines(posts: readonly SitemapPost[], base: string, offset: number): string[] {
+    if (!posts.length) {
+        return [];
+    }
+    const lines: string[] = [heading(2, 'Recent posts'), ''];
+    for (const post of posts.slice(0, LLMS_FULL_MAX_POSTS)) {
+        const url = `${base}/blog/${post.slug}`;
+        const title = post.title || post.slug;
+        const date = post.published?.slice(0, 10);
+        const excerpt = truncateAtWord(toPlainText(post.content || post.summary), LLMS_FULL_EXCERPT);
+        const block = [
+            heading(3, title),
+            '',
+            [date, post.language, url].filter(Boolean).join(' · '),
+            ...(excerpt ? ['', excerpt] : []),
+            '',
+        ];
+        if (offset + lines.join('\n').length + block.join('\n').length > LLMS_FULL_MAX_CHARS) {
+            lines.push(link(title, url, date));
+            continue;
+        }
+        lines.push(...block);
+    }
+    lines.push(link('All posts', `${base}/blog`, 'the complete index'), '');
+    return lines;
+}
+
+/**
+ * `/llms-full.txt` — the whole public profile as clean Markdown, plus excerpts
+ * of the newest posts, generated from the SAME public profile view and post
+ * list the site renders (no field the HTML does not already show).
+ *
+ * Every section is omitted when its data is absent, so a sparse profile yields
+ * a short file rather than empty headings.
+ */
+export function buildLlmsFullTxt(
+    site: SsrSiteConfig,
+    profile: Profile | null,
+    posts: readonly SitemapPost[],
+): string {
+    const base = stripTrailingSlash(site.siteUrl);
+    const about = decodeEntities(profile?.about ?? '').trim();
+    const skills = (profile?.skills ?? []).map((skill) => toPlainText(skill)).filter(Boolean);
+    const education = (profile?.education ?? []).map(
+        (entry) => `- ${joinPlain([entry.school, entry.degree, entry.years])}`,
+    );
+    const languages = (profile?.languages ?? []).map(
+        (language) => `- ${joinPlain([language.name, language.proficiency])}`,
+    );
+    const lines = [
+        ...headerLines(site, profile, base),
+        ...section('Summary', about ? [about] : []),
+        ...section('Experience', experienceLines(profile?.experience)),
+        ...section('Skills', skills.length ? [skills.join(', ')] : []),
+        ...section('Certifications', certificationLines(profile?.certifications)),
+        ...section('Education', education),
+        ...section('Languages', languages),
+    ];
+    return [...lines, ...postLines(posts, base, lines.join('\n').length + 1)].join('\n');
+}
+
+/** The active public profile (English), or null — the file still renders. */
+async function fetchProfile(fetchJson: JsonFetcher): Promise<Profile | null> {
+    try {
+        return ((await fetchJson(`${API_PREFIX}/profile?lang=en`)) as Profile | null) ?? null;
+    } catch {
+        return null;
+    }
+}
+
+export async function renderLlmsFullTxt(
+    fetchJson: JsonFetcher,
+    fallbackOrigin: string,
+): Promise<string> {
+    const [site, profile, posts] = await Promise.all([
+        resolveSiteConfig(fetchJson, fallbackOrigin),
+        fetchProfile(fetchJson),
+        fetchPublishedPosts(fetchJson, LLMS_FULL_MAX_POSTS),
+    ]);
+    return buildLlmsFullTxt(site, profile, posts);
 }

@@ -98,13 +98,20 @@ describe('BlogPostComponent', () => {
         fixture.detectChanges();
 
         expect(blogServiceSpy.getPost).toHaveBeenCalledWith('test-post');
-        expect(seoServiceSpy.updateSeo).toHaveBeenCalledWith({
+        expect(seoServiceSpy.updateSeo).toHaveBeenCalledWith(expect.objectContaining({
             title: mockPost.title,
             description: mockPost.summary,
             url: `/blog/${mockPost.slug}`,
             type: 'article',
-            keywords: 'tag1'
-        });
+            keywords: 'tag1',
+            locale: 'en',
+            // No posted_at on this payload: the creation date is the fallback.
+            article: {
+                publishedTime: mockPost.created_at,
+                modifiedTime: mockPost.created_at,
+                tags: ['tag1'],
+            },
+        }));
         expect(seoServiceSpy.setJsonLd).toHaveBeenCalled();
 
         const emissions: BlogPostVm[] = [];

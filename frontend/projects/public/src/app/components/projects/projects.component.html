@@ -11,9 +11,10 @@
 @if (standalone) {
   <section id="projects" class="py-20 bg-black min-h-screen" data-testid="projects-page">
     <div class="container mx-auto px-6">
-      <h2 class="text-2xl font-bold mb-16 text-secondary font-sans">
+      <!-- The page's ONE h1 on its own route (embedded on home it stays an h2). -->
+      <h1 class="text-2xl font-bold mb-16 text-secondary font-sans">
         {{ 'SECTION.PROJECTS' | translate }}
-      </h2>
+      </h1>
       @if (projects$ | async; as projects) {
         <div class="grid md:grid-cols-2 gap-8 max-w-6xl mx-auto">
           @for (project of projects; track project.slug) {
@@ -64,6 +65,8 @@
       <img
         [src]="project.image"
         [alt]="project.title"
+        loading="lazy"
+        decoding="async"
         class="w-full h-40 object-cover mb-4 border border-terminal" />
     }
     <h3 class="text-lg font-bold text-primary mb-2 font-sans">

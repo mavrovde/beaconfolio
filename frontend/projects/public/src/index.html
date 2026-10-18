@@ -22,8 +22,10 @@
   <link id="brand-font" href="https://fonts.googleapis.com/css2?family=VT323&display=swap"
     rel="stylesheet" />
 
-  <!-- Font Awesome -->
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <!-- No icon-font stylesheet: the public app used exactly three Font Awesome
+       glyphs (experience meta row), for which a render-blocking cross-origin
+       stylesheet (~100 KB CSS plus a webfont) was loaded on every page. They
+       are inline SVGs now (experience.component.html). -->
 </head>
 
 <body>

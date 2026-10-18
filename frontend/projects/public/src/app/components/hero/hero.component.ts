@@ -5,6 +5,7 @@ import { ShellChromeService, TranslatePipe } from '@beaconfolio/shared';
 import { Profile } from '../../services/profile.service';
 import { SiteConfigService } from '../../services/site-config.service';
 import { environment } from '../../../environments/environment';
+import { rolesLabel } from '../../seo/identity';
 
 @Component({
   selector: 'app-hero',
@@ -26,6 +27,12 @@ export class HeroComponent {
   readonly prompt$ = this.shell.prompt();
 
   @Input() profile: Profile | null = null;
+
+  /** The short role(s) from the headline, for the heading (`seo/identity.ts`).
+   *  A getter over an @Input: an input change already schedules this view. */
+  get role(): string {
+    return rolesLabel(this.profile?.headline);
+  }
 
   /** Runtime portrait (#333): the backend serves the admin-uploaded photo at
    *  this URL; 404 before the first upload. The template renders it directly

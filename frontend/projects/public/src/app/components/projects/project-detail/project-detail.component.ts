@@ -9,6 +9,7 @@ import { SeoService } from '../../../services/seo.service';
 import { SiteConfigService, SiteConfig } from '../../../services/site-config.service';
 import { RenderableProject, findProject, formatPeriod } from '../../../projects-model/projects';
 import { buildProjectSchema } from '../../../seo/project-schema';
+import { buildBreadcrumbs, toGraph } from '../../../seo/graph';
 import { HeaderComponent } from '../../header/header.component';
 
 /**
@@ -98,7 +99,16 @@ export class ProjectDetailComponent implements OnInit {
             image: project.image,
             keywords: project.techStack.join(', '),
         });
-        this.seoService.setJsonLd(buildProjectSchema(project, site, ownerName));
+        this.seoService.setJsonLd(
+            toGraph([
+                buildProjectSchema(project, site, ownerName),
+                buildBreadcrumbs(site, [
+                    { name: 'Home', path: '/' },
+                    { name: 'Projects', path: '/projects' },
+                    { name: project.title, path: `/projects/${project.slug}` },
+                ]),
+            ])
+        );
     }
 
     private handleNotFound(): void {

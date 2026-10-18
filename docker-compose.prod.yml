@@ -262,6 +262,9 @@ services:
       - "4000"
     environment:
       - NODE_ENV=production
+      # IndexNow key file (per deployment): the SSR server serves GET /<key>.txt
+      # with the key as its body when this is a valid key; empty = feature off.
+      - INDEXNOW_KEY=${INDEXNOW_KEY:-}
       # Allow all hosts: node SSR sits behind two trusted nginx layers, and the
       # Host that reaches it is the internal service name (e.g. "frontend"), not
       # the public host. The reverse proxy already validates the public Host, so

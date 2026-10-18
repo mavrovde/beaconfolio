@@ -36,8 +36,12 @@ async function configure(opts: {
   fragment: any;
   snapshotFragment?: any;
   platformId?: any;
+  lastModified?: string | null;
 }) {
-  const profileService = { getProfile: () => of(opts.profile) };
+  const profileService = {
+    getProfile: () => of(opts.profile),
+    getLastModified: () => of(opts.lastModified ?? null),
+  };
   const mockActivatedRoute = {
     // no fragment in snapshot -> scroll interval clears immediately on browser
     snapshot: { fragment: opts.snapshotFragment ?? null },
@@ -80,7 +84,7 @@ describe('HomeComponent coverage (branches)', () => {
     TestBed.resetTestingModule();
   });
 
-  it('does nothing when profile is falsy (line 80 false branch)', async () => {
+  it('does nothing when profile is falsy', async () => {
     const { fixture, seoService } = await configure({
       profile: null,
       fragment: 'about',
@@ -90,53 +94,73 @@ describe('HomeComponent coverage (branches)', () => {
     expect(seoService.setJsonLd).not.toHaveBeenCalled();
   });
 
-  it('uses "Home" title when fragment is null (line 83 false branch)', async () => {
+  it('uses the COMPOSED home title when there is no fragment', async () => {
     const { fixture, seoService } = await configure({
-      profile: makeProfile(),
+      profile: makeProfile({ name: 'Jane Doe', headline: 'Staff Engineer @ Acme | Go', location: 'Berlin, Germany' }),
       fragment: null,
     });
     fixture.detectChanges();
     expect(seoService.updateSeo).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Home' })
+      expect.objectContaining({ fullTitle: 'Jane Doe - Staff Engineer | Berlin' })
     );
   });
 
-  it('uses "Home" title when fragment is not a known section (line 83 false branch)', async () => {
+  it('uses the composed home title when the fragment is not a known section', async () => {
     const { fixture, seoService } = await configure({
-      profile: makeProfile(),
+      profile: makeProfile({ name: 'Jane Doe', headline: 'Staff Engineer' }),
       fragment: 'unknown-section',
     });
     fixture.detectChanges();
-    expect(seoService.updateSeo).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Home' })
-    );
+    const call = seoService.updateSeo.mock.calls[0][0];
+    expect(call.fullTitle).toBe('Jane Doe - Staff Engineer | Loc');
+    expect(call.title).toBeUndefined();
   });
 
-  it('falls back to headline for description when about is empty (line 89)', async () => {
+  it('titles a known section by its name', async () => {
     const { fixture, seoService } = await configure({
-      profile: makeProfile({ about: '', headline: 'Just a headline' }),
+      profile: makeProfile(),
       fragment: 'about',
     });
     fixture.detectChanges();
-    expect(seoService.updateSeo).toHaveBeenCalledWith(
-      expect.objectContaining({ description: 'Just a headline' })
-    );
+    expect(seoService.updateSeo).toHaveBeenCalledWith(expect.objectContaining({ title: 'About' }));
   });
 
-  it('falls back to default description when about and headline are empty (line 89)', async () => {
+  it('composes a plain-text description and tidy keywords from the profile', async () => {
     const { fixture, seoService } = await configure({
-      profile: makeProfile({ about: '', headline: '' }),
-      fragment: 'about',
+      profile: makeProfile({
+        name: 'Jane Doe',
+        headline: 'Staff Engineer @ Acme | Angular, TypeScript',
+        location: 'Berlin, Germany',
+        about: 'Builds &amp; ships web platforms.',
+      }),
+      fragment: null,
     });
     fixture.detectChanges();
-    expect(seoService.updateSeo).toHaveBeenCalledWith(
-      // With #65 the component no longer hardcodes a fallback description —
-      // undefined lets SeoService apply the config-driven default.
-      expect.objectContaining({ description: undefined })
+    const call = seoService.updateSeo.mock.calls[0][0];
+    expect(call.description).toBe(
+      'Jane Doe is a Staff Engineer based in Berlin, Germany. Specialises in Angular and TypeScript. ' +
+        'Open to hearing about new opportunities.'
     );
+    expect(call.description).not.toContain('&amp;');
+    expect(call.keywords).toBe('Staff Engineer, Berlin, Angular, TypeScript');
   });
 
-  it('does not run scroll logic on server platform (line 94 false branch)', async () => {
+  it('emits Person + WebSite + ProfilePage as ONE graph, dated by the profile', async () => {
+    const { fixture, seoService } = await configure({
+      profile: makeProfile(),
+      fragment: null,
+      lastModified: '2026-09-10T11:46:15+00:00',
+    });
+    fixture.detectChanges();
+    const graph = seoService.setJsonLd.mock.calls[0][0];
+    expect(graph['@context']).toBe('https://schema.org');
+    expect(graph['@graph'].map((node: any) => node['@type'])).toEqual(['Person', 'WebSite', 'ProfilePage']);
+    const page = graph['@graph'][2];
+    expect(page.dateModified).toBe('2026-09-10T11:46:15+00:00');
+    expect(page.mainEntity).toEqual({ '@id': 'https://beaconfolio.com/#person' });
+  });
+
+  it('does not run scroll logic on server platform', async () => {
     const initSpy = vi.spyOn(HomeComponent.prototype as any, 'initScrollLogic');
     const { fixture, seoService } = await configure({
       profile: makeProfile(),
@@ -147,6 +171,14 @@ describe('HomeComponent coverage (branches)', () => {
     expect(initSpy).not.toHaveBeenCalled();
     // JSON-LD is still set on the server
     expect(seoService.setJsonLd).toHaveBeenCalled();
+    initSpy.mockRestore();
+  });
+
+  it('does not start the scroll logic in the browser when the profile is empty', async () => {
+    const initSpy = vi.spyOn(HomeComponent.prototype as any, 'initScrollLogic');
+    const { fixture } = await configure({ profile: null, fragment: null });
+    fixture.detectChanges();
+    expect(initSpy).not.toHaveBeenCalled();
     initSpy.mockRestore();
   });
 });

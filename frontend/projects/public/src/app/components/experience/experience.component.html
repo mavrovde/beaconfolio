@@ -48,17 +48,17 @@
                 <div class="text-sm text-terminal-dim mb-4 flex flex-wrap gap-x-4 gap-y-1 font-sans">
                   @if (job.location) {
                     <span>
-                      <i class="fas fa-map-marker-alt mr-1"></i> {{ job.location }}
+                      <svg class="inline-block w-3 h-3 mr-1 align-[-1px]" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" focusable="false"><path d="M8 15s5-5.2 5-9A5 5 0 0 0 3 6c0 3.8 5 9 5 9z"/><circle cx="8" cy="6" r="1.8"/></svg> {{ job.location }}
                     </span>
                   }
                   @if (job.workType) {
                     <span class="capitalize">
-                      <i class="fas fa-briefcase mr-1"></i> {{ job.workType }}
+                      <svg class="inline-block w-3 h-3 mr-1 align-[-1px]" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" focusable="false"><rect x="1.5" y="4.5" width="13" height="9" rx="1"/><path d="M5.5 4.5V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.5M1.5 8.5h13"/></svg> {{ job.workType }}
                     </span>
                   }
                   @if (job.employmentType) {
                     <span class="capitalize">
-                      <i class="fas fa-clock mr-1"></i> {{ job.employmentType }}
+                      <svg class="inline-block w-3 h-3 mr-1 align-[-1px]" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5"/><path d="M8 4.5V8l2.5 1.5"/></svg> {{ job.employmentType }}
                     </span>
                   }
                 </div>

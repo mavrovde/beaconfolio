@@ -115,7 +115,7 @@ export class InboxComponent implements OnInit {
     this.cdr.detectChanges();
     this.opportunitiesService.promote(interaction.id).subscribe({
       next: () => {
-        this.router.navigate(['/pipeline']);
+        void this.router.navigate(['/pipeline']);
       },
       error: (err) => {
         console.error('Error promoting interaction:', err);

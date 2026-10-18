@@ -9,6 +9,25 @@ import { SiteConfigService, SiteConfig } from '../../services/site-config.servic
 
 import packageJson from '../../../../../../package.json';
 
+/**
+ * A uniform integer in [min, max] from the Web Crypto CSPRNG (Sonar S2245).
+ *
+ * Rejection sampling, not a bare modulo: 2^32 is not a multiple of the range
+ * size, so `u32 % n` would favour the low values (CodeQL
+ * js/biased-cryptographic-random). Draws at or above the largest multiple of
+ * n not above 2^32 are discarded and redrawn — for n = 41 that is 37 values out of
+ * ~4.3 billion, so the loop practically never repeats.
+ */
+export function cryptoRandomInt(min: number, max: number): number {
+  const n = max - min + 1;
+  const limit = 2 ** 32 - (2 ** 32 % n);
+  const draw = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(draw);
+  } while (draw[0] >= limit);
+  return min + (draw[0] % n);
+}
+
 @Component({
   selector: 'app-system-stats',
   standalone: true,
@@ -130,8 +149,8 @@ export class SystemStatsComponent implements OnInit, OnDestroy {
   private simulateMemoryFluctuation(): void {
     if (isPlatformBrowser(this.platformId)) {
       setInterval(() => {
-        // Fluctuate between 20MB and 60MB
-        this.memoryUsage = Math.floor(Math.random() * (60 - 20 + 1) + 20);
+        // Fluctuate between 20MB and 60MB (decorative; see cryptoRandomInt).
+        this.memoryUsage = cryptoRandomInt(20, 60);
         this.cdr.markForCheck(); // zoneless: repaint the memory display
       }, 5000);
     }

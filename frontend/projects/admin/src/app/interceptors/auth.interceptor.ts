@@ -24,7 +24,7 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
       // Handle 401 Unauthorized or 403 Forbidden
       if ((error.status === 401 || error.status === 403) && !req.url.includes(`${environment.apiPrefix}/auth/login`)) {
         authService.logout();
-        router.navigate(['/login']);
+        void router.navigate(['/login']);
       }
 
       // Handle 403 Forbidden

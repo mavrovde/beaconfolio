@@ -14,5 +14,13 @@
  *
  * Note the *test* specs deliberately keep the literal spelled out: an assertion
  * that imports the value it asserts would pass against any value.
+ *
+ * Plain `http` is deliberate (Sonar `typescript:S5332`, reviewed): `backend` is
+ * a Docker DNS name that only resolves on the private compose network, so the
+ * hop never leaves the host — `docker-compose.prod.yml` publishes no backend
+ * port at all (only the dev file maps 8000, for local debugging) and TLS
+ * terminates at the `proxy` edge. Uvicorn serves no TLS, so an
+ * `https://` origin here would simply fail every SSR read. Visitors' traffic
+ * never takes this path; it is SSR-process → container only.
  */
-export const SSR_BACKEND_ORIGIN = 'http://backend:8000';
+export const SSR_BACKEND_ORIGIN = 'http://backend:8000'; // NOSONAR — container-internal hop, see above

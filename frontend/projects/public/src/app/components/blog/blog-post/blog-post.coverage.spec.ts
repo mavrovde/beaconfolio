@@ -69,7 +69,9 @@ describe('BlogPostComponent SEO branches', () => {
     expect(updateSeoSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'No Summary Post',
-        description: longContent.substring(0, 160),
+        // One 200-char "word": no boundary to cut at, so it is hard-cut at the
+        // 155-character description bound — and never gets a trailing ellipsis.
+        description: longContent.substring(0, 155),
         keywords: undefined,
       }),
     );
