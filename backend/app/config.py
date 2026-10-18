@@ -313,12 +313,14 @@ class Settings(BaseSettings):
         default="", validation_alias="BEACONFOLIO_SEO_DESCRIPTION"
     )
     seo_keywords: str = Field(default="", validation_alias="BEACONFOLIO_SEO_KEYWORDS")
-    # AI-crawler policy (#252) — "allow" (default) or "deny", served on
-    # GET {api_prefix}/config/site and rendered into the SSR robots.txt.
+    # AI-crawler policy (#252) — "allow" (default), "deny" or "search-only", served
+    # on GET {api_prefix}/config/site and rendered into the SSR robots.txt.
     # Allow-by-default is the product thesis: recruiter research runs through AI
     # assistants, so being readable BY them is the point. An owner who objects
     # sets AI_CRAWLER_POLICY=deny and the AI user-agents (only those) get
-    # `Disallow: /`. Anything unrecognized falls back to "allow" — see the
+    # `Disallow: /`; "search-only" admits the search/user-initiated agents (so the
+    # site can still be cited in answers) and disallows the training crawlers.
+    # Anything unrecognized falls back to "allow" — see the
     # validator below — because a typo must not silently deindex a portfolio.
     ai_crawler_policy: str = "allow"
 
@@ -326,7 +328,7 @@ class Settings(BaseSettings):
     @classmethod
     def _normalize_ai_crawler_policy(cls, v: object) -> object:
         policy = v.strip().lower() if isinstance(v, str) else v
-        return policy if policy in ("allow", "deny") else "allow"
+        return policy if policy in ("allow", "deny", "search-only") else "allow"
 
     # Docker compose forwards these as ``SITE_NAME=${SITE_NAME:-}`` — an UNSET
     # host variable therefore arrives as an EMPTY string, which would silently

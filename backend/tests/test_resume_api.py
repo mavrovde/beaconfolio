@@ -263,7 +263,7 @@ async def test_resume_is_public(client: AsyncClient, db_session):
     assert response.status_code == 200
 
 
-@pytest.mark.parametrize("policy", ["allow", "deny"])
+@pytest.mark.parametrize("policy", ["allow", "deny", "search-only"])
 async def test_site_config_publishes_the_ai_crawler_policy(
     client: AsyncClient, monkeypatch, policy
 ):
@@ -278,6 +278,8 @@ async def test_site_config_publishes_the_ai_crawler_policy(
     [
         ("deny", "deny"),
         ("DENY", "deny"),
+        ("search-only", "search-only"),
+        (" Search-Only ", "search-only"),
         (" allow ", "allow"),
         ("", "allow"),
         ("nope", "allow"),  # a typo must never silently deindex a portfolio
