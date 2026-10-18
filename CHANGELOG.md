@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- Placeholder for next release.
+
+## [1.17.0] - 2026-10-18
+
 ### Security
 - **Every SonarCloud vulnerability and bug under `frontend/` is fixed at its source (#494).** No
   Angular sanitizer bypass remains: the JSON-LD block is written into `<head>` through
@@ -499,6 +504,18 @@ All notable changes to this project will be documented in this file.
   tag (the URN upsert does not rewrite `language`); search no longer depends on it. (The six
   mis-tagged prod rows were also corrected to `en` by hand.) `limit` is now bounded to 1-50 on
   this public endpoint (422 otherwise).
+- **Every second Vitest run of the same checkout failed with "Cannot find module
+  `/@id/__x00__virtual:angular:jit:style:inline;…`".** Vitest 5 enables `fsModuleCache` by
+  default and serves a component's transform from `node_modules/.vitest-cache` on the next run;
+  the cached `blog-post.component.ts` imports the Analog plugin's virtual inline-style module,
+  which the plugin registers only while it transforms that file, so the import cannot resolve.
+  CI saw it as a failed teardown RETRY (`run_frontend_suites.sh` reruns in the same job, i.e.
+  with a warm cache), which turned a tolerated flake into a red job. `fsModuleCache: false` in
+  all three `vitest.config.ts`; measured: two consecutive `test:coverage:public` runs, 939/939
+  both (before: run 2 failed 6 files).
+- **Errata for the derived-titles entry above:** the shipped `SENTENCE_ABBREVIATIONS` list
+  deliberately does NOT contain `etc.`, `usw.`, `no.`, `inc.` or `ltd.` — those routinely END a
+  sentence, so a "." after them still splits. The entry's "etc., … usw." examples are wrong.
 
 ## [1.16.0] - 2026-09-19
 
