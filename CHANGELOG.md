@@ -288,6 +288,24 @@ All notable changes to this project will be documented in this file.
   non-array accepted, `--replace` still parsing the file).
 - `GET /api/app/posts?sort_by=display_image_url` (any property name) returned 500 — sorting now
   goes through an explicit column allowlist; unknown fields fall back to the default order.
+- **Search finds a post whatever language it is tagged with, and ranks exact matches first.**
+  Searching "Hamilton" missed both Margaret Hamilton posts: they are English but were tagged
+  `de`, because the scraper's and the importer's language heuristic flipped a post to German on
+  ONE umlaut or German-looking word — "MIT", "Köln", "München", "Karl der Große", "born and
+  die" tagged six English posts `de` — and `GET /posts/search/semantic` hard-filtered both its
+  vector and its keyword query on `language == lang`, so they could never surface for an English
+  visitor while ten unrelated English vectors at 0.43-0.49 cleared the 0.3 floor. Language
+  detection (`importer/core.py`, mirrored in `scraper/parse-post.js`) now tokenises and counts
+  each language's function words, and German must reach ≥ 2 hits, ≥ 10 % of the words and more
+  hits than English (short or ambiguous text keeps the default); on the real 82-post export all
+  82 classify `en`, and the importer re-detects instead of trusting a stale export's tag.
+  Search keeps `lang` only as a preference (+0.02 on vector scores, tie-break): keyword hits are
+  found across ALL languages, every query term must appear (title, summary or content), `%`/`_`
+  are matched literally, a verbatim phrase scores higher, keyword hits (0.85) rank above
+  vector-only hits (capped at 0.8), a hit found by both scores 0.95, and the default vector
+  floor is 0.5 — measured with `nomic-embed-text` on the real export, true matches scored
+  0.53-0.72 and the best unrelated post per query 0.41-0.51. Existing rows keep their stored
+  tag (the URN upsert does not rewrite `language`); search no longer depends on it.
 
 ## [1.16.0] - 2026-09-19
 

@@ -297,16 +297,62 @@ async def get_post_by_id(
     return _to_post_response(post)
 
 
+# --- semantic_search scoring ------------------------------------------------
+# Default vector floor. MEASURED with the production embedding model
+# (nomic-embed-text, raw prompt, 1 - cosine distance) against the real 82-post
+# export: for 15 probe queries the matching posts scored 0.53-0.72, while the
+# best UNRELATED post per query sat at 0.41-0.51 (the median post at 0.31-0.41;
+# a nonsense query's best hit 0.41). The old 0.3 floor admitted that whole
+# unrelated band — "Hamilton" returned ten unrelated posts at 0.43-0.49. 0.5
+# drops the band and keeps every measured true match.
+SEARCH_MIN_RELEVANCE = 0.5
+# A post that contains every query term. Exact-term evidence outranks embedding
+# proximity in a site search box, so it sits above the vector-only ceiling.
+SEARCH_KEYWORD_SCORE = 0.85
+SEARCH_PHRASE_BONUS = 0.05  # multi-word query found verbatim as a phrase
+SEARCH_HYBRID_BONUS = 0.1  # keyword hit that the vector search also returned
+# Vector-only hits are capped BELOW every keyword hit, so the response stays
+# sorted by `relevance` while keyword matches always lead.
+SEARCH_VECTOR_ONLY_CEILING = 0.8
+# Small preference for the visitor's language — a preference, never a filter.
+SEARCH_LANG_BOOST = 0.02
+_SEARCH_MAX_TERMS = 8
+_SEARCH_TERM_STRIP = "\"'.,;:!?()[]{}<>“”‘’«»"
+
+
+def _search_terms(q: str) -> list[str]:
+    """Whitespace tokens with surrounding punctuation stripped, case-insensitively
+    de-duplicated; 1-char tokens dropped unless nothing else is left."""
+    terms: list[str] = []
+    seen: set[str] = set()
+    for raw in q.split():
+        term = raw.strip(_SEARCH_TERM_STRIP)
+        if len(term) >= 2 and term.casefold() not in seen:
+            seen.add(term.casefold())
+            terms.append(term)
+    return terms[:_SEARCH_MAX_TERMS] or [q.strip()]
+
+
+def _like_contains(term: str) -> str:
+    """ILIKE pattern matching ``term`` LITERALLY: ``%``, ``_`` and the escape
+    character itself are escaped, so user input is never a wildcard."""
+    escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
 @router.get("/search/semantic")
 async def semantic_search(
     q: str,
     lang: str | None = "en",
     limit: int = 10,
-    min_relevance: float = 0.3,  # Filter out low relevance
+    min_relevance: float = SEARCH_MIN_RELEVANCE,  # vector floor, see above
     db: AsyncSession = Depends(get_db),
 ):
     """
     Search posts using hybrid approach: Semantic (Vector) + Keyword (SQL ILIKE).
+
+    Language-aware, not language-exclusive: ``lang`` only boosts/tie-breaks, so
+    a post is found whatever language it is tagged with.
     """
     if not q or len(q.strip()) < 2:
         return []
@@ -325,68 +371,63 @@ async def semantic_search(
                 )
                 .where(Post.published.is_(True))
                 .where(Post.embedding.isnot(None))
+                # Fetch slightly more to allow for filtering/reranking
+                .order_by(text("relevance DESC"), Post.id.desc())
+                .limit(limit * 2)
             )
-            if lang:
-                vector_query = vector_query.where(Post.language == lang)
-
-            # Fetch slightly more to allow for filtering/reranking
-            vector_query = vector_query.order_by(text("relevance DESC")).limit(
-                limit * 2
-            )
-
             v_res = await db.execute(vector_query)
             vector_results = list(v_res.all())
     except Exception:
         # Fallback to keyword search if vector fails
         logger.exception("Vector search failed; falling back to keyword search")
 
-    # 2. Keyword Search
+    # 2. Keyword Search — every term must appear (in title, summary or content).
+    terms = _search_terms(q)
     keyword_query = select(Post).where(Post.published.is_(True))
-    if lang:
-        keyword_query = keyword_query.where(Post.language == lang)
-
-    search_term = f"%{q}%"
-    keyword_query = keyword_query.where(
-        (Post.title.ilike(search_term))
-        | (Post.summary.ilike(search_term))
-        | (Post.content.ilike(search_term))
-    ).limit(limit)
+    for term in terms:
+        pattern = _like_contains(term)
+        keyword_query = keyword_query.where(
+            Post.title.ilike(pattern, escape="\\")
+            | Post.summary.ilike(pattern, escape="\\")
+            | Post.content.ilike(pattern, escape="\\")
+        )
+    keyword_query = keyword_query.order_by(
+        Post.created_at.desc(), Post.id.desc()
+    ).limit(limit * 2)
 
     k_res = await db.execute(keyword_query)
     keyword_posts = k_res.scalars().all()
 
-    # 3. Merge Results
-    results_map = {}
+    # 3. Merge Results (keyed by post id, so a post appears once)
+    results_map: dict[int, dict[str, Any]] = {}
 
-    # Process Vector Results
     for post, relevance in vector_results:
         if relevance < min_relevance:
             continue
+        score = float(relevance)
+        if lang and post.language == lang:
+            score += SEARCH_LANG_BOOST
         results_map[post.id] = {
             "post": post,
-            "relevance": float(relevance),
-            "sources": {"vector"},
+            "relevance": min(score, SEARCH_VECTOR_ONLY_CEILING),
         }
 
-    # Process Keyword Results
+    phrase = " ".join(q.split()).casefold()
     for post in keyword_posts:
+        score = SEARCH_KEYWORD_SCORE
+        haystack = f"{post.title}\n{post.summary or ''}\n{post.content}".casefold()
+        if len(terms) > 1 and phrase in " ".join(haystack.split()):
+            score += SEARCH_PHRASE_BONUS
         if post.id in results_map:
-            # Boost score if found in both
-            results_map[post.id]["relevance"] = min(
-                1.0, results_map[post.id]["relevance"] + 0.2
-            )
-            results_map[post.id]["sources"].add("keyword")
-        else:
-            # Add keyword-only match (give it a decent base score)
-            results_map[post.id] = {
-                "post": post,
-                "relevance": 0.85,  # High confidence for exact match
-                "sources": {"keyword"},
-            }
+            score += SEARCH_HYBRID_BONUS
+        results_map[post.id] = {"post": post, "relevance": min(1.0, score)}
 
-    # Sort by relevance
+    # Highest relevance first; the requested language breaks ties, then the
+    # newer id (deterministic order for equal scores).
     sorted_results = sorted(
-        results_map.values(), key=lambda x: x["relevance"], reverse=True
+        results_map.values(),
+        key=lambda x: (x["relevance"], x["post"].language == lang, x["post"].id),
+        reverse=True,
     )[:limit]
 
     return [
