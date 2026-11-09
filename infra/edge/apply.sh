@@ -35,6 +35,8 @@
 #   EDGE_CADDY_USER the service user  (default caddy)
 #   EDGE_AS_CADDY  run-as-service-user wrapper for validate
 #                  (default `sudo -u $EDGE_CADDY_USER -H`)
+#   EDGE_IMPORT_ROOT prefix put in front of every absolute `import` path when
+#                  its presence is checked (default empty: the real path)
 set -euo pipefail
 
 if [ -z "${BASH_SOURCE[0]:-}" ]; then
@@ -51,6 +53,7 @@ SUDO="${EDGE_SUDO-sudo}"
 CADDY="${EDGE_CADDY:-caddy}"
 SYSTEMCTL="${EDGE_SYSTEMCTL:-systemctl}"
 CADDY_USER="${EDGE_CADDY_USER:-caddy}"
+IMPORT_ROOT="${EDGE_IMPORT_ROOT:-}"
 AS_CADDY="${EDGE_AS_CADDY-sudo -u $CADDY_USER -H}"
 
 MODE="${1:---check}"
@@ -103,11 +106,43 @@ while IFS= read -r lf; do
     fi
 done < <(awk '$1 == "output" && $2 == "file" { print $3 }' "$SRC")
 
+# PRECONDITION: every host-side file the committed config IMPORTS must exist
+# and be non-empty, refused here BY NAME. `caddy validate` would refuse a
+# missing one too, but as "File to import not found" in the middle of a JSON
+# log — which reads like a broken config and is only a missing step. Two such
+# files today, both written on the host and never committed:
+#   /etc/caddy/viafrei-status-allow.conf  the owner's addresses (by hand)
+#   /etc/caddy/viafrei-cloudflare.conf    Cloudflare's ranges, written by
+#                                         `cloudflare-ranges.sh --write` (#1267)
+# An EMPTY file is refused as well: it would define no matcher, and a gate on
+# an undefined matcher is an adapt error at best. Presence and size are read
+# with stat, which needs no read permission on the 0640 root:caddy file; its
+# CONTENT is judged by the validate below, as the service user.
+missing=0
+while IFS= read -r imp; do
+    [ -n "$imp" ] || continue
+    if [ ! -s "$IMPORT_ROOT$imp" ]; then
+        echo "✗ import $imp is missing or empty — the committed Caddyfile reads it" >&2
+        case "$imp" in
+            */viafrei-cloudflare.conf)
+                echo "  Fix: sudo bash $HERE/cloudflare-ranges.sh --write" >&2 ;;
+            */viafrei-status-allow.conf)
+                echo "  Fix: write the '@allowed remote_ip …' line (see the Caddyfile), root:caddy 0640" >&2 ;;
+        esac
+        missing=1
+    fi
+done < <(awk '$1 == "import" && $2 ~ /^\// { print $2 }' "$SRC" | sort -u)
+if [ "$missing" = 1 ]; then
+    echo "  (nothing was validated or applied; the running edge is unchanged)" >&2
+    exit 1
+fi
+
 # AS THE SERVICE USER, and that is not decoration, twice over:
 #  * the admin.viafrei.de and status.viafrei.de blocks import
 #    /etc/caddy/viafrei-status-allow.conf, 0640
 #    root:caddy (measured 2026-09-21) — an ordinary user cannot read it, the
-#    service user can, through its group;
+#    service user can, through its group; viafrei.de and www.viafrei.de
+#    import /etc/caddy/viafrei-cloudflare.conf, written with the same mode;
 #  * validate PROVISIONS the config, which opens every `output file` log. Run
 #    as root (the previous `$SUDO caddy validate`) it created those files
 #    root:root 0600 — measured in caddy:2.11.4 — and the caddy-user service

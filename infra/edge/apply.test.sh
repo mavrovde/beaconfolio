@@ -57,6 +57,14 @@ exec "$@"
 EOF
 chmod +x "$STUB/caddy" "$STUB/systemctl" "$STUB/sudo" "$STUB/ascaddy"
 ME="$(id -un)"
+# The host-side files the committed Caddyfile imports, as apply.sh's presence
+# check sees them (EDGE_IMPORT_ROOT is prepended to each absolute import path).
+# Documentation-range addresses only: these are stand-ins, never the real lists.
+IMPORTS="$TMP/importroot"
+mkdir -p "$IMPORTS/etc/caddy"
+printf '@allowed remote_ip 192.0.2.7/32\n' > "$IMPORTS/etc/caddy/viafrei-status-allow.conf"
+printf '@cloudflare remote_ip 198.51.100.0/24 2001:db8::/32\n' > "$IMPORTS/etc/caddy/viafrei-cloudflare.conf"
+export EDGE_IMPORT_ROOT="$IMPORTS"
 
 run_apply() { # run_apply <mode-args...>; env seams pre-exported per case
     env EDGE_DST="$DST" EDGE_SUDO= EDGE_AS_CADDY= EDGE_CADDY_USER="$ME" \
@@ -232,6 +240,49 @@ env EDGE_DST="$DST" EDGE_SUDO= EDGE_AS_CADDY= EDGE_CADDY_USER="$ME" \
     EDGE_CADDY="$STUB/caddy" EDGE_SYSTEMCTL="$STUB/systemctl" STUB_LOG="$LOG" \
     EDGE_APPLY_CONFIRM=1 bash "$e7c/apply.sh" --apply >/dev/null 2>&1 || rc=$?
 check "(7c) the same file owned by the service user passes" 0 "$rc"
+
+# 7d. every host-side file the Caddyfile IMPORTS must be there before anything
+# is validated (viafrei #1267): the Cloudflare ranges file is written by
+# cloudflare-ranges.sh, and an apply on a host where nobody ran it must refuse
+# by name -- not reach validate, and never touch the running edge. Missing and
+# EMPTY are both refusals (an empty file defines no matcher). The positive
+# direction is the last case here. They run against a FIXTURE Caddyfile that
+# imports both files, not the committed one: this is apply.sh's behaviour, and
+# section 17 re-runs this file against mutants that delete imports.
+e7d="$TMP/e7d"; mkdir -p "$e7d"
+cp "$APPLY" "$e7d/apply.sh"
+printf 'a.example {\n\timport /etc/caddy/viafrei-status-allow.conf\n\timport /etc/caddy/viafrei-cloudflare.conf\n\trespond 200\n}\n' > "$e7d/Caddyfile"
+for state in missing empty; do
+    fresh_case "old config"; EDGE_APPLY_CONFIRM=1
+    r7d="$TMP/r7d"; rm -rf "$r7d"; mkdir -p "$r7d/etc/caddy"
+    cp "$IMPORTS/etc/caddy/viafrei-status-allow.conf" "$r7d/etc/caddy/"
+    if [ "$state" = empty ]; then : > "$r7d/etc/caddy/viafrei-cloudflare.conf"; fi
+    CADDY_LOG="$TMP/caddy7d.log"; : > "$CADDY_LOG"
+    out="$TMP/out7d"; rc=0
+    ( export EDGE_IMPORT_ROOT="$r7d" CADDY_LOG; APPLY="$e7d/apply.sh"; run_apply --apply ) >"$out" 2>&1 || rc=$?
+    check "(7d) an apply whose Cloudflare ranges file is $state is refused" 1 "$rc"
+    grep -q 'import /etc/caddy/viafrei-cloudflare.conf is missing or empty' "$out" \
+        && grep -q 'cloudflare-ranges.sh --write' "$out" \
+        && ok "(7d) the refusal names the file and the command that writes it ($state)" \
+        || bad "(7d) the refusal does not name the ranges file and its generator ($state)"
+    [ ! -s "$CADDY_LOG" ] && [ "$(cat "$DST")" = "old config" ] && [ ! -s "$LOG" ] \
+        && ok "(7d) nothing was validated, installed or reloaded ($state)" \
+        || bad "(7d) the refusal still validated, installed or reloaded ($state)"
+done
+unset CADDY_LOG
+fresh_case "old config"; EDGE_APPLY_CONFIRM=1
+r7d="$TMP/r7d"; rm -rf "$r7d"; mkdir -p "$r7d/etc/caddy"
+cp "$IMPORTS/etc/caddy/viafrei-cloudflare.conf" "$r7d/etc/caddy/"
+out="$TMP/out7d"; rc=0
+( export EDGE_IMPORT_ROOT="$r7d"; APPLY="$e7d/apply.sh"; run_apply --apply ) >"$out" 2>&1 || rc=$?
+check "(7d) an apply whose allow-list file is missing is refused too" 1 "$rc"
+grep -q 'import /etc/caddy/viafrei-status-allow.conf is missing or empty' "$out" \
+    && ok "(7d) and that refusal names the allow-list file" \
+    || bad "(7d) the missing allow-list file is not named"
+fresh_case "old config"; EDGE_APPLY_CONFIRM=1
+rc=0
+( APPLY="$e7d/apply.sh"; run_apply --apply ) >/dev/null 2>&1 || rc=$?
+check "(7d) and the same fixture with both files present applies" 0 "$rc"
 
 # 8. reload failure restores the backup and reloads the old config
 fresh_case "old config"; STUB_RELOAD_RC=1 EDGE_APPLY_CONFIRM=1
@@ -416,7 +467,7 @@ echo "== the committed Caddyfile's shape (viafrei #94) =="
 # SUBSHELL, so ok/bad would print their line and lose the counter increment —
 # a red tick and exit 0. That is this file's own subject matter, from the
 # shell side.
-caddy_scan() { # caddy_scan <file> -> the 35 fields read by `read -r` below
+caddy_scan() { # caddy_scan <file> -> the 49 fields read by `read -r` below
     awk '
         # ---- the tokeniser: tk[1..ntok], tq[i]=1 if the token was quoted ----
         function tokenise(line,   i, c, L, start) {
@@ -606,6 +657,14 @@ caddy_scan() { # caddy_scan <file> -> the 35 fields read by `read -r` below
                 imports++
                 if (ntok == 2 && tk[2] == "/etc/caddy/viafrei-status-allow.conf") {
                     if (site && depth == 1) gimp[sk] = 1
+                } else if (ntok == 2 && tk[2] == "/etc/caddy/viafrei-cloudflare.conf") {
+                    # the Cloudflare ranges (viafrei #1267): a known host file
+                    # of known shape (one `@cloudflare remote_ip` line, written
+                    # by cloudflare-ranges.sh). Allowed at the top of the two
+                    # Cloudflare-proxied blocks ONLY: every other name on this
+                    # host is DNS-only, so a Cloudflare gate there would refuse
+                    # every real visitor -- mcp. above all.
+                    if (cf && depth == 1) cimp[ck] = 1; else cfstray++
                 } else if (ntok >= 2 && !tq[2]) {
                     # an in-file SNIPPET is not an unreadable file: its body is
                     # scanned by every rule here, ten lines up. Resolved at END
@@ -618,11 +677,18 @@ caddy_scan() { # caddy_scan <file> -> the 35 fields read by `read -r` below
                 for (i = 2; i <= ntok; i++) if (!tq[i] && tk[i] ~ "^[45][0-9][0-9]$") doorline = 1
             }
             if (site && fb && doorline) gdeny[sk] = 1
+            # the Cloudflare door (viafrei #1267): a refusal in the depth-1
+            # bare `handle {` of viafrei.de or www.viafrei.de is that block
+            # answer to a connection that does NOT come from Cloudflare, the one
+            # place outside the two gated sites where a door is the design.
+            # A refusal anywhere else in those blocks -- inside
+            # `handle @cloudflare`, or site-wide -- is still out_deny below.
+            if (cf && cfb && doorline) cdeny[ck] = 1
             # a refusal inside a MATCHED block (`handle @hidden`, `route /x`)
             # answers that matcher, not the site; it is not a door of the kind
             # this rule looks for, exactly as an inline `respond /.env 404` is
             # not. Round 6 accepted the inline spelling and refused the block.
-            if (inblk && !site && doorline && mdepth < 0) out_deny++
+            if (inblk && !site && !(cf && cfb) && doorline && mdepth < 0) out_deny++
             for (i = 1; i <= ntok; i++) {
                 if (tq[i]) continue
                 if (tk[i] == "remote_ip" && inblk && !site) out_remote++
@@ -684,8 +750,34 @@ caddy_scan() { # caddy_scan <file> -> the 35 fields read by `read -r` below
             # own, so one block cannot satisfy the assertion about the other.
             if (site && d1 == "header_up" && ntok == 3 && tk[2] == "X-Forwarded-For" && tk[3] == "{remote_host}") gxff[sk] = 1
             if (site && d1 == "header_up" && ntok == 3 && tk[2] == "Host" && tk[3] == "{host}") ghost[sk] = 1
+            # ---- the Cloudflare gate (viafrei #1267) ----
+            # A CLIENT-CHOSEN ADDRESS: an address header sent upstream whose
+            # value is a REQUEST header placeholder. CF-Connecting-IP is only
+            # the visitor when the connection carrying it comes from Cloudflare, so
+            # every such header_up anywhere in the file must sit inside a
+            # Cloudflare block, in its `handle @cloudflare`. Outside it, a direct
+            # caller writes the address the tenant rate-limits and geolocates.
+            if (d1 == "header_up" && ntok >= 3) {
+                hn = tolower(tk[2]); sub(/^[+]/, "", hn)
+                if (hn == "x-forwarded-for" || hn == "x-real-ip" || hn == "forwarded" \
+                    || hn == "true-client-ip" || hn == "cf-connecting-ip") {
+                    hcl = 0
+                    for (i = 3; i <= ntok; i++) if (tolower(tk[i]) ~ /\{(http\.request\.)?header\./) hcl = 1
+                    if (hcl) { hx++; if (cf && cg) hxg++ }
+                }
+            }
+            if (landing && cg && d1 == "header_up" && ntok == 3 && tk[2] == "X-Forwarded-For" \
+                && tk[3] == "{http.request.header.CF-Connecting-IP}") lxff = 1
+            if (landing && cg && d1 == "header_up" && ntok == 3 && tk[2] == "Host" && tk[3] == "{host}") lhost = 1
+            if (www && cg && d1 == "redir" && ntok == 3 && tk[2] == "https://viafrei.de{uri}" && tk[3] == "permanent") wredir = 1
+            # the matcher name is DEFINED by the imported file and nowhere
+            # else: a definition written here would gate on whatever it says
+            if (d1 == "@cloudflare") cfstray++
             # ---- the port, from the RAW line, minus full-line comments ----
             if (raw !~ /^[[:space:]]*#/ && raw ~ /18190/) { tot++; if (site && ga) { inside++; if (sk == "s") sinside++ } }
+            # the port of the public landing, the same way: every mention inside
+            # the handle @cloudflare of the apex, so no route to it skips the gate
+            if (raw !~ /^[[:space:]]*#/ && raw ~ /18180/) { ltot++; if (landing && cg) linside++ }
 
             # ---- structure, token by token, in order ----
             hdr = ""
@@ -710,9 +802,14 @@ caddy_scan() { # caddy_scan <file> -> the 35 fields read by `read -r` below
                         sk      = (hdr == "status.viafrei.de") ? "s" : (site ? "a" : "")
                         if (sk == "s") nst++
                         landing = (hdr == "viafrei.de")
+                        www     = (hdr == "www.viafrei.de")
+                        # the two Cloudflare-PROXIED names (viafrei #1267):
+                        # ck says which, so each block carries its own door
+                        cf      = (landing || www)
+                        ck      = landing ? "l" : (www ? "w" : "")
                         mcp     = (hdr == "mcp.viafrei.de")
                         beacon  = (hdr == "beaconfolio.com, www.beaconfolio.com")
-                        inblk = 1; fork_seen = 0; fork_fb = 0; ga = 0; fb = 0
+                        inblk = 1; fork_seen = 0; fork_fb = 0; ga = 0; fb = 0; cg = 0; cfb = 0
                         if (hdr ~ "^\\(.+\\)$") snip[substr(hdr, 2, length(hdr) - 2)] = 1
                     } else {
                         if (mdepth < 0 && hdr ~ "^(handle|handle_path|route)[[:space:]]" \
@@ -720,6 +817,8 @@ caddy_scan() { # caddy_scan <file> -> the 35 fields read by `read -r` below
                         if (site && depth == 1 && hdr == "handle @allowed") { ga = 1; ggate[sk] = 1; gad = depth }
                         if (site && depth == 1 && hdr == "handle")          { fb = 1; fbd = depth }
                         if (inblk && !site && depth == 1 && hdr == "handle") fork_fb = 1
+                        if (cf && depth == 1 && hdr == "handle @cloudflare") { cg = 1; cgate[ck] = 1; cgd = depth }
+                        if (cf && depth == 1 && hdr == "handle")             { cfb = 1; cfbd = depth }
                     }
                     depth++; hdr = ""; continue
                 }
@@ -729,8 +828,11 @@ caddy_scan() { # caddy_scan <file> -> the 35 fields read by `read -r` below
                     if (mdepth >= 0 && depth <= mdepth) mdepth = -1
                     if (ga && depth <= gad) ga = 0
                     if (fb && depth <= fbd) fb = 0
+                    if (cg && depth <= cgd) cg = 0
+                    if (cfb && depth <= cfbd) cfb = 0
                     if (depth == 0) {
                         if (inblk && fork_seen) { forks++; if (!fork_fb) forkbad++ }
+                        cf = 0; ck = ""; www = 0; cg = 0; cfb = 0
                         inblk = 0; site = 0; sk = ""; landing = 0; mcp = 0; beacon = 0
                         ga = 0; fb = 0; fork_seen = 0; fork_fb = 0; mdepth = -1
                     }
@@ -758,7 +860,11 @@ caddy_scan() { # caddy_scan <file> -> the 35 fields read by `read -r` below
                     mlog, mret, (olog+0), \
                     (sinside+0), (nst+0), (gimp["s"]+0), (ggate["s"]+0), (gdeny["s"]+0), \
                     (ghost["s"]+0), (gxff["s"]+0), \
-                    badtoken, badbrace, 35 }' "$1" "$1"
+                    (cimp["l"]+0), (cgate["l"]+0), (cdeny["l"]+0), \
+                    (cimp["w"]+0), (cgate["w"]+0), (cdeny["w"]+0), \
+                    (ltot+0), (linside+0), (hx+0), (hxg+0), (lxff+0), (lhost+0), \
+                    (wredir+0), (cfstray+0), \
+                    badtoken, badbrace, 49 }' "$1" "$1"
 }
 
 # THE VERDICTS, as FUNCTIONS, and that is half of the vacuity problem. Round 4
@@ -788,18 +894,28 @@ none() {      # none <count> — the "refused on sight" verdicts
 present() {   # present <flag> — exactly 1: a route/latch that must still be there
     [ "$1" = 1 ]
 }
+within() {    # within <total> <inside> — at least one, and EVERY one inside the
+    # gate: the landing port behind the apex's handle @cloudflare (#1267)
+    [ "$2" -ge 1 ] && [ "$1" = "$2" ]
+}
+all_of() {    # all_of <total> <gated> — none outside the gate; zero is allowed
+    # here, because the POSITIVE half (the apex forwards CF-Connecting-IP) is
+    # its own present() assertion
+    [ "$1" = "$2" ]
+}
 
 read -r gate_tot gate_inside s_imp s_gate s_deny s_range s_heredoc s_imports \
         s_badimport s_balanced s_nonliteral s_remote s_outdeny s_forks s_forkbad \
         s_tokbrace s_openquote s_statusproxy s_xff s_landing s_mcp s_beacon s_mcplog s_mcpret s_otherlog \
         s_sinside s_nst s_simp s_sgate s_sdeny s_shost s_sxff \
+        s_limp s_lgate s_ldeny s_wimp s_wgate s_wdeny s_ltot s_linside s_hx s_hxg s_lxff s_lhost s_wredir s_cfstray \
         s_badtoken s_badbrace s_nfields \
     <<< "$(caddy_scan "$SRC")"
-# 35 positional fields is a lot to keep in step, so the scan says how many it
+# 49 positional fields is a lot to keep in step, so the scan says how many it
 # wrote and this line checks it. A field added in the middle without updating
 # the reader would otherwise shift every variable after it silently.
-[ "${s_nfields:-}" = 35 ] \
-    && ok "the scan wrote all 35 fields the reader expects" \
+[ "${s_nfields:-}" = 49 ] \
+    && ok "the scan wrote all 49 fields the reader expects" \
     || bad "caddy_scan wrote a different number of fields (${s_nfields:-none}): every variable after the gap is shifted"
 
 # 12. the console route exists and points at the registered tenant port. It
@@ -886,8 +1002,8 @@ none "$s_forkbad" \
 # Every spelling of a door, not one: 401, 404, 503 refuse a visitor exactly as
 # 403 does, and a rule naming a single code is a rule a typo walks past.
 none "$s_outdeny" \
-    && ok "and neither does a 4xx/5xx refusal, quoted body or not" \
-    || bad "a respond 4xx/5xx appears outside the two gated site blocks ($s_outdeny line(s))"
+    && ok "and neither does a 4xx/5xx refusal, quoted body or not (the Cloudflare doors of viafrei.de and www. are judged in 14c)" \
+    || bad "a respond 4xx/5xx appears outside the gated site blocks and the Cloudflare fallbacks ($s_outdeny line(s))"
 none "$s_nonliteral" \
     && ok "every reverse_proxy upstream is a literal address ([scheme://]host[:port], [::1]:port or unix/…)" \
     || bad "$s_nonliteral upstream(s) are not a literal address (first: $s_badtoken). A placeholder, {\$ENV}, a dynamic upstream or a port range resolves somewhere this file does not say: 127.0.0.1:{http.request.header.X-Up} lets the CALLER pick the port per request, and a {placeholder} filled by a map or a vars directive is decided by a table this scanner does not follow — legitimate Caddy, still an upstream nobody reading this file can name. The gate declines to certify it rather than guess. Accepted literals: [scheme://]host[:port], a bracketed IPv6 such as [::1]:18191, and unix/… sockets"
@@ -901,11 +1017,11 @@ none "$s_heredoc" \
 # other than the allow-list file is present (0 of 0)" about a file that had
 # simply LOST the allow-list import, which names the wrong defect.
 if [ "$s_imports" -lt 1 ]; then
-    bad "the file imports nothing at all: both gated blocks' allow-list imports are gone"
+    bad "the file imports nothing at all: the allow-list imports of both gated blocks and the Cloudflare imports of viafrei.de and www. are all gone"
 elif none "$s_badimport"; then
-    ok "every import is the allow-list file itself ($s_imports import(s)) — an imported file is not in this repository and no rule here can read it"
+    ok "every import is the allow-list file or the Cloudflare ranges file ($s_imports import(s)) — an imported file is not in this repository and no rule here can read it"
 else
-    bad "an import other than the allow-list file is present ($s_badimport of $s_imports): its contents are outside this repository and could route the dashboard"
+    bad "an import other than the allow-list file or the Cloudflare ranges file is present ($s_badimport of $s_imports): its contents are outside this repository and could route the dashboard"
 fi
 door "$s_imp" "$s_gate" "$s_deny" \
     && ok "admin.viafrei.de imports the list, gates on @allowed, and its fallback is respond 4xx/5xx" \
@@ -928,15 +1044,23 @@ contained "$gate_tot" "$s_ainside" "$s_sinside" \
 # The public routes, asserted POSITIVELY: "no matcher anywhere else" would also
 # be true of a file that had lost them.
 present "$s_landing" \
-    && ok "viafrei.de still reverse-proxies 18180, unrestricted" || bad "the viafrei.de block changed"
+    && ok "viafrei.de still reverse-proxies 18180 (to everybody, through Cloudflare: 14c)" || bad "the viafrei.de block changed"
 # www.viafrei.de is a REDIRECT to the apex (viafrei repo, 2026-10-12): it
 # served the site itself and Google indexed it as a second canonical home.
-# Asserted on the committed file, block by block: the www site exists, its
-# whole body is the one permanent redir, and it proxies nothing.
+# Since #1267 it is behind Cloudflare like the apex, so its whole body is the
+# Cloudflare door with the one permanent redir inside it, and it proxies
+# nothing. Asserted on the committed file, line by line (indentation dropped).
 www_body="$(awk '/^www\.viafrei\.de[[:space:]]*\{/{f=1;next} f&&/^\}/{exit} f{gsub(/^[[:space:]]+/,"");print}' "$SRC")"
-[ "$www_body" = "redir https://viafrei.de{uri} permanent" ] \
-    && ok "www.viafrei.de 301-redirects to https://viafrei.de{uri} and does nothing else" \
-    || bad "the www.viafrei.de block is not exactly one permanent redirect to the apex (got: ${www_body:-nothing})"
+WWW_WANT="import /etc/caddy/viafrei-cloudflare.conf
+handle @cloudflare {
+redir https://viafrei.de{uri} permanent
+}
+handle {
+respond 403
+}"
+[ "$www_body" = "$WWW_WANT" ] \
+    && ok "www.viafrei.de 301-redirects Cloudflare connections to https://viafrei.de{uri}, refuses every other one, and does nothing else" \
+    || bad "the www.viafrei.de block is not exactly the Cloudflare door around one permanent redirect to the apex (got: $(printf '%s' "${www_body:-nothing}" | tr '\n' '|'))"
 # mavrov.de / www.mavrov.de are a REDIRECT to beaconfolio.com (the owner's old — de-brand:canonical: the owner's personal domain, kept only as a redirect to the product
 # domain): the whole body is the one permanent redir, and it proxies nothing.
 MAV="mavrov.de"  # de-brand:canonical: the owner's personal domain, kept only as a redirect to the product
@@ -999,6 +1123,63 @@ present "$s_sxff" \
     && ok "status.viafrei.de pins header_up X-Forwarded-For {remote_host}" \
     || bad "status.viafrei.de does not overwrite X-Forwarded-For"
 
+# 14c. viafrei.de and www.viafrei.de behind CLOUDFLARE (viafrei repo #1267,
+# owner 2026-11-09). The two names are Cloudflare-proxied; every other name on
+# this host is DNS-only, so the host's address is public and a crawler could
+# skip Cloudflare by connecting to it with `Host: viafrei.de`. Each block is
+# therefore a door of the console's shape -- its OWN import of the ranges file,
+# its OWN `handle @cloudflare`, its OWN bare `handle { respond 4xx }` -- with
+# the site INSIDE the gate. The ranges are imported, never written here (13's
+# no-literal rules hold for them too), from a file cloudflare-ranges.sh writes.
+present "$s_limp" \
+    && ok "viafrei.de imports the Cloudflare ranges from a file outside this repository" \
+    || bad "the apex viafrei.de does not import the Cloudflare ranges"
+door "$s_limp" "$s_lgate" "$s_ldeny" \
+    && ok "viafrei.de serves only inside handle @cloudflare and its fallback is respond 4xx/5xx" \
+    || bad "the apex viafrei.de does not refuse non-Cloudflare connections: import + handle @cloudflare + handle { respond 403 } is not all present (imp=$s_limp gate=$s_lgate deny=$s_ldeny)"
+present "$s_wimp" \
+    && ok "www.viafrei.de imports the same ranges file" \
+    || bad "www.viafrei.de does not import the Cloudflare ranges"
+door "$s_wimp" "$s_wgate" "$s_wdeny" \
+    && ok "www.viafrei.de redirects only inside handle @cloudflare and its fallback is respond 4xx/5xx" \
+    || bad "www.viafrei.de does not refuse non-Cloudflare connections: import + handle @cloudflare + handle { respond 403 } is not all present (imp=$s_wimp gate=$s_wgate deny=$s_wdeny)"
+within "$s_ltot" "$s_linside" \
+    && ok "every mention of 18180 is inside the apex's handle @cloudflare ($s_linside of $s_ltot): no route to the landing skips Cloudflare" \
+    || bad "18180 is reachable outside the apex's Cloudflare gate: $s_linside of $s_ltot mention(s) inside it (want >= 1, and all)"
+present "$s_lhost" \
+    && ok "inside the gate the apex passes header_up Host {host}, as before" \
+    || bad "the apex viafrei.de does not pass header_up Host {host} inside its Cloudflare gate"
+# The visitor's address. CF-Connecting-IP is what Cloudflare says the visitor
+# was, and it is only that when the CONNECTION is Cloudflare's: Cloudflare
+# overwrites the header on every request it forwards, a direct caller writes
+# whatever it likes. So the header is handed on inside the gate, OVERWRITING
+# X-Forwarded-For (header_up sets; Caddy would otherwise append), and no
+# address header anywhere in the file may be taken from a request header
+# outside a Cloudflare gate.
+present "$s_lxff" \
+    && ok "inside the gate the apex overwrites X-Forwarded-For with {http.request.header.CF-Connecting-IP}" \
+    || bad "the apex viafrei.de does not hand the tenant CF-Connecting-IP as X-Forwarded-For inside its Cloudflare gate"
+all_of "$s_hx" "$s_hxg" \
+    && ok "every address header taken from a request header is inside a Cloudflare gate ($s_hxg of $s_hx)" \
+    || bad "a client-chosen address header is forwarded outside a Cloudflare gate: $s_hxg of $s_hx inside one"
+present "$s_wredir" \
+    && ok "inside the gate www.viafrei.de redirects permanently to https://viafrei.de{uri}" \
+    || bad "www.viafrei.de does not redirect Cloudflare connections to the apex"
+none "$s_cfstray" \
+    && ok "the Cloudflare ranges are imported by viafrei.de and www. only, and @cloudflare is defined nowhere in this file (mcp., status., admin., mail. and beaconfolio stay DNS-only)" \
+    || bad "the Cloudflare ranges are imported or @cloudflare defined outside viafrei.de/www.viafrei.de ($s_cfstray): a DNS-only name gated on Cloudflare refuses every real visitor"
+# What the owner must get right on the HOST, stated where the change is made,
+# and the generator's target being the file the blocks import.
+grep -q '/etc/caddy/viafrei-cloudflare.conf   (root:caddy, 0640)' "$SRC" \
+    && ok "the ranges file's documented path and mode are /etc/caddy/viafrei-cloudflare.conf, root:caddy 0640" \
+    || bad "the Caddyfile does not document the ranges file as /etc/caddy/viafrei-cloudflare.conf (root:caddy, 0640)"
+grep -q 'cloudflare-ranges.sh --write' "$SRC" \
+    && ok "and names the generator that writes it" \
+    || bad "the Caddyfile does not name cloudflare-ranges.sh --write"
+grep -qF 'DST="${CF_RANGES_DST:-/etc/caddy/viafrei-cloudflare.conf}"' "$HERE/cloudflare-ranges.sh" 2>/dev/null \
+    && ok "cloudflare-ranges.sh writes exactly the file the two blocks import" \
+    || bad "cloudflare-ranges.sh does not default to /etc/caddy/viafrei-cloudflare.conf, the file the blocks import"
+
 # Sections 16 and 17 are the suite examining ITSELF, and section 17 re-executes
 # this file against mutated copies of the Caddyfile. A child run stops here: it
 # is the subject, not the examiner, and recursing would fork without end.
@@ -1027,6 +1208,7 @@ vac_scan() { # vac_scan <file>; sets v_* in THIS shell -- no pipeline, no subshe
             v_badimport v_balanced v_nonliteral v_remote v_outdeny v_forks v_forkbad \
             v_tokbrace v_openquote v_statusproxy v_xff v_landing v_mcp v_beacon v_mcplog v_mcpret v_otherlog \
             v_sinside v_nst v_simp v_sgate v_sdeny v_shost v_sxff \
+            v_limp v_lgate v_ldeny v_wimp v_wgate v_wdeny v_ltot v_linside v_hx v_hxg v_lxff v_lhost v_wredir v_cfstray \
             v_badtoken v_badbrace v_nfields \
         <<< "$(caddy_scan "$1")"
 }
@@ -1807,6 +1989,70 @@ vac_scan "$TMP/vac-st4"
     && ok "(sb4) two status.viafrei.de blocks are counted as two ($v_nst)" \
     || bad "(sb4) two status.viafrei.de blocks were not counted as two: nst=$v_nst"
 
+# (cf1) the Cloudflare door (viafrei #1267), read the way the committed file
+# is written, and kept apart from the gated sites: none of its doors is
+# out_deny, its import is not a foreign one, its X-Forwarded-For is gated.
+cat > "$TMP/vac-cf1" <<'VACEOF'
+viafrei.de {
+	import /etc/caddy/viafrei-cloudflare.conf
+	handle @cloudflare {
+		reverse_proxy 127.0.0.1:18180 {
+			header_up Host {host}
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		}
+	}
+	handle {
+		respond 403
+	}
+}
+www.viafrei.de {
+	import /etc/caddy/viafrei-cloudflare.conf
+	handle @cloudflare {
+		redir https://viafrei.de{uri} permanent
+	}
+	handle {
+		respond 403
+	}
+}
+VACEOF
+vac_scan "$TMP/vac-cf1"
+[ "$v_limp$v_lgate$v_ldeny$v_wimp$v_wgate$v_wdeny" = 111111 ] && [ "$v_ltot" = 1 ] && [ "$v_linside" = 1 ] \
+    && [ "$v_hx" = 1 ] && [ "$v_hxg" = 1 ] && [ "$v_lxff" = 1 ] && [ "$v_lhost" = 1 ] && [ "$v_wredir" = 1 ] \
+    && [ "$v_cfstray" = 0 ] && [ "$v_outdeny" = 0 ] && [ "$v_badimport" = 0 ] && [ "$v_imports" = 2 ] \
+    && [ "$v_imp$v_simp$v_deny$v_sdeny" = 0000 ] && [ "$v_landing" = 1 ] \
+    && ok "(cf1) both Cloudflare doors read as import + gate + door, the site and the header inside the gate, and none of it credited to the gated sites" \
+    || bad "(cf1) the Cloudflare doors were misread: l=$v_limp$v_lgate$v_ldeny w=$v_wimp$v_wgate$v_wdeny 18180=$v_linside/$v_ltot hx=$v_hxg/$v_hx lxff=$v_lxff lhost=$v_lhost wredir=$v_wredir stray=$v_cfstray outdeny=$v_outdeny badimport=$v_badimport imports=$v_imports | gated imp=$v_imp/$v_simp deny=$v_deny/$v_sdeny"
+
+# (cf2) the doors in the WRONG place: a refusal inside handle @cloudflare
+# turns Cloudflare itself away (out_deny), the header outside the gate is a
+# client-chosen address, the import in a DNS-only block and a hand-written
+# @cloudflare definition are stray, and the www block has no redirect.
+cat > "$TMP/vac-cf2" <<'VACEOF'
+viafrei.de {
+	import /etc/caddy/viafrei-cloudflare.conf
+	reverse_proxy /x* 127.0.0.1:18180 {
+		header_up X-Forwarded-For {header.CF-Connecting-IP}
+	}
+	handle @cloudflare {
+		respond 403
+	}
+}
+www.viafrei.de {
+	@cloudflare path /*
+	handle @cloudflare {
+		reverse_proxy 127.0.0.1:18180
+	}
+}
+mcp.viafrei.de {
+	import /etc/caddy/viafrei-cloudflare.conf
+}
+VACEOF
+vac_scan "$TMP/vac-cf2"
+[ "$v_outdeny" = 1 ] && [ "$v_ldeny" = 0 ] && [ "$v_hx" = 1 ] && [ "$v_hxg" = 0 ] && [ "$v_cfstray" = 2 ] \
+    && [ "$v_wredir" = 0 ] && [ "$v_wimp" = 0 ] && [ "$v_ltot" = 2 ] && [ "$v_linside" = 0 ] && [ "$v_lxff" = 0 ] \
+    && ok "(cf2) a door inside the gate, an ungated client header, a stray import and definition, and a www that proxies are each seen" \
+    || bad "(cf2) a misplaced Cloudflare door was not seen: outdeny=$v_outdeny ldeny=$v_ldeny hx=$v_hxg/$v_hx stray=$v_cfstray wredir=$v_wredir wimp=$v_wimp 18180=$v_linside/$v_ltot lxff=$v_lxff"
+
 # (j) THE SECOND HALF, and the one round 4 was missing: the VERDICTS. Every
 # tick in section 14 is a comparison, and until these six lines existed no test
 # could tell a comparison that judges from one that says yes. Neuter
@@ -1851,6 +2097,21 @@ door 1 1 0 \
 none 0 && none 1 \
     && bad "(j) the refusal verdict ACCEPTS 1: every 'refused on sight' rule above is decoration" \
     || ok "(j) the refusal verdicts accept 0 and reject 1"
+within 2 2 \
+    && ok "(j) the landing verdict accepts 2 of 2 inside the Cloudflare gate" \
+    || bad "(j) the landing verdict rejects 2 of 2 — the committed file would be red"
+within 2 1 \
+    && bad "(j) the landing verdict ACCEPTS 1 of 2: a route to 18180 skipping Cloudflare passes" \
+    || ok "(j) and rejects 1 of 2"
+within 0 0 \
+    && bad "(j) the landing verdict ACCEPTS 0 of 0: a file that no longer serves the site passes" \
+    || ok "(j) and rejects 0 of 0"
+all_of 1 1 && all_of 0 0 \
+    && ok "(j) the client-header verdict accepts 1 of 1 gated, and none at all" \
+    || bad "(j) the client-header verdict rejects a fully gated file"
+all_of 2 1 \
+    && bad "(j) the client-header verdict ACCEPTS 1 gated of 2: a client-chosen X-Forwarded-For passes" \
+    || ok "(j) and rejects 1 gated of 2"
 
 echo
 echo "== 17. the WIRING: the whole suite, run against a mutated copy of the real file =="
@@ -1868,7 +2129,7 @@ echo "== 17. the WIRING: the whole suite, run against a mutated copy of the real
 # satisfied by a child that always fails, which is the same vacuity one level up.
 e17="$TMP/e17"
 mkdir -p "$e17"
-cp "$HERE/apply.sh" "$HERE/apply.test.sh" "$HERE/ports.md" "$e17/"
+cp "$HERE/apply.sh" "$HERE/apply.test.sh" "$HERE/ports.md" "$HERE/cloudflare-ranges.sh" "$e17/"
 child_rc() { # child_rc -> the suite's exit code in $e17, against $e17/Caddyfile
     local rc=0
     ( cd "$e17" && VF_EDGE_CHILD=1 bash ./apply.test.sh ) >/dev/null 2>&1 || rc=$?
@@ -2026,11 +2287,25 @@ fi
 
 grep -v '^[[:space:]]*import /etc/caddy/viafrei-status-allow[.]conf$' "$SRC" > "$TMP/m17"
 if mutate "both allow-list imports deleted" "$TMP/m17"; then
-    expect_fail "both blocks losing their imports fails end to end, on both IMPORT and both DOOR assertions and the no-import-at-all precondition" \
+    expect_fail "both blocks losing their imports fails end to end, on both IMPORT and both DOOR assertions" \
+        "admin.viafrei.de does not import its address list" \
+        "admin.viafrei.de does not positively refuse" \
+        "status.viafrei.de does not import its address list" \
+        "status.viafrei.de does not positively refuse"
+fi
+
+grep -v '^[[:space:]]*import ' "$SRC" > "$TMP/m17"
+if mutate "every import deleted" "$TMP/m17"; then
+    expect_fail "a file with no import at all fails end to end, on all four IMPORT and DOOR pairs and the no-import-at-all precondition" \
         "admin.viafrei.de does not import its address list" \
         "admin.viafrei.de does not positively refuse" \
         "status.viafrei.de does not import its address list" \
         "status.viafrei.de does not positively refuse" \
+        "the apex viafrei.de does not import the Cloudflare ranges" \
+        "the apex viafrei.de does not refuse non-Cloudflare connections" \
+        "www.viafrei.de does not import the Cloudflare ranges" \
+        "www.viafrei.de does not refuse non-Cloudflare connections" \
+        "the www.viafrei.de block is not exactly" \
         "the file imports nothing at all"
 fi
 
@@ -2103,7 +2378,7 @@ awk '{ print }
      }' "$SRC" > "$TMP/m17"
 if mutate "a catch-all door on the public landing" "$TMP/m17"; then
     expect_fail "a catch-all handle * door fails end to end, on the OUTSIDE-DOOR assertion" \
-        "a respond 4xx/5xx appears outside the two gated site blocks"
+        "a respond 4xx/5xx appears outside the gated site blocks"
 fi
 
 grep -v 'flush_interval' "$SRC" > "$TMP/m17"
@@ -2142,6 +2417,239 @@ if mutate "the IPv4 mask widened to /32 (no truncation)" "$TMP/m17"; then
     expect_fail "an untruncated IPv4 address fails end to end, on the PRIVACY-FLOOR assertion" \
         "the mcp.viafrei.de access log lost its privacy floor"
 fi
+
+# --- the Cloudflare door (viafrei #1267), each rule broken on its own ---------
+# THE IMPORT REMOVED: without it @cloudflare is undefined (Caddy refuses to
+# adapt) -- and the suite must say which block lost it, not merely go red.
+inblock 'viafrei.de' '^[[:space:]]*import /etc/caddy/viafrei-cloudflare[.]conf$' > "$TMP/m17"
+if mutate "the apex block's Cloudflare import deleted" "$TMP/m17"; then
+    expect_fail "the apex losing its ranges import fails end to end, on the APEX IMPORT and APEX DOOR assertions only — the www import does not stand in for it" \
+        "the apex viafrei.de does not import the Cloudflare ranges" \
+        "the apex viafrei.de does not refuse non-Cloudflare connections"
+fi
+inblock 'www.viafrei.de' '^[[:space:]]*import /etc/caddy/viafrei-cloudflare[.]conf$' > "$TMP/m17"
+if mutate "the www block's Cloudflare import deleted" "$TMP/m17"; then
+    expect_fail "www losing its ranges import fails end to end, on the WWW IMPORT and WWW DOOR assertions and its exact body" \
+        "www.viafrei.de does not import the Cloudflare ranges" \
+        "www.viafrei.de does not refuse non-Cloudflare connections" \
+        "the www.viafrei.de block is not exactly"
+fi
+
+# THE 403 DOOR REMOVED: the bare handle stays and answers nothing -- Caddy then
+# serves an empty 200 to a crawler that skipped Cloudflare.
+inblock 'viafrei.de' 'respond[[:space:]].*[45][0-9][0-9]' > "$TMP/m17"
+if mutate "the apex block's 403 deleted" "$TMP/m17"; then
+    expect_fail "the apex losing its 403 fails end to end, on the APEX DOOR assertion and only that one" \
+        "the apex viafrei.de does not refuse non-Cloudflare connections"
+fi
+inblock 'www.viafrei.de' 'respond[[:space:]].*[45][0-9][0-9]' > "$TMP/m17"
+if mutate "the www block's 403 deleted" "$TMP/m17"; then
+    expect_fail "www losing its 403 fails end to end, on the WWW DOOR assertion and its exact body" \
+        "www.viafrei.de does not refuse non-Cloudflare connections" \
+        "the www.viafrei.de block is not exactly"
+fi
+
+# THE GATE REMOVED around the whole apex: the pre-#1267 block, plus the new
+# header. Every connection is served and the address is the caller's choice.
+awk '$0 == "viafrei.de {" {
+         print
+         print "\treverse_proxy 127.0.0.1:18180 {"
+         print "\t\theader_up Host {host}"
+         print "\t\theader_up X-Forwarded-For {http.request.header.CF-Connecting-IP}"
+         print "\t}"
+         skip = 1; next
+     }
+     skip && /^}$/ { skip = 0 }
+     !skip { print }' "$SRC" > "$TMP/m17"
+if mutate "the apex reverted to an ungated proxy that still trusts CF-Connecting-IP" "$TMP/m17"; then
+    expect_fail "an ungated apex fails end to end, on its IMPORT, DOOR, 18180 CONTAINMENT, Host, CF-Connecting-IP and CLIENT-HEADER assertions" \
+        "the apex viafrei.de does not import the Cloudflare ranges" \
+        "the apex viafrei.de does not refuse non-Cloudflare connections" \
+        "18180 is reachable outside the apex's Cloudflare gate" \
+        "the apex viafrei.de does not pass header_up Host {host} inside its Cloudflare gate" \
+        "the apex viafrei.de does not hand the tenant CF-Connecting-IP as X-Forwarded-For" \
+        "a client-chosen address header is forwarded outside a Cloudflare gate"
+fi
+
+# XFF FROM A CLIENT HEADER WITHOUT THE GATE, two spellings: a sibling route in
+# the apex that skips handle @cloudflare, and a DNS-only block (the console)
+# taking its address from CF-Connecting-IP -- which any caller can send there.
+awk '{ print }
+     /^viafrei\.de \{$/ {
+         print "\treverse_proxy /api* 127.0.0.1:18180 {"
+         print "\t\theader_up X-Forwarded-For {http.request.header.CF-Connecting-IP}"
+         print "\t}"
+     }' "$SRC" > "$TMP/m17"
+if mutate "an ungated sibling route in the apex forwarding CF-Connecting-IP" "$TMP/m17"; then
+    expect_fail "an apex route outside handle @cloudflare fails end to end, on 18180 CONTAINMENT and the CLIENT-HEADER assertion" \
+        "18180 is reachable outside the apex's Cloudflare gate" \
+        "a client-chosen address header is forwarded outside a Cloudflare gate"
+fi
+awk '$0 == "admin.viafrei.de {" { b = 1 }
+     b && /header_up X-Forwarded-For/ { sub(/[{]remote_host[}]/, "{http.request.header.CF-Connecting-IP}") }
+     /^}$/ { b = 0 }
+     { print }' "$SRC" > "$TMP/m17"
+if mutate "the console taking X-Forwarded-For from CF-Connecting-IP" "$TMP/m17"; then
+    expect_fail "a DNS-only block trusting CF-Connecting-IP fails end to end, on the ADMIN X-FORWARDED-FOR and CLIENT-HEADER assertions" \
+        "admin.viafrei.de does not overwrite X-Forwarded-For" \
+        "a client-chosen address header is forwarded outside a Cloudflare gate"
+fi
+
+# WWW STOPS REDIRECTING: the redir deleted, and the redir replaced by the site
+# itself (the duplicate canonical home of 2026-10-12, back again).
+inblock 'www.viafrei.de' 'redir ' > "$TMP/m17"
+if mutate "the www redirect deleted" "$TMP/m17"; then
+    expect_fail "www without its redirect fails end to end, on the WWW REDIRECT assertion and its exact body" \
+        "www.viafrei.de does not redirect Cloudflare connections to the apex" \
+        "the www.viafrei.de block is not exactly"
+fi
+awk '$0 == "www.viafrei.de {" { b = 1 }
+     b && /redir / { sub(/redir .*/, "reverse_proxy 127.0.0.1:18180") }
+     /^}$/ { b = 0 }
+     { print }' "$SRC" > "$TMP/m17"
+if mutate "www serving the site instead of redirecting" "$TMP/m17"; then
+    expect_fail "www serving the site fails end to end, on the WWW REDIRECT, its exact body and 18180 CONTAINMENT" \
+        "www.viafrei.de does not redirect Cloudflare connections to the apex" \
+        "the www.viafrei.de block is not exactly" \
+        "18180 is reachable outside the apex's Cloudflare gate"
+fi
+
+# THE MCP BLOCK STAYS DNS-ONLY: the ranges imported there would refuse every
+# MCP client (none of them connects through Cloudflare).
+awk '{ print } /^mcp\.viafrei\.de \{$/ { print "\timport /etc/caddy/viafrei-cloudflare.conf" }' "$SRC" > "$TMP/m17"
+if mutate "the Cloudflare ranges imported into the mcp block" "$TMP/m17"; then
+    expect_fail "a Cloudflare import in mcp.viafrei.de fails end to end, on the STRAY-IMPORT assertion and only that one" \
+        "the Cloudflare ranges are imported or @cloudflare defined outside"
+fi
+
+echo
+echo "== 18. cloudflare-ranges.sh: the file the Cloudflare door imports (viafrei #1267) =="
+# The generator decides who may reach viafrei.de at all, so it is held to the
+# edge's own standard: fail closed, write nothing on a refusal, never a
+# half-written file. Hermetic: curl is a stub serving fixture lists, the
+# target is a scratch file, owner and group are this user (no root needed).
+GEN="$HERE/cloudflare-ranges.sh"
+g18="$TMP/g18"; mkdir -p "$g18/bin" "$g18/fix" "$g18/etc"
+cat > "$g18/bin/curl" <<'EOF'
+#!/usr/bin/env bash
+# serves $CF_FIX/ips-v4 or ips-v6 for the URL it is given; records its argv
+echo "curl $*" >> "$CF_CURL_LOG"
+out=""; url=""
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        -o) out="$2"; shift 2 ;;
+        https://*) url="$1"; shift ;;
+        *) shift ;;
+    esac
+done
+name="${url##*/}"
+[ -n "${CF_FAIL:-}" ] && [ "$name" = "$CF_FAIL" ] && exit 22
+[ -f "$CF_FIX/$name" ] || exit 22
+cp "$CF_FIX/$name" "$out"
+EOF
+chmod +x "$g18/bin/curl"
+# Cloudflare's published ranges (2026-11): public infrastructure, not personal
+# data -- and they live HERE, in a test fixture, never in the Caddyfile.
+V4FIX="173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22 198.41.128.0/17 162.158.0.0/15 104.16.0.0/13 104.24.0.0/14 172.64.0.0/13 131.0.72.0/22"
+V6FIX="2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32 2405:8100::/32 2a06:98c0::/29 2c0f:f248::/32"
+fixlists() { # fixlists <v4 list> <v6 list> -> one CIDR per line, as Cloudflare serves them
+    printf '%s\n' $1 > "$g18/fix/ips-v4"
+    printf '%s\n' $2 > "$g18/fix/ips-v6"
+}
+G18DST="$g18/etc/viafrei-cloudflare.conf"
+gen() { # gen <args...> -> rc in $grc, output in $g18/out
+    grc=0
+    env CF_RANGES_DST="$G18DST" CF_RANGES_CURL="$g18/bin/curl" CF_RANGES_SUDO= \
+        CF_RANGES_OWNER="$ME" CF_RANGES_GROUP="$(id -gn)" CF_FIX="$g18/fix" \
+        CF_CURL_LOG="$g18/curl.log" CF_FAIL="${CF_FAIL:-}" \
+        bash "$GEN" "$@" > "$g18/out" 2>&1 || grc=$?
+}
+mode_of() { ls -l "$1" | cut -c1-10; }
+
+fixlists "$V4FIX" "$V6FIX"; : > "$g18/curl.log"
+gen --check
+check "(18) --check with no file yet says so" 1 "$grc"
+[ ! -e "$G18DST" ] && ok "(18) and writes nothing" || bad "(18) --check WROTE the file"
+gen --write
+check "(18) --write on a fresh host succeeds" 0 "$grc"
+[ "$(mode_of "$G18DST")" = "-rw-r-----" ] \
+    && ok "(18) the file is 0640 (the group reads it, nobody else)" \
+    || bad "(18) the file mode is $(mode_of "$G18DST"), not 0640"
+body="$(grep -v '^#' "$G18DST")"
+[ "$body" = "@cloudflare remote_ip $V4FIX $V6FIX" ] \
+    && ok "(18) its one configuration line is @cloudflare remote_ip with all 15 + 7 ranges, in order" \
+    || bad "(18) the configuration line is not the expected @cloudflare remote_ip line"
+[ "$(grep -vc '^#' "$G18DST")" = 1 ] && [ ! -e "$G18DST.bak" ] \
+    && ok "(18) exactly one non-comment line, and no .bak on a first write" \
+    || bad "(18) more than one configuration line, or a .bak with nothing to back up"
+grep -q -- "--proto =https" "$g18/curl.log" && grep -q -- "--max-time" "$g18/curl.log" \
+    && grep -q 'https://www.cloudflare.com/ips-v4' "$g18/curl.log" && grep -q 'https://www.cloudflare.com/ips-v6' "$g18/curl.log" \
+    && ok "(18) both lists are fetched from cloudflare.com over https only, with a deadline" \
+    || bad "(18) the fetch is not https-only with a deadline from the two cloudflare.com URLs"
+cp "$G18DST" "$g18/first"
+gen --check
+check "(18) --check on the file just written is green" 0 "$grc"
+gen
+check "(18) and so is the default mode (read-only --check)" 0 "$grc"
+gen --write
+check "(18) a second --write with nothing new succeeds" 0 "$grc"
+grep -q 'nothing written' "$g18/out" && [ ! -e "$G18DST.bak" ] \
+    && ok "(18) and writes nothing (no .bak churn)" || bad "(18) an unchanged list was rewritten"
+
+# a changed list: --check reports it and changes nothing; --write keeps .bak
+fixlists "${V4FIX% *}" "$V6FIX"
+gen --check
+check "(18) --check on a changed list is red" 1 "$grc"
+cmp -s "$G18DST" "$g18/first" && ok "(18) and leaves the installed file alone" || bad "(18) --check changed the installed file"
+gen --write
+check "(18) --write on a changed list succeeds" 0 "$grc"
+cmp -s "$G18DST.bak" "$g18/first" && ! cmp -s "$G18DST" "$g18/first" \
+    && ok "(18) the previous file is kept as .bak and the new one is in place" \
+    || bad "(18) the .bak is not the previous file, or the new list was not installed"
+/bin/ls "$g18/etc" | grep -q '\.new\.' \
+    && bad "(18) a temporary file was left beside the target" || ok "(18) no temporary file is left beside the target"
+cp "$G18DST" "$g18/second"
+
+# REFUSALS: exit 2, and the installed file byte-identical afterwards
+refused() { # refused <desc> -> asserts exit 2 and an unchanged target
+    check "(18) $1 is refused with exit 2" 2 "$grc"
+    cmp -s "$G18DST" "$g18/second" && ok "(18) and the installed file is untouched ($1)" \
+        || bad "(18) the installed file CHANGED on a refusal ($1)"
+}
+fixlists "173.245.48.0/20 103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 141.101.64.0/18 108.162.192.0/18 190.93.240.0/20 188.114.96.0/20 197.234.240.0/22" "$V6FIX"
+gen --write; refused "a list of 9 IPv4 ranges"
+fixlists "$V4FIX" "2400:cb00::/32 2606:4700::/32 2803:f800::/32 2405:b500::/32"
+gen --write; refused "a list of 4 IPv6 ranges"
+fixlists "" ""
+gen --write; refused "an empty download"
+fixlists "$V4FIX" "$V6FIX"
+printf '<html><body>Just a moment...</body></html>\n' >> "$g18/fix/ips-v4"
+gen --write; refused "an HTML page appended to the IPv4 list"
+fixlists "$V4FIX 300.1.2.0/24" "$V6FIX"
+gen --write; refused "an IPv4 octet above 255"
+fixlists "$V4FIX 0.0.0.0/0" "$V6FIX"
+gen --write; refused "an IPv4 /0 (everybody would be Cloudflare)"
+fixlists "$V4FIX" "$V6FIX ::/0"
+gen --write; refused "an IPv6 /0"
+fixlists "$V4FIX" "$V6FIX 173.245.48.0/20"
+gen --write; refused "an IPv4 range in the IPv6 list"
+fixlists "$V4FIX" "$V6FIX"
+CF_FAIL=ips-v6 gen --write; refused "a failed IPv6 download"
+CF_FAIL=ips-v6 gen --check
+check "(18) --check refuses a failed download too (exit 2, not a diff)" 2 "$grc"
+gen --frobnicate
+check "(18) an unknown mode is a usage error" 64 "$grc"
+gen --write --check
+check "(18) two modes at once are a usage error" 64 "$grc"
+# CRLF is still the list: the same ranges with a CR on every line
+fixlists "${V4FIX% *}" "$V6FIX"
+sed 's/$/\r/' "$g18/fix/ips-v4" > "$g18/fix/v4crlf" && mv "$g18/fix/v4crlf" "$g18/fix/ips-v4"
+gen --check
+check "(18) a CRLF download of the installed list reads as the same list" 0 "$grc"
+# the generator's file is the shape the Caddyfile gates on
+grep -q '^@cloudflare remote_ip ' "$G18DST" && grep -q '^[[:space:]]*handle @cloudflare {$' "$SRC" \
+    && ok "(18) the generated matcher is @cloudflare, the name both Caddyfile blocks gate on" \
+    || bad "(18) the generated matcher name and the Caddyfile's gate disagree"
 
 echo
 echo "== apply.sh contract: $PASS passed, $FAIL failed =="

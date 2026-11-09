@@ -70,9 +70,65 @@ mavrov.de, www.mavrov.de { # de-brand:canonical: the owner's personal domain, ke
 # :18181 still exists in the tenant's compose and still serves the old notice;
 # nothing routes to it. Retiring the port is a viafrei-repo change and belongs
 # with the v0.1.0 landing work.
+#
+# BEHIND CLOUDFLARE (viafrei repo issue #1267, owner 2026-11-09: protection
+# from crawlers that ignore robots.txt). viafrei.de and www.viafrei.de are the
+# ONLY two names on this host whose DNS records are Cloudflare-PROXIED; every
+# other name (mcp., status., admin., mail. and every beaconfolio site) stays a
+# plain A/AAAA record and its block below does not know Cloudflare exists.
+# Public still means public: everybody reaches the site — through Cloudflare.
+#
+#   * A connection whose peer is a Cloudflare address is served exactly as
+#     before: the apex reverse-proxies to :18180 with Host passed through, www
+#     redirects permanently to the apex.
+#   * ANY OTHER CONNECTION GETS 403. This host's address is public through the
+#     DNS-only names, so a crawler could otherwise skip Cloudflare by sending
+#     `Host: viafrei.de` straight to it — the bypass is one curl --resolve.
+#   * The apex hands the tenant the VISITOR's address as X-Forwarded-For,
+#     taken from CF-Connecting-IP — OVERWRITTEN, never appended, and ONLY
+#     inside `handle @cloudflare`: a client header is trustworthy only when the
+#     connection carrying it is Cloudflare's, which overwrites that header on
+#     every request it forwards. Outside the gate the same header would let a
+#     direct caller choose its own address for the tenant's rate limit and
+#     place lookup. Without it the tenant would see one Cloudflare PoP for
+#     every visitor.
+#
+# THE RANGES ARE NOT IN THIS FILE, for the same reason the allow-list below is
+# not: this file carries no address literal (apply.test.sh refuses one), and
+# the list changes on Cloudflare's schedule, not on a code review. `import`
+# reads one line from a host-side file written by a committed generator:
+#
+#     /etc/caddy/viafrei-cloudflare.conf   (root:caddy, 0640), one line:
+#         @cloudflare remote_ip <cidr> [<cidr> …]
+#
+#     sudo bash infra/edge/cloudflare-ranges.sh --write   # fetch, validate, install
+#     sudo bash infra/edge/cloudflare-ranges.sh --check   # read-only: current?
+#
+# The generator fetches https://www.cloudflare.com/ips-v4 and /ips-v6, refuses
+# any line that is not a CIDR and a list shorter than 10 IPv4 or 5 IPv6
+# ranges (exit 2: a truncated download must never become "nobody may reach
+# the site"), writes atomically and keeps the previous file as .bak. A
+# refreshed list needs a validate + reload; apply.sh does not reload an edge
+# whose Caddyfile is already in sync.
+#
+# The file must exist BEFORE the first apply: `caddy validate` fails on an
+# import that matches no file, and apply.sh refuses by name before it gets
+# there. A missing file therefore means "the change does not happen", never
+# "the site is open to every crawler" nor "the site is shut".
+#
+# ORDER ON THE DAY: switch the two records to proxied in Cloudflare FIRST, then
+# apply this file. Applied while the records are still DNS-only, every visitor
+# connects directly and gets the 403.
 viafrei.de {
-	reverse_proxy 127.0.0.1:18180 {
-		header_up Host {host}
+	import /etc/caddy/viafrei-cloudflare.conf
+	handle @cloudflare {
+		reverse_proxy 127.0.0.1:18180 {
+			header_up Host {host}
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		}
+	}
+	handle {
+		respond 403
 	}
 }
 
@@ -81,8 +137,16 @@ viafrei.de {
 # https://www.viafrei.de/ as its own canonical page beside https://viafrei.de/de
 # (Search Console URL inspection, 2026-10-12) — a duplicate of the home page.
 # Permanent, path and query kept; the certificate for www stays automatic.
+# Behind Cloudflare like the apex (#1267), with the same door: a direct
+# connection gets 403, not the redirect.
 www.viafrei.de {
-	redir https://viafrei.de{uri} permanent
+	import /etc/caddy/viafrei-cloudflare.conf
+	handle @cloudflare {
+		redir https://viafrei.de{uri} permanent
+	}
+	handle {
+		respond 403
+	}
 }
 
 # ACCESS LOG for mcp.viafrei.de ONLY (viafrei repo issue #438, that tenant's
@@ -155,9 +219,11 @@ mcp.viafrei.de {
 }
 
 # The viafrei tenant's OPERATIONS CONSOLE (viafrei repo issues #94, #560) — one
-# of the TWO site blocks on this host with an IP restriction (the other is the
-# status page, the next block), and deliberately so: the blocks above serve the
-# product and stay PUBLIC (viafrei owner, 2026-09-19), this one serves the
+# of the TWO site blocks on this host gated on the owner's addresses (the other
+# is the status page, the next block), and deliberately so: the blocks above
+# serve the product and stay PUBLIC (viafrei owner, 2026-09-19; viafrei.de and
+# www. are gated on CLOUDFLARE's ranges, which is not a restriction on who may
+# read them, only on the road they take — #1267), this one serves the
 # operational surface — every worker's effective configuration, every feed's
 # errors, the schema head, what is deployed, and since viafrei 2.0 the owner's
 # restart and configuration actions. It moved from status.viafrei.de to

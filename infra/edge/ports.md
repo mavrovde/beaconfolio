@@ -9,7 +9,7 @@ tenant binds only `127.0.0.1:<port>` inside its allocated block, and the edge
 | Range         | Tenant        | In use today                                                                 |
 |---------------|---------------|------------------------------------------------------------------------------|
 | 18000–18099   | beaconfolio   | 18080 (proxy HTTP, redirect-only), 18443* (proxy HTTPS, the edge upstream)   |
-| 18100–18199   | viafrei       | 18180 (landing HTTP, PUBLIC), 18181 (retired preview root, nothing routes to it)****, 18187 (MCP Streamable HTTP, PUBLIC), 18190 (status page + operations console, both IP-gated)***, 18132 (Postgres, tooling) |
+| 18100–18199   | viafrei       | 18180 (landing HTTP, PUBLIC through Cloudflare)*****, 18181 (retired preview root, nothing routes to it)****, 18187 (MCP Streamable HTTP, PUBLIC), 18190 (status page + operations console, both IP-gated)***, 18132 (Postgres, tooling) |
 | 18200–18999   | *unallocated* | — claim the next free 100-block per tenant via PR against this file          |
 | 5433**        | beaconfolio   | Postgres (`127.0.0.1:5433`, compose `db` publish — local pytest + tooling)   |
 | 25, 465, 587, 993 | beaconfolio | Mail (`mailserver` compose service, profile `mailserver`): 25 inbound MX, 465/587 submission, 993 IMAP. PUBLIC on all addresses (not via the edge); ufw opens them. The host's ONE SMTP listener: a second mail domain (e.g. viafrei.de, whose MX also resolves here) joins this server rather than binding 25 again |
@@ -24,7 +24,7 @@ served under two names since viafrei 2.0: `status.viafrei.de` is the status
 page and `admin.viafrei.de` is the operations console; the container routes by
 Host, so the two names still reach different routers (a console path on the
 status name answers 404). They are the two routes on this host whose site
-blocks carry an IP restriction, and both have exactly the same shape: the block
+blocks carry the owner's address allow-list, and both have exactly the same shape: the block
 matches `remote_ip` against an address list imported from
 `/etc/caddy/viafrei-status-allow.conf` (root:caddy, 0640 — the addresses are
 personal data and this is a shared host) — a file outside every repository —
@@ -33,7 +33,8 @@ viafrei 2.0 until 2026-10-13, when its owner closed it again ("Close the status
 panel by the ip white list again, it should be available only to our laptop").
 Both DNS records must be a plain A/AAAA: `remote_ip` matches the direct peer, so
 a proxied record would make the matcher see the proxy and the restriction mean
-nothing. `viafrei.de` and `mcp.viafrei.de` are unaffected and stay public. Like
+nothing. `viafrei.de` and `mcp.viafrei.de` are unaffected and stay public
+(`viafrei.de` through Cloudflare, see *****). Like
 every tenant port it is bound `127.0.0.1` only. For `admin.viafrei.de` the
 container behind it enforces the same list a second time (empty = deny all);
 `status.viafrei.de` reaches the app's public router, which reads no allow-list,
@@ -76,3 +77,31 @@ its two sides used to be will not tell you when one of them changes.
 The port is still published by the tenant's compose and still serves the old
 notice to nobody. Retiring it is a viafrei-repo change and belongs with the
 v0.1.0 landing work.
+
+\***** 18180 is reached ONLY through Cloudflare since viafrei repo issue #1267
+(owner 2026-11-09, protection from crawlers that ignore robots.txt).
+`viafrei.de` and `www.viafrei.de` are the only Cloudflare-PROXIED records on
+this host; every other name (`mcp.`, `status.`, `admin.`, `mail.` and every
+beaconfolio site) stays a plain A/AAAA record. Both blocks import
+`/etc/caddy/viafrei-cloudflare.conf` (root:caddy, 0640) — one
+`@cloudflare remote_ip …` line, never committed — serve inside
+`handle @cloudflare` and answer `403` to every other connection, because the
+host address is public through the DNS-only names. The apex overwrites
+`X-Forwarded-For` with `CF-Connecting-IP` inside the gate only, so the tenant's
+rate limit and place lookup see the visitor rather than a Cloudflare PoP.
+
+The file is written by `infra/edge/cloudflare-ranges.sh`:
+
+- `sudo bash infra/edge/cloudflare-ranges.sh --write` fetches
+  `https://www.cloudflare.com/ips-v4` and `/ips-v6`, refuses any line that is
+  not a CIDR, any prefix shorter than /8 (IPv4) or /12 (IPv6), and a list
+  shorter than 10 IPv4 or 5 IPv6 ranges (exit 2, nothing written), then
+  installs it atomically and keeps the previous file as `.bak`;
+- `sudo bash infra/edge/cloudflare-ranges.sh --check` is read-only and exits 1
+  when the installed file is missing or differs from Cloudflare's lists.
+
+`apply.sh --apply` refuses by name while the file is missing or empty. A
+refreshed list takes effect after `caddy validate` + `systemctl reload caddy`
+(apply.sh does not reload an edge whose Caddyfile is already in sync).
+Order on the day: switch the two records to proxied FIRST, then apply — the
+other way round, every visitor connects directly and gets the 403.
