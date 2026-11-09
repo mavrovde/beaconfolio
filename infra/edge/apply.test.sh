@@ -63,7 +63,7 @@ ME="$(id -un)"
 IMPORTS="$TMP/importroot"
 mkdir -p "$IMPORTS/etc/caddy"
 printf '@allowed remote_ip 192.0.2.7/32\n' > "$IMPORTS/etc/caddy/viafrei-status-allow.conf"
-printf '@cloudflare remote_ip 198.51.100.0/24 2001:db8::/32\n' > "$IMPORTS/etc/caddy/viafrei-cloudflare.conf"
+printf 'remote_ip 198.51.100.0/24 2001:db8::/32\n' > "$IMPORTS/etc/caddy/viafrei-cloudflare.conf"
 export EDGE_IMPORT_ROOT="$IMPORTS"
 
 run_apply() { # run_apply <mode-args...>; env seams pre-exported per case
@@ -279,6 +279,26 @@ check "(7d) an apply whose allow-list file is missing is refused too" 1 "$rc"
 grep -q 'import /etc/caddy/viafrei-status-allow.conf is missing or empty' "$out" \
     && ok "(7d) and that refusal names the allow-list file" \
     || bad "(7d) the missing allow-list file is not named"
+# a ranges file that is NOT empty but has no remote_ip line: imported inside
+# @cf_visitor it would leave a gate that tests only a header (caddy calls that
+# "Valid configuration"). Two shapes: comments only, and the pre-review
+# `@cloudflare remote_ip …` line, which is a matcher DEFINITION and not a
+# matcher, and must not be read as one.
+for shape in comments oldshape; do
+    fresh_case "old config"; EDGE_APPLY_CONFIRM=1
+    r7d="$TMP/r7d"; rm -rf "$r7d"; mkdir -p "$r7d/etc/caddy"
+    cp "$IMPORTS/etc/caddy/viafrei-status-allow.conf" "$r7d/etc/caddy/"
+    if [ "$shape" = comments ]; then printf '# nothing here\n' > "$r7d/etc/caddy/viafrei-cloudflare.conf"
+    else printf '@cloudflare remote_ip 198.51.100.0/24\n' > "$r7d/etc/caddy/viafrei-cloudflare.conf"; fi
+    CADDY_LOG="$TMP/caddy7d.log"; : > "$CADDY_LOG"
+    out="$TMP/out7d"; rc=0
+    ( export EDGE_IMPORT_ROOT="$r7d" CADDY_LOG; APPLY="$e7d/apply.sh"; run_apply --apply ) >"$out" 2>&1 || rc=$?
+    check "(7d) a ranges file with no remote_ip line ($shape) is refused" 1 "$rc"
+    grep -q "carries no 'remote_ip" "$out" && [ ! -s "$CADDY_LOG" ] && [ "$(cat "$DST")" = "old config" ] \
+        && ok "(7d) by name, before validate, with the edge untouched ($shape)" \
+        || bad "(7d) a ranges file without remote_ip was not refused by name before validate ($shape)"
+done
+unset CADDY_LOG
 fresh_case "old config"; EDGE_APPLY_CONFIRM=1
 rc=0
 ( APPLY="$e7d/apply.sh"; run_apply --apply ) >/dev/null 2>&1 || rc=$?
@@ -467,7 +487,7 @@ echo "== the committed Caddyfile's shape (viafrei #94) =="
 # SUBSHELL, so ok/bad would print their line and lose the counter increment —
 # a red tick and exit 0. That is this file's own subject matter, from the
 # shell side.
-caddy_scan() { # caddy_scan <file> -> the 49 fields read by `read -r` below
+caddy_scan() { # caddy_scan <file> -> the 51 fields read by `read -r` below
     awk '
         # ---- the tokeniser: tk[1..ntok], tq[i]=1 if the token was quoted ----
         function tokenise(line,   i, c, L, start) {
@@ -659,12 +679,13 @@ caddy_scan() { # caddy_scan <file> -> the 49 fields read by `read -r` below
                     if (site && depth == 1) gimp[sk] = 1
                 } else if (ntok == 2 && tk[2] == "/etc/caddy/viafrei-cloudflare.conf") {
                     # the Cloudflare ranges (viafrei #1267): a known host file
-                    # of known shape (one `@cloudflare remote_ip` line, written
-                    # by cloudflare-ranges.sh). Allowed at the top of the two
-                    # Cloudflare-proxied blocks ONLY: every other name on this
-                    # host is DNS-only, so a Cloudflare gate there would refuse
-                    # every real visitor -- mcp. above all.
-                    if (cf && depth == 1) cimp[ck] = 1; else cfstray++
+                    # of known shape (one `remote_ip` line, written by
+                    # cloudflare-ranges.sh), imported INSIDE the @cf_visitor
+                    # matcher of the two Cloudflare-proxied blocks ONLY: every
+                    # other name on this host is DNS-only, so a Cloudflare gate
+                    # there would refuse every real visitor -- mcp. above all.
+                    # At depth 1 the file would be a bare remote_ip directive.
+                    if (cf && cmd && depth == 2) cimp[ck] = 1; else cfstray++
                 } else if (ntok >= 2 && !tq[2]) {
                     # an in-file SNIPPET is not an unreadable file: its body is
                     # scanned by every rule here, ten lines up. Resolved at END
@@ -682,7 +703,7 @@ caddy_scan() { # caddy_scan <file> -> the 49 fields read by `read -r` below
             # answer to a connection that does NOT come from Cloudflare, the one
             # place outside the two gated sites where a door is the design.
             # A refusal anywhere else in those blocks -- inside
-            # `handle @cloudflare`, or site-wide -- is still out_deny below.
+            # `handle @cf_visitor`, or site-wide -- is still out_deny below.
             if (cf && cfb && doorline) cdeny[ck] = 1
             # a refusal inside a MATCHED block (`handle @hidden`, `route /x`)
             # answers that matcher, not the site; it is not a door of the kind
@@ -755,7 +776,7 @@ caddy_scan() { # caddy_scan <file> -> the 49 fields read by `read -r` below
             # value is a REQUEST header placeholder. CF-Connecting-IP is only
             # the visitor when the connection carrying it comes from Cloudflare, so
             # every such header_up anywhere in the file must sit inside a
-            # Cloudflare block, in its `handle @cloudflare`. Outside it, a direct
+            # Cloudflare block, in its `handle @cf_visitor`. Outside it, a direct
             # caller writes the address the tenant rate-limits and geolocates.
             if (d1 == "header_up" && ntok >= 3) {
                 hn = tolower(tk[2]); sub(/^[+]/, "", hn)
@@ -773,10 +794,16 @@ caddy_scan() { # caddy_scan <file> -> the 49 fields read by `read -r` below
             # the matcher name is DEFINED by the imported file and nowhere
             # else: a definition written here would gate on whatever it says
             if (d1 == "@cloudflare") cfstray++
+            if (d1 == "@cf_visitor" && !(cf && depth == 1 && ntok == 2 && tk[2] == "{")) cfstray++
+            # the second half of @cf_visitor: a CF-Connecting-IP that looks
+            # like an address. Cloudflare sets it on every request; without it
+            # the tenant would be handed an empty X-Forwarded-For.
+            if (cf && cmd && depth == 2 && d1 == "header_regexp" && ntok == 3 \
+                && tk[2] == "CF-Connecting-IP" && tk[3] == "^[0-9A-Fa-f.:]+$") chdr[ck] = 1
             # ---- the port, from the RAW line, minus full-line comments ----
             if (raw !~ /^[[:space:]]*#/ && raw ~ /18190/) { tot++; if (site && ga) { inside++; if (sk == "s") sinside++ } }
             # the port of the public landing, the same way: every mention inside
-            # the handle @cloudflare of the apex, so no route to it skips the gate
+            # the handle @cf_visitor of the apex, so no route to it skips the gate
             if (raw !~ /^[[:space:]]*#/ && raw ~ /18180/) { ltot++; if (landing && cg) linside++ }
 
             # ---- structure, token by token, in order ----
@@ -809,7 +836,7 @@ caddy_scan() { # caddy_scan <file> -> the 49 fields read by `read -r` below
                         ck      = landing ? "l" : (www ? "w" : "")
                         mcp     = (hdr == "mcp.viafrei.de")
                         beacon  = (hdr == "beaconfolio.com, www.beaconfolio.com")
-                        inblk = 1; fork_seen = 0; fork_fb = 0; ga = 0; fb = 0; cg = 0; cfb = 0
+                        inblk = 1; fork_seen = 0; fork_fb = 0; ga = 0; fb = 0; cg = 0; cfb = 0; cmd = 0
                         if (hdr ~ "^\\(.+\\)$") snip[substr(hdr, 2, length(hdr) - 2)] = 1
                     } else {
                         if (mdepth < 0 && hdr ~ "^(handle|handle_path|route)[[:space:]]" \
@@ -817,7 +844,8 @@ caddy_scan() { # caddy_scan <file> -> the 49 fields read by `read -r` below
                         if (site && depth == 1 && hdr == "handle @allowed") { ga = 1; ggate[sk] = 1; gad = depth }
                         if (site && depth == 1 && hdr == "handle")          { fb = 1; fbd = depth }
                         if (inblk && !site && depth == 1 && hdr == "handle") fork_fb = 1
-                        if (cf && depth == 1 && hdr == "handle @cloudflare") { cg = 1; cgate[ck] = 1; cgd = depth }
+                        if (cf && depth == 1 && hdr == "handle @cf_visitor") { cg = 1; cgate[ck] = 1; cgd = depth }
+                        if (cf && depth == 1 && hdr == "@cf_visitor")        { cmd = 1; cmdd = depth }
                         if (cf && depth == 1 && hdr == "handle")             { cfb = 1; cfbd = depth }
                     }
                     depth++; hdr = ""; continue
@@ -830,9 +858,10 @@ caddy_scan() { # caddy_scan <file> -> the 49 fields read by `read -r` below
                     if (fb && depth <= fbd) fb = 0
                     if (cg && depth <= cgd) cg = 0
                     if (cfb && depth <= cfbd) cfb = 0
+                    if (cmd && depth <= cmdd) cmd = 0
                     if (depth == 0) {
                         if (inblk && fork_seen) { forks++; if (!fork_fb) forkbad++ }
-                        cf = 0; ck = ""; www = 0; cg = 0; cfb = 0
+                        cf = 0; ck = ""; www = 0; cg = 0; cfb = 0; cmd = 0
                         inblk = 0; site = 0; sk = ""; landing = 0; mcp = 0; beacon = 0
                         ga = 0; fb = 0; fork_seen = 0; fork_fb = 0; mdepth = -1
                     }
@@ -863,8 +892,8 @@ caddy_scan() { # caddy_scan <file> -> the 49 fields read by `read -r` below
                     (cimp["l"]+0), (cgate["l"]+0), (cdeny["l"]+0), \
                     (cimp["w"]+0), (cgate["w"]+0), (cdeny["w"]+0), \
                     (ltot+0), (linside+0), (hx+0), (hxg+0), (lxff+0), (lhost+0), \
-                    (wredir+0), (cfstray+0), \
-                    badtoken, badbrace, 49 }' "$1" "$1"
+                    (wredir+0), (cfstray+0), (chdr["l"]+0), (chdr["w"]+0), \
+                    badtoken, badbrace, 51 }' "$1" "$1"
 }
 
 # THE VERDICTS, as FUNCTIONS, and that is half of the vacuity problem. Round 4
@@ -895,7 +924,7 @@ present() {   # present <flag> — exactly 1: a route/latch that must still be t
     [ "$1" = 1 ]
 }
 within() {    # within <total> <inside> — at least one, and EVERY one inside the
-    # gate: the landing port behind the apex's handle @cloudflare (#1267)
+    # gate: the landing port behind the apex's handle @cf_visitor (#1267)
     [ "$2" -ge 1 ] && [ "$1" = "$2" ]
 }
 all_of() {    # all_of <total> <gated> — none outside the gate; zero is allowed
@@ -908,14 +937,14 @@ read -r gate_tot gate_inside s_imp s_gate s_deny s_range s_heredoc s_imports \
         s_badimport s_balanced s_nonliteral s_remote s_outdeny s_forks s_forkbad \
         s_tokbrace s_openquote s_statusproxy s_xff s_landing s_mcp s_beacon s_mcplog s_mcpret s_otherlog \
         s_sinside s_nst s_simp s_sgate s_sdeny s_shost s_sxff \
-        s_limp s_lgate s_ldeny s_wimp s_wgate s_wdeny s_ltot s_linside s_hx s_hxg s_lxff s_lhost s_wredir s_cfstray \
+        s_limp s_lgate s_ldeny s_wimp s_wgate s_wdeny s_ltot s_linside s_hx s_hxg s_lxff s_lhost s_wredir s_cfstray s_lhdr s_whdr \
         s_badtoken s_badbrace s_nfields \
     <<< "$(caddy_scan "$SRC")"
-# 49 positional fields is a lot to keep in step, so the scan says how many it
+# 51 positional fields is a lot to keep in step, so the scan says how many it
 # wrote and this line checks it. A field added in the middle without updating
 # the reader would otherwise shift every variable after it silently.
-[ "${s_nfields:-}" = 49 ] \
-    && ok "the scan wrote all 49 fields the reader expects" \
+[ "${s_nfields:-}" = 51 ] \
+    && ok "the scan wrote all 51 fields the reader expects" \
     || bad "caddy_scan wrote a different number of fields (${s_nfields:-none}): every variable after the gap is shifted"
 
 # 12. the console route exists and points at the registered tenant port. It
@@ -1051,13 +1080,16 @@ present "$s_landing" \
 # Cloudflare door with the one permanent redir inside it, and it proxies
 # nothing. Asserted on the committed file, line by line (indentation dropped).
 www_body="$(awk '/^www\.viafrei\.de[[:space:]]*\{/{f=1;next} f&&/^\}/{exit} f{gsub(/^[[:space:]]+/,"");print}' "$SRC")"
-WWW_WANT="import /etc/caddy/viafrei-cloudflare.conf
-handle @cloudflare {
+WWW_WANT='@cf_visitor {
+import /etc/caddy/viafrei-cloudflare.conf
+header_regexp CF-Connecting-IP ^[0-9A-Fa-f.:]+$
+}
+handle @cf_visitor {
 redir https://viafrei.de{uri} permanent
 }
 handle {
 respond 403
-}"
+}'
 [ "$www_body" = "$WWW_WANT" ] \
     && ok "www.viafrei.de 301-redirects Cloudflare connections to https://viafrei.de{uri}, refuses every other one, and does nothing else" \
     || bad "the www.viafrei.de block is not exactly the Cloudflare door around one permanent redirect to the apex (got: $(printf '%s' "${www_body:-nothing}" | tr '\n' '|'))"
@@ -1128,23 +1160,23 @@ present "$s_sxff" \
 # this host is DNS-only, so the host's address is public and a crawler could
 # skip Cloudflare by connecting to it with `Host: viafrei.de`. Each block is
 # therefore a door of the console's shape -- its OWN import of the ranges file,
-# its OWN `handle @cloudflare`, its OWN bare `handle { respond 4xx }` -- with
+# its OWN `handle @cf_visitor`, its OWN bare `handle { respond 4xx }` -- with
 # the site INSIDE the gate. The ranges are imported, never written here (13's
 # no-literal rules hold for them too), from a file cloudflare-ranges.sh writes.
 present "$s_limp" \
     && ok "viafrei.de imports the Cloudflare ranges from a file outside this repository" \
     || bad "the apex viafrei.de does not import the Cloudflare ranges"
 door "$s_limp" "$s_lgate" "$s_ldeny" \
-    && ok "viafrei.de serves only inside handle @cloudflare and its fallback is respond 4xx/5xx" \
-    || bad "the apex viafrei.de does not refuse non-Cloudflare connections: import + handle @cloudflare + handle { respond 403 } is not all present (imp=$s_limp gate=$s_lgate deny=$s_ldeny)"
+    && ok "viafrei.de serves only inside handle @cf_visitor and its fallback is respond 4xx/5xx" \
+    || bad "the apex viafrei.de does not refuse non-Cloudflare connections: import inside @cf_visitor + handle @cf_visitor + handle { respond 403 } is not all present (imp=$s_limp gate=$s_lgate deny=$s_ldeny)"
 present "$s_wimp" \
     && ok "www.viafrei.de imports the same ranges file" \
     || bad "www.viafrei.de does not import the Cloudflare ranges"
 door "$s_wimp" "$s_wgate" "$s_wdeny" \
-    && ok "www.viafrei.de redirects only inside handle @cloudflare and its fallback is respond 4xx/5xx" \
-    || bad "www.viafrei.de does not refuse non-Cloudflare connections: import + handle @cloudflare + handle { respond 403 } is not all present (imp=$s_wimp gate=$s_wgate deny=$s_wdeny)"
+    && ok "www.viafrei.de redirects only inside handle @cf_visitor and its fallback is respond 4xx/5xx" \
+    || bad "www.viafrei.de does not refuse non-Cloudflare connections: import inside @cf_visitor + handle @cf_visitor + handle { respond 403 } is not all present (imp=$s_wimp gate=$s_wgate deny=$s_wdeny)"
 within "$s_ltot" "$s_linside" \
-    && ok "every mention of 18180 is inside the apex's handle @cloudflare ($s_linside of $s_ltot): no route to the landing skips Cloudflare" \
+    && ok "every mention of 18180 is inside the apex's handle @cf_visitor ($s_linside of $s_ltot): no route to the landing skips Cloudflare" \
     || bad "18180 is reachable outside the apex's Cloudflare gate: $s_linside of $s_ltot mention(s) inside it (want >= 1, and all)"
 present "$s_lhost" \
     && ok "inside the gate the apex passes header_up Host {host}, as before" \
@@ -1165,14 +1197,26 @@ all_of "$s_hx" "$s_hxg" \
 present "$s_wredir" \
     && ok "inside the gate www.viafrei.de redirects permanently to https://viafrei.de{uri}" \
     || bad "www.viafrei.de does not redirect Cloudflare connections to the apex"
+present "$s_lhdr" \
+    && ok "@cf_visitor of viafrei.de also requires a CF-Connecting-IP that looks like an address: a Cloudflare connection without one gets the 403, never an empty X-Forwarded-For" \
+    || bad "the apex viafrei.de does not require CF-Connecting-IP in @cf_visitor"
+present "$s_whdr" \
+    && ok "and so does the @cf_visitor of www.viafrei.de" \
+    || bad "www.viafrei.de does not require CF-Connecting-IP in @cf_visitor"
 none "$s_cfstray" \
-    && ok "the Cloudflare ranges are imported by viafrei.de and www. only, and @cloudflare is defined nowhere in this file (mcp., status., admin., mail. and beaconfolio stay DNS-only)" \
-    || bad "the Cloudflare ranges are imported or @cloudflare defined outside viafrei.de/www.viafrei.de ($s_cfstray): a DNS-only name gated on Cloudflare refuses every real visitor"
+    && ok "the Cloudflare ranges are imported inside @cf_visitor of viafrei.de and www. only, and no other @cf_visitor/@cloudflare is defined (mcp., status., admin., mail. and beaconfolio stay DNS-only)" \
+    || bad "the Cloudflare ranges are imported or a Cloudflare matcher defined outside the @cf_visitor of viafrei.de/www.viafrei.de ($s_cfstray): a DNS-only name gated on Cloudflare refuses every real visitor"
 # What the owner must get right on the HOST, stated where the change is made,
 # and the generator's target being the file the blocks import.
 grep -q '/etc/caddy/viafrei-cloudflare.conf   (root:caddy, 0640)' "$SRC" \
     && ok "the ranges file's documented path and mode are /etc/caddy/viafrei-cloudflare.conf, root:caddy 0640" \
     || bad "the Caddyfile does not document the ranges file as /etc/caddy/viafrei-cloudflare.conf (root:caddy, 0640)"
+for doc in 'Full (strict)' 'wait out the OLD records' 'ROLLBACK is the reverse: apply the previous Caddyfile FIRST' \
+           "Cloudflare's nameservers" 'Authenticated Origin' 'Cloudflare customer can point' 'viafrei-cloudflare-ranges-check'; do
+    grep -qi -- "$doc" "$SRC" \
+        && ok "the Caddyfile states: $doc" \
+        || bad "the Caddyfile no longer states: $doc"
+done
 grep -q 'cloudflare-ranges.sh --write' "$SRC" \
     && ok "and names the generator that writes it" \
     || bad "the Caddyfile does not name cloudflare-ranges.sh --write"
@@ -1208,7 +1252,7 @@ vac_scan() { # vac_scan <file>; sets v_* in THIS shell -- no pipeline, no subshe
             v_badimport v_balanced v_nonliteral v_remote v_outdeny v_forks v_forkbad \
             v_tokbrace v_openquote v_statusproxy v_xff v_landing v_mcp v_beacon v_mcplog v_mcpret v_otherlog \
             v_sinside v_nst v_simp v_sgate v_sdeny v_shost v_sxff \
-            v_limp v_lgate v_ldeny v_wimp v_wgate v_wdeny v_ltot v_linside v_hx v_hxg v_lxff v_lhost v_wredir v_cfstray \
+            v_limp v_lgate v_ldeny v_wimp v_wgate v_wdeny v_ltot v_linside v_hx v_hxg v_lxff v_lhost v_wredir v_cfstray v_lhdr v_whdr \
             v_badtoken v_badbrace v_nfields \
         <<< "$(caddy_scan "$1")"
 }
@@ -1994,8 +2038,11 @@ vac_scan "$TMP/vac-st4"
 # out_deny, its import is not a foreign one, its X-Forwarded-For is gated.
 cat > "$TMP/vac-cf1" <<'VACEOF'
 viafrei.de {
-	import /etc/caddy/viafrei-cloudflare.conf
-	handle @cloudflare {
+	@cf_visitor {
+		import /etc/caddy/viafrei-cloudflare.conf
+		header_regexp CF-Connecting-IP ^[0-9A-Fa-f.:]+$
+	}
+	handle @cf_visitor {
 		reverse_proxy 127.0.0.1:18180 {
 			header_up Host {host}
 			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
@@ -2006,8 +2053,11 @@ viafrei.de {
 	}
 }
 www.viafrei.de {
-	import /etc/caddy/viafrei-cloudflare.conf
-	handle @cloudflare {
+	@cf_visitor {
+		import /etc/caddy/viafrei-cloudflare.conf
+		header_regexp CF-Connecting-IP ^[0-9A-Fa-f.:]+$
+	}
+	handle @cf_visitor {
 		redir https://viafrei.de{uri} permanent
 	}
 	handle {
@@ -2019,27 +2069,29 @@ vac_scan "$TMP/vac-cf1"
 [ "$v_limp$v_lgate$v_ldeny$v_wimp$v_wgate$v_wdeny" = 111111 ] && [ "$v_ltot" = 1 ] && [ "$v_linside" = 1 ] \
     && [ "$v_hx" = 1 ] && [ "$v_hxg" = 1 ] && [ "$v_lxff" = 1 ] && [ "$v_lhost" = 1 ] && [ "$v_wredir" = 1 ] \
     && [ "$v_cfstray" = 0 ] && [ "$v_outdeny" = 0 ] && [ "$v_badimport" = 0 ] && [ "$v_imports" = 2 ] \
+    && [ "$v_lhdr$v_whdr" = 11 ] && [ "$v_remote" = 0 ] \
     && [ "$v_imp$v_simp$v_deny$v_sdeny" = 0000 ] && [ "$v_landing" = 1 ] \
     && ok "(cf1) both Cloudflare doors read as import + gate + door, the site and the header inside the gate, and none of it credited to the gated sites" \
     || bad "(cf1) the Cloudflare doors were misread: l=$v_limp$v_lgate$v_ldeny w=$v_wimp$v_wgate$v_wdeny 18180=$v_linside/$v_ltot hx=$v_hxg/$v_hx lxff=$v_lxff lhost=$v_lhost wredir=$v_wredir stray=$v_cfstray outdeny=$v_outdeny badimport=$v_badimport imports=$v_imports | gated imp=$v_imp/$v_simp deny=$v_deny/$v_sdeny"
 
-# (cf2) the doors in the WRONG place: a refusal inside handle @cloudflare
+# (cf2) the doors in the WRONG place: a refusal inside handle @cf_visitor
 # turns Cloudflare itself away (out_deny), the header outside the gate is a
-# client-chosen address, the import in a DNS-only block and a hand-written
-# @cloudflare definition are stray, and the www block has no redirect.
+# client-chosen address, the import outside the matcher (the apex), in a
+# DNS-only block and a one-line @cf_visitor definition are stray, neither block
+# tests CF-Connecting-IP, and the www block has no redirect.
 cat > "$TMP/vac-cf2" <<'VACEOF'
 viafrei.de {
 	import /etc/caddy/viafrei-cloudflare.conf
 	reverse_proxy /x* 127.0.0.1:18180 {
 		header_up X-Forwarded-For {header.CF-Connecting-IP}
 	}
-	handle @cloudflare {
+	handle @cf_visitor {
 		respond 403
 	}
 }
 www.viafrei.de {
-	@cloudflare path /*
-	handle @cloudflare {
+	@cf_visitor path /*
+	handle @cf_visitor {
 		reverse_proxy 127.0.0.1:18180
 	}
 }
@@ -2048,7 +2100,8 @@ mcp.viafrei.de {
 }
 VACEOF
 vac_scan "$TMP/vac-cf2"
-[ "$v_outdeny" = 1 ] && [ "$v_ldeny" = 0 ] && [ "$v_hx" = 1 ] && [ "$v_hxg" = 0 ] && [ "$v_cfstray" = 2 ] \
+[ "$v_outdeny" = 1 ] && [ "$v_ldeny" = 0 ] && [ "$v_hx" = 1 ] && [ "$v_hxg" = 0 ] && [ "$v_cfstray" = 3 ] \
+    && [ "$v_limp" = 0 ] && [ "$v_lhdr$v_whdr" = 00 ] \
     && [ "$v_wredir" = 0 ] && [ "$v_wimp" = 0 ] && [ "$v_ltot" = 2 ] && [ "$v_linside" = 0 ] && [ "$v_lxff" = 0 ] \
     && ok "(cf2) a door inside the gate, an ungated client header, a stray import and definition, and a www that proxies are each seen" \
     || bad "(cf2) a misplaced Cloudflare door was not seen: outdeny=$v_outdeny ldeny=$v_ldeny hx=$v_hxg/$v_hx stray=$v_cfstray wredir=$v_wredir wimp=$v_wimp 18180=$v_linside/$v_ltot lxff=$v_lxff"
@@ -2419,8 +2472,8 @@ if mutate "the IPv4 mask widened to /32 (no truncation)" "$TMP/m17"; then
 fi
 
 # --- the Cloudflare door (viafrei #1267), each rule broken on its own ---------
-# THE IMPORT REMOVED: without it @cloudflare is undefined (Caddy refuses to
-# adapt) -- and the suite must say which block lost it, not merely go red.
+# THE IMPORT REMOVED: without it @cf_visitor tests only the header, which any
+# direct caller can send -- and the suite must say which block lost it.
 inblock 'viafrei.de' '^[[:space:]]*import /etc/caddy/viafrei-cloudflare[.]conf$' > "$TMP/m17"
 if mutate "the apex block's Cloudflare import deleted" "$TMP/m17"; then
     expect_fail "the apex losing its ranges import fails end to end, on the APEX IMPORT and APEX DOOR assertions only — the www import does not stand in for it" \
@@ -2462,17 +2515,18 @@ awk '$0 == "viafrei.de {" {
      skip && /^}$/ { skip = 0 }
      !skip { print }' "$SRC" > "$TMP/m17"
 if mutate "the apex reverted to an ungated proxy that still trusts CF-Connecting-IP" "$TMP/m17"; then
-    expect_fail "an ungated apex fails end to end, on its IMPORT, DOOR, 18180 CONTAINMENT, Host, CF-Connecting-IP and CLIENT-HEADER assertions" \
+    expect_fail "an ungated apex fails end to end, on its IMPORT, DOOR, HEADER-TEST, 18180 CONTAINMENT, Host, CF-Connecting-IP and CLIENT-HEADER assertions" \
         "the apex viafrei.de does not import the Cloudflare ranges" \
         "the apex viafrei.de does not refuse non-Cloudflare connections" \
         "18180 is reachable outside the apex's Cloudflare gate" \
         "the apex viafrei.de does not pass header_up Host {host} inside its Cloudflare gate" \
         "the apex viafrei.de does not hand the tenant CF-Connecting-IP as X-Forwarded-For" \
-        "a client-chosen address header is forwarded outside a Cloudflare gate"
+        "a client-chosen address header is forwarded outside a Cloudflare gate" \
+        "the apex viafrei.de does not require CF-Connecting-IP in @cf_visitor"
 fi
 
 # XFF FROM A CLIENT HEADER WITHOUT THE GATE, two spellings: a sibling route in
-# the apex that skips handle @cloudflare, and a DNS-only block (the console)
+# the apex that skips handle @cf_visitor, and a DNS-only block (the console)
 # taking its address from CF-Connecting-IP -- which any caller can send there.
 awk '{ print }
      /^viafrei\.de \{$/ {
@@ -2481,7 +2535,7 @@ awk '{ print }
          print "\t}"
      }' "$SRC" > "$TMP/m17"
 if mutate "an ungated sibling route in the apex forwarding CF-Connecting-IP" "$TMP/m17"; then
-    expect_fail "an apex route outside handle @cloudflare fails end to end, on 18180 CONTAINMENT and the CLIENT-HEADER assertion" \
+    expect_fail "an apex route outside handle @cf_visitor fails end to end, on 18180 CONTAINMENT and the CLIENT-HEADER assertion" \
         "18180 is reachable outside the apex's Cloudflare gate" \
         "a client-chosen address header is forwarded outside a Cloudflare gate"
 fi
@@ -2519,7 +2573,34 @@ fi
 awk '{ print } /^mcp\.viafrei\.de \{$/ { print "\timport /etc/caddy/viafrei-cloudflare.conf" }' "$SRC" > "$TMP/m17"
 if mutate "the Cloudflare ranges imported into the mcp block" "$TMP/m17"; then
     expect_fail "a Cloudflare import in mcp.viafrei.de fails end to end, on the STRAY-IMPORT assertion and only that one" \
-        "the Cloudflare ranges are imported or @cloudflare defined outside"
+        "the Cloudflare ranges are imported or a Cloudflare matcher defined outside"
+fi
+
+# MISSING CF-Connecting-IP: the header test deleted from the matcher. A
+# Cloudflare connection without the header would then reach the tenant with
+# an empty X-Forwarded-For (measured on caddy 2.11 with the header test in
+# place: no header -> 403).
+inblock 'viafrei.de' 'header_regexp CF-Connecting-IP' > "$TMP/m17"
+if mutate "the apex matcher no longer requires CF-Connecting-IP" "$TMP/m17"; then
+    expect_fail "the apex without the header test fails end to end, on the APEX HEADER assertion and only that one" \
+        "the apex viafrei.de does not require CF-Connecting-IP in @cf_visitor"
+fi
+inblock 'www.viafrei.de' 'header_regexp CF-Connecting-IP' > "$TMP/m17"
+if mutate "the www matcher no longer requires CF-Connecting-IP" "$TMP/m17"; then
+    expect_fail "www without the header test fails end to end, on the WWW HEADER assertion and its exact body" \
+        "www.viafrei.de does not require CF-Connecting-IP in @cf_visitor" \
+        "the www.viafrei.de block is not exactly"
+fi
+
+# THE IMPORT MOVED OUT OF THE MATCHER, to the top of the block: it then is a
+# bare remote_ip directive, and @cf_visitor tests the header alone.
+inblock 'viafrei.de' '^[[:space:]]*import /etc/caddy/viafrei-cloudflare[.]conf$' \
+    | awk '{ print } /^viafrei\.de \{$/ { print "\timport /etc/caddy/viafrei-cloudflare.conf" }' > "$TMP/m17"
+if mutate "the apex import moved out of @cf_visitor" "$TMP/m17"; then
+    expect_fail "an import outside the matcher fails end to end, on the APEX IMPORT, APEX DOOR and STRAY-IMPORT assertions" \
+        "the apex viafrei.de does not import the Cloudflare ranges" \
+        "the apex viafrei.de does not refuse non-Cloudflare connections" \
+        "the Cloudflare ranges are imported or a Cloudflare matcher defined outside"
 fi
 
 echo
@@ -2559,7 +2640,7 @@ fixlists() { # fixlists <v4 list> <v6 list> -> one CIDR per line, as Cloudflare 
 G18DST="$g18/etc/viafrei-cloudflare.conf"
 gen() { # gen <args...> -> rc in $grc, output in $g18/out
     grc=0
-    env CF_RANGES_DST="$G18DST" CF_RANGES_CURL="$g18/bin/curl" CF_RANGES_SUDO= \
+    env CF_RANGES_DST="${GDST:-$G18DST}" CF_RANGES_CURL="$g18/bin/curl" CF_RANGES_SUDO= \
         CF_RANGES_OWNER="$ME" CF_RANGES_GROUP="$(id -gn)" CF_FIX="$g18/fix" \
         CF_CURL_LOG="$g18/curl.log" CF_FAIL="${CF_FAIL:-}" \
         bash "$GEN" "$@" > "$g18/out" 2>&1 || grc=$?
@@ -2576,9 +2657,9 @@ check "(18) --write on a fresh host succeeds" 0 "$grc"
     && ok "(18) the file is 0640 (the group reads it, nobody else)" \
     || bad "(18) the file mode is $(mode_of "$G18DST"), not 0640"
 body="$(grep -v '^#' "$G18DST")"
-[ "$body" = "@cloudflare remote_ip $V4FIX $V6FIX" ] \
-    && ok "(18) its one configuration line is @cloudflare remote_ip with all 15 + 7 ranges, in order" \
-    || bad "(18) the configuration line is not the expected @cloudflare remote_ip line"
+[ "$body" = "remote_ip $V4FIX $V6FIX" ] \
+    && ok "(18) its one configuration line is remote_ip with all 15 + 7 ranges, in order" \
+    || bad "(18) the configuration line is not the expected remote_ip line"
 [ "$(grep -vc '^#' "$G18DST")" = 1 ] && [ ! -e "$G18DST.bak" ] \
     && ok "(18) exactly one non-comment line, and no .bak on a first write" \
     || bad "(18) more than one configuration line, or a .bak with nothing to back up"
@@ -2633,6 +2714,14 @@ fixlists "$V4FIX" "$V6FIX ::/0"
 gen --write; refused "an IPv6 /0"
 fixlists "$V4FIX" "$V6FIX 173.245.48.0/20"
 gen --write; refused "an IPv4 range in the IPv6 list"
+fixlists "$V4FIX" "$V6FIX 1:2:3:4:5:6:7:8:9/32"
+gen --write; refused "an IPv6 address with nine groups"
+fixlists "$V4FIX" "$V6FIX"
+GDST="$g18/no-such-dir/viafrei-cloudflare.conf" gen --write
+check "(18) a target under a directory that does not exist is refused with exit 2" 2 "$grc"
+grep -q 'no-such-dir does not exist' "$g18/out" && [ ! -e "$g18/no-such-dir" ] \
+    && ok "(18) and the refusal names the directory, creating nothing" \
+    || bad "(18) the missing target directory was not named, or was created"
 fixlists "$V4FIX" "$V6FIX"
 CF_FAIL=ips-v6 gen --write; refused "a failed IPv6 download"
 CF_FAIL=ips-v6 gen --check
@@ -2647,9 +2736,41 @@ sed 's/$/\r/' "$g18/fix/ips-v4" > "$g18/fix/v4crlf" && mv "$g18/fix/v4crlf" "$g1
 gen --check
 check "(18) a CRLF download of the installed list reads as the same list" 0 "$grc"
 # the generator's file is the shape the Caddyfile gates on
-grep -q '^@cloudflare remote_ip ' "$G18DST" && grep -q '^[[:space:]]*handle @cloudflare {$' "$SRC" \
-    && ok "(18) the generated matcher is @cloudflare, the name both Caddyfile blocks gate on" \
-    || bad "(18) the generated matcher name and the Caddyfile's gate disagree"
+grep -q '^remote_ip ' "$G18DST" && grep -q '^		import /etc/caddy/viafrei-cloudflare[.]conf$' "$SRC" \
+    && grep -q '^	handle @cf_visitor {$' "$SRC" \
+    && ok "(18) the generated line is a bare remote_ip, and the Caddyfile imports it inside the @cf_visitor matcher it gates on" \
+    || bad "(18) the generated file and the Caddyfile disagree about where the remote_ip line goes"
+# end to end: the file the generator wrote passes apply.sh's content check
+r18="$TMP/r18"; mkdir -p "$r18/etc/caddy"
+cp "$IMPORTS/etc/caddy/viafrei-status-allow.conf" "$G18DST" "$r18/etc/caddy/"
+fresh_case "old config"; EDGE_APPLY_CONFIRM=1; rc=0
+( export EDGE_IMPORT_ROOT="$r18"; APPLY="$e7d/apply.sh"; run_apply --apply ) >/dev/null 2>&1 || rc=$?
+check "(18) apply.sh accepts the file the generator wrote" 0 "$rc"
+
+# the daily drift check (systemd pair): read-only, as the caddy user, daily,
+# and running the script the service header tells the owner to install
+SVC="$HERE/systemd/viafrei-cloudflare-ranges-check.service"
+TMR="$HERE/systemd/viafrei-cloudflare-ranges-check.timer"
+if [ -f "$SVC" ] && [ -f "$TMR" ]; then
+    ok "(18) the drift-check service and timer are committed"
+    exe="$(sed -n 's/^ExecStart=//p' "$SVC")"
+    [ "$exe" = "/usr/local/sbin/viafrei-cloudflare-ranges.sh --check" ] \
+        && ok "(18) the service runs --check (read-only), never --write" \
+        || bad "(18) the service ExecStart is not the read-only --check: ${exe:-none}"
+    grep -v '^#' "$SVC" | grep -q -- '--write' \
+        && bad "(18) the service can write the ranges file" || ok "(18) no configuration line of the service mentions --write"
+    grep -qx 'User=caddy' "$SVC" && grep -qx 'Type=oneshot' "$SVC" \
+        && ok "(18) it runs once per trigger as the caddy user (group-reads the 0640 file, no root)" \
+        || bad "(18) the service is not a oneshot run as caddy"
+    grep -qF 'infra/edge/cloudflare-ranges.sh /usr/local/sbin/viafrei-cloudflare-ranges.sh' "$SVC" \
+        && ok "(18) its install steps put cloudflare-ranges.sh at the path ExecStart runs" \
+        || bad "(18) the install steps do not install cloudflare-ranges.sh where ExecStart expects it"
+    grep -qx 'OnCalendar=daily' "$TMR" && grep -qx 'Persistent=true' "$TMR" && grep -qx 'WantedBy=timers.target' "$TMR" \
+        && ok "(18) the timer fires daily, catches up after downtime, and is enableable" \
+        || bad "(18) the timer is not daily + persistent + WantedBy=timers.target"
+else
+    bad "(18) the drift-check service or timer is missing under infra/edge/systemd/"
+fi
 
 echo
 echo "== apply.sh contract: $PASS passed, $FAIL failed =="

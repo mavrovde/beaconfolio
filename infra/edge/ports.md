@@ -82,13 +82,23 @@ v0.1.0 landing work.
 (owner 2026-11-09, protection from crawlers that ignore robots.txt).
 `viafrei.de` and `www.viafrei.de` are the only Cloudflare-PROXIED records on
 this host; every other name (`mcp.`, `status.`, `admin.`, `mail.` and every
-beaconfolio site) stays a plain A/AAAA record. Both blocks import
-`/etc/caddy/viafrei-cloudflare.conf` (root:caddy, 0640) — one
-`@cloudflare remote_ip …` line, never committed — serve inside
-`handle @cloudflare` and answer `403` to every other connection, because the
-host address is public through the DNS-only names. The apex overwrites
-`X-Forwarded-For` with `CF-Connecting-IP` inside the gate only, so the tenant's
-rate limit and place lookup see the visitor rather than a Cloudflare PoP.
+beaconfolio site) stays a plain A/AAAA record. Both blocks define
+`@cf_visitor` as: the connection comes from a Cloudflare range (imported from
+`/etc/caddy/viafrei-cloudflare.conf`, root:caddy 0640, one `remote_ip …` line,
+never committed) AND the request carries a `CF-Connecting-IP` that looks like
+an address. They serve inside `handle @cf_visitor` and answer `403` to every
+other request, because the host address is public through the DNS-only names.
+The apex overwrites `X-Forwarded-For` with `CF-Connecting-IP` inside the gate
+only, so the tenant's rate limit and place lookup see the visitor rather than
+a Cloudflare PoP, and a Cloudflare connection without the header gets the 403
+rather than an empty `X-Forwarded-For`.
+
+What the gate does NOT prove: a Cloudflare address means "came through
+Cloudflare", not "came through our zone". Any Cloudflare customer can point a
+proxied record at this address and pass. The stronger follow-up is
+Authenticated Origin Pulls (Caddy `tls { client_auth … }` requiring Cloudflare's
+origin-pull certificate; a per-zone/per-hostname certificate, because the
+shared Cloudflare CA again proves only "Cloudflare").
 
 The file is written by `infra/edge/cloudflare-ranges.sh`:
 
@@ -99,9 +109,25 @@ The file is written by `infra/edge/cloudflare-ranges.sh`:
   installs it atomically and keeps the previous file as `.bak`;
 - `sudo bash infra/edge/cloudflare-ranges.sh --check` is read-only and exits 1
   when the installed file is missing or differs from Cloudflare's lists.
+- `infra/edge/systemd/viafrei-cloudflare-ranges-check.{service,timer}` run
+  `--check` daily as the caddy user; drift or a refusal fails the unit
+  (journal, `systemctl --failed`). Install steps are in the service file.
 
-`apply.sh --apply` refuses by name while the file is missing or empty. A
-refreshed list takes effect after `caddy validate` + `systemctl reload caddy`
-(apply.sh does not reload an edge whose Caddyfile is already in sync).
-Order on the day: switch the two records to proxied FIRST, then apply — the
-other way round, every visitor connects directly and gets the 403.
+`apply.sh --apply` refuses by name while the file is missing, empty or without
+a `remote_ip` line. A refreshed list takes effect after `caddy validate` +
+`systemctl reload caddy` (apply.sh does not reload an edge whose Caddyfile is
+already in sync).
+
+Order on the day, switching ON:
+
+0. the zone is on Cloudflare's nameservers (done 2026-11-09) and its SSL/TLS
+   mode is **Full (strict)** (set 2026-11-09); Flexible would reach this edge
+   over http, which redirects to https — a loop. Nothing may rewrite the origin
+   request to http;
+1. switch the two records to proxied;
+2. wait out the old records' TTL (auto, about 300 s), or lower it a day ahead;
+3. write the ranges file, then apply.
+
+The other way round, every visitor connects directly and gets the 403.
+ROLLBACK is the reverse: apply the previous Caddyfile FIRST, then switch the
+records back to DNS-only.

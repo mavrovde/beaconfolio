@@ -78,28 +78,45 @@ mavrov.de, www.mavrov.de { # de-brand:canonical: the owner's personal domain, ke
 # plain A/AAAA record and its block below does not know Cloudflare exists.
 # Public still means public: everybody reaches the site — through Cloudflare.
 #
-#   * A connection whose peer is a Cloudflare address is served exactly as
-#     before: the apex reverse-proxies to :18180 with Host passed through, www
-#     redirects permanently to the apex.
-#   * ANY OTHER CONNECTION GETS 403. This host's address is public through the
+#   * A request is served only when it matches @cf_visitor: its connection
+#     comes from a Cloudflare address AND it carries a CF-Connecting-IP that
+#     looks like an address (Cloudflare sets that header on every request it
+#     forwards; without it the tenant would get an empty X-Forwarded-For).
+#     Then it is served exactly as before: the apex reverse-proxies to :18180
+#     with Host passed through, www redirects permanently to the apex.
+#   * ANY OTHER REQUEST GETS 403. This host's address is public through the
 #     DNS-only names, so a crawler could otherwise skip Cloudflare by sending
 #     `Host: viafrei.de` straight to it — the bypass is one curl --resolve.
 #   * The apex hands the tenant the VISITOR's address as X-Forwarded-For,
 #     taken from CF-Connecting-IP — OVERWRITTEN, never appended, and ONLY
-#     inside `handle @cloudflare`: a client header is trustworthy only when the
-#     connection carrying it is Cloudflare's, which overwrites that header on
-#     every request it forwards. Outside the gate the same header would let a
-#     direct caller choose its own address for the tenant's rate limit and
-#     place lookup. Without it the tenant would see one Cloudflare PoP for
-#     every visitor.
+#     inside `handle @cf_visitor`. Cloudflare overwrites CF-Connecting-IP on
+#     every request it forwards, so on a Cloudflare connection the header is
+#     Cloudflare's statement and not the caller's; on a direct connection it
+#     would be whatever the caller typed, and the tenant's rate limit and place
+#     lookup would believe it. Without the header the tenant would see one
+#     Cloudflare PoP for every visitor.
+#
+# WHAT remote_ip DOES NOT PROVE. A Cloudflare address says the connection
+# came through Cloudflare's network — not that it came through OUR zone. Any
+# Cloudflare customer can point a proxied record of their own at this host's
+# address, and their traffic then passes this gate with their zone's settings
+# (none of our crawler protection) and a CF-Connecting-IP Cloudflare set for
+# their visitor. The gate therefore stops direct crawlers, not a determined one
+# with a Cloudflare account. The stronger follow-up is Authenticated Origin
+# Pulls: Cloudflare presents a client certificate on the origin connection and
+# this edge requires it (`tls { client_auth { mode require_and_verify,
+# trust_pool file <origin-pull CA> } }` on these two blocks). Note that the
+# shared Cloudflare origin-pull CA proves "Cloudflare" again; only a
+# per-zone/per-hostname certificate proves "our zone".
 #
 # THE RANGES ARE NOT IN THIS FILE, for the same reason the allow-list below is
 # not: this file carries no address literal (apply.test.sh refuses one), and
 # the list changes on Cloudflare's schedule, not on a code review. `import`
-# reads one line from a host-side file written by a committed generator:
+# reads one line, INSIDE the @cf_visitor matcher, from a host-side file written
+# by a committed generator:
 #
 #     /etc/caddy/viafrei-cloudflare.conf   (root:caddy, 0640), one line:
-#         @cloudflare remote_ip <cidr> [<cidr> …]
+#         remote_ip <cidr> [<cidr> …]
 #
 #     sudo bash infra/edge/cloudflare-ranges.sh --write   # fetch, validate, install
 #     sudo bash infra/edge/cloudflare-ranges.sh --check   # read-only: current?
@@ -109,19 +126,39 @@ mavrov.de, www.mavrov.de { # de-brand:canonical: the owner's personal domain, ke
 # ranges (exit 2: a truncated download must never become "nobody may reach
 # the site"), writes atomically and keeps the previous file as .bak. A
 # refreshed list needs a validate + reload; apply.sh does not reload an edge
-# whose Caddyfile is already in sync.
+# whose Caddyfile is already in sync. The daily drift check is the systemd
+# pair in infra/edge/systemd/ (viafrei-cloudflare-ranges-check.{service,timer}):
+# it runs --check, logs to the journal and FAILS the unit when Cloudflare's
+# lists moved; it never writes.
 #
 # The file must exist BEFORE the first apply: `caddy validate` fails on an
 # import that matches no file, and apply.sh refuses by name before it gets
-# there. A missing file therefore means "the change does not happen", never
+# there. A file WITHOUT a remote_ip line is refused too — inside the matcher
+# it would leave only the header test, and a header is what a direct caller
+# can send. A missing file therefore means "the change does not happen", never
 # "the site is open to every crawler" nor "the site is shut".
 #
-# ORDER ON THE DAY: switch the two records to proxied in Cloudflare FIRST, then
-# apply this file. Applied while the records are still DNS-only, every visitor
-# connects directly and gets the 403.
+# ORDER ON THE DAY, switching ON:
+#   0. the zone is on Cloudflare's nameservers (done 2026-11-09) and its
+#      SSL/TLS mode is Full (strict) (set, 2026-11-09). Flexible would send
+#      Cloudflare to this edge over http, which redirects to https: a loop.
+#      Nothing at Cloudflare may rewrite the origin request to http.
+#   1. switch the two records to proxied in Cloudflare;
+#   2. wait out the OLD records' TTL (auto, about 300 s) — resolvers still
+#      holding the direct address would be sent to the 403 — or lower the
+#      TTL a day ahead;
+#   3. write the ranges file, then apply this Caddyfile.
+# Applied while the records are still DNS-only, every visitor connects
+# directly and gets the 403.
+# ROLLBACK is the reverse: apply the previous Caddyfile FIRST (the site serves
+# every connection again), THEN switch the records back to DNS-only. The other
+# way round, every visitor connects directly to a gate that refuses them.
 viafrei.de {
-	import /etc/caddy/viafrei-cloudflare.conf
-	handle @cloudflare {
+	@cf_visitor {
+		import /etc/caddy/viafrei-cloudflare.conf
+		header_regexp CF-Connecting-IP ^[0-9A-Fa-f.:]+$
+	}
+	handle @cf_visitor {
 		reverse_proxy 127.0.0.1:18180 {
 			header_up Host {host}
 			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
@@ -137,11 +174,14 @@ viafrei.de {
 # https://www.viafrei.de/ as its own canonical page beside https://viafrei.de/de
 # (Search Console URL inspection, 2026-10-12) — a duplicate of the home page.
 # Permanent, path and query kept; the certificate for www stays automatic.
-# Behind Cloudflare like the apex (#1267), with the same door: a direct
-# connection gets 403, not the redirect.
+# Behind Cloudflare like the apex (#1267), with the same matcher and door: a
+# direct connection gets 403, not the redirect.
 www.viafrei.de {
-	import /etc/caddy/viafrei-cloudflare.conf
-	handle @cloudflare {
+	@cf_visitor {
+		import /etc/caddy/viafrei-cloudflare.conf
+		header_regexp CF-Connecting-IP ^[0-9A-Fa-f.:]+$
+	}
+	handle @cf_visitor {
 		redir https://viafrei.de{uri} permanent
 	}
 	handle {

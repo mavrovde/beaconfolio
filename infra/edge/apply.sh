@@ -116,8 +116,15 @@ done < <(awk '$1 == "output" && $2 == "file" { print $3 }' "$SRC")
 #                                         `cloudflare-ranges.sh --write` (#1267)
 # An EMPTY file is refused as well: it would define no matcher, and a gate on
 # an undefined matcher is an adapt error at best. Presence and size are read
-# with stat, which needs no read permission on the 0640 root:caddy file; its
-# CONTENT is judged by the validate below, as the service user.
+# with stat, which needs no read permission on the 0640 root:caddy file.
+#
+# The Cloudflare file is also read for its CONTENT, as the service user (the
+# only one besides root that may): it is imported INSIDE the @cf_visitor
+# matcher, beside a CF-Connecting-IP header test, so a file that is not empty
+# but carries no `remote_ip` line (comments only, a stray edit) still
+# validates — and leaves a gate that only asks for a header any direct caller
+# can send. Measured on caddy 2.11: "Valid configuration". So a remote_ip line
+# followed by an address is required here, by name.
 missing=0
 while IFS= read -r imp; do
     [ -n "$imp" ] || continue
@@ -129,6 +136,11 @@ while IFS= read -r imp; do
             */viafrei-status-allow.conf)
                 echo "  Fix: write the '@allowed remote_ip …' line (see the Caddyfile), root:caddy 0640" >&2 ;;
         esac
+        missing=1
+    elif [ "${imp##*/}" = viafrei-cloudflare.conf ] \
+        && ! $AS_CADDY grep -qE '^[[:space:]]*remote_ip[[:space:]]+[0-9A-Fa-f]' "$IMPORT_ROOT$imp"; then
+        echo "✗ import $imp carries no 'remote_ip <cidr> …' line (or $CADDY_USER cannot read it)" >&2
+        echo "  — inside @cf_visitor the gate would test only a header. Fix: sudo bash $HERE/cloudflare-ranges.sh --write" >&2
         missing=1
     fi
 done < <(awk '$1 == "import" && $2 ~ /^\// { print $2 }' "$SRC" | sort -u)

@@ -1,0 +1,12 @@
+# Runs viafrei-cloudflare-ranges-check.service once a day (viafrei repo #1267).
+# Install steps are in the service file's header.
+[Unit]
+Description=viafrei edge: daily Cloudflare ranges drift check
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
