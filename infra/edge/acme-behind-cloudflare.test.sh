@@ -6,12 +6,14 @@
 # What it proves. Behind Cloudflare, TLS-ALPN-01 cannot reach us (Cloudflare
 # terminates TLS), and Always Use HTTPS (ON in the zone) answers the CA's
 # http://…/.well-known/acme-challenge/<t> with a 301 to https, so the HTTP-01
-# request reaches the edge on 443 — the server whose routes end in `respond 403`.
+# request reaches the edge on 443 — inside the blocks that gate on @cf_visitor.
 # Caddy answers a challenge in Server.ServeHTTP BEFORE any route
 # (modules/caddyhttp/server.go, "guarantee ACME HTTP challenges; handle them
 # separately from any user-defined handlers", v2.11.9). This test shows it end
-# to end with the WORST peer — one outside the Cloudflare ranges, which every
-# route answers 403:
+# to end with the WORST peer — one outside the Cloudflare ranges, which only
+# the direct-visitor fallbacks answer (the apex proxies it to an upstream this
+# test does not run, so 502; www redirects it, 301 — never a 403 since the
+# 2026-11-09 hotfix):
 #   - Pebble (a test ACME CA) validates http://<name>/… on port 80;
 #   - port 80 at the edge's address is an nginx that only redirects to https,
 #     standing in for Always Use HTTPS (the edge's own HTTP port is moved away);
@@ -19,7 +21,8 @@
 #     the host: a first issuance through 443 is impossible without a cert);
 #   - TLS-ALPN-01 is disabled, so 443 is the only path left.
 # PASS = both names renewed by Pebble AND a plain request from the same peer is
-# still 403. The site blocks are cut out of the committed Caddyfile verbatim.
+# still answered by the fallback (apex 502, www 301). The site blocks are cut
+# out of the committed Caddyfile verbatim.
 #
 # Exit: 0 pass, 1 fail, 2 cannot run (no docker, no image). Cleans up on exit.
 set -uo pipefail
@@ -58,7 +61,7 @@ done
 awk '/^(viafrei\.de|www\.viafrei\.de) \{/{f=1} f{print} f&&/^\}/{f=0}' "$CADDYFILE" >"$W/sites"
 [ "$(grep -c '^\(www\.\)\{0,1\}viafrei\.de {' "$W/sites")" = 2 ] ||
 	refuse "could not cut the viafrei.de and www.viafrei.de blocks out of $CADDYFILE"
-grep -q 'respond 403' "$W/sites" || refuse "the cut blocks carry no 403 route"
+[ "$(grep -c '^	handle @cf_visitor {$' "$W/sites")" = 2 ] || refuse "the cut blocks do not each gate on @cf_visitor"
 
 mkdir -p "$W/etc" "$W/data" "$W/pebble" "$W/nginx"
 {
@@ -77,7 +80,7 @@ mkdir -p "$W/etc" "$W/data" "$W/pebble" "$W/nginx"
 EOF
 	cat "$W/sites"
 } >"$W/etc/Caddyfile"
-# A range the test peer is NOT in: every route answers it 403.
+# A range the test peer is NOT in: only the fallbacks answer it.
 echo 'remote_ip 198.51.100.0/24 2001:db8::/32' >"$W/etc/viafrei-cloudflare.conf"
 
 cid=$(docker create "$PEBBLE_IMG") || refuse "cannot create a pebble container"
@@ -152,15 +155,16 @@ for n in viafrei.de www.viafrei.de; do
 	esac
 	code=$(docker run --rm --network "$NET" "$SSL_IMG" sh -c \
 		"apk add -q curl >/dev/null 2>&1; curl -sk -o /dev/null -w '%{http_code}' --resolve $n:443:$SUB.10 https://$n/" 2>/dev/null)
-	[ "$code" = 403 ] && ok "$n still answers an ordinary request from that peer 403" ||
-		bad "$n answered an ordinary request from that peer $code, not 403"
+	case "$n" in viafrei.de) want=502 ;; *) want=301 ;; esac
+	[ "$code" = "$want" ] && ok "$n still answers an ordinary request from that peer by its fallback ($code)" ||
+		bad "$n answered an ordinary request from that peer $code, not $want (its fallback)"
 done
 grep -q '"challenge_type":"http-01"' "$W/caddy.log" && ok "the challenge type was http-01" || bad "no http-01 challenge in the log"
 for n in viafrei.de www.viafrei.de; do
 	# Caddy listens on 443 only (its HTTP port is moved to 8080, which nothing
 	# asks): a key authorisation served to the CA's address was served on 443.
 	grep -q "\"served key authentication\",\"identifier\":\"$n\",\"challenge\":\"http-01\",\"remote\":\"$SUB.3:" "$W/caddy.log" &&
-		ok "$n: the edge served the key authorisation to the CA's address on 443, ahead of the 403 route" ||
+		ok "$n: the edge served the key authorisation to the CA's address on 443, ahead of every route" ||
 		bad "$n: no key authorisation served to the CA's address"
 done
 grep -q '"trying to solve challenge".*"challenge_type":"tls-alpn-01"' "$W/caddy.log" && bad "a tls-alpn-01 challenge was tried" || ok "no tls-alpn-01 challenge was tried"
