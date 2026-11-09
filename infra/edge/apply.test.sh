@@ -97,6 +97,7 @@ canary() { # canary <what> <pattern> <line the pattern must match>
         || bad "canary: the $1 pattern matches NOTHING, so the check under it passes on any file"
 }
 RX_REMOTE_IP='^[^#]*remote_ip[[:space:]]+[0-9]'
+RX_TRUSTED='^([^#]*[[:space:]{])?(trusted_proxies(_strict)?|client_ip_headers)([[:space:]]|$)'
 RX_MODE_0644='^#.*viafrei-status-allow\.conf.*0644'
 RX_RESTOR='[Rr]estor'
 foreign_ipv4() { # foreign_ipv4 <file> — a routable-looking IPv4 off a comment line
@@ -946,9 +947,13 @@ contained() { # contained <total> <admin inside> <status inside> — EVERY route
     # either block's gated route.
     [ "$2" -ge 1 ] && [ "$3" -ge 1 ] && [ "$1" = "$(( $2 + $3 ))" ]
 }
-door() {      # door <imp> <gate> <fallback> — the block is all three: for the
-    # gated sites the fallback REFUSES, for viafrei.de/www. it SERVES/REDIRECTS
-    # (asked once PER block: "at least one block has it" is not the rule)
+door() {      # door <imp> <gate> <deny> — the block positively refuses (asked
+    # once PER gated block: "at least one block has a door" is not the rule)
+    [ "$1" = 1 ] && [ "$2" = 1 ] && [ "$3" = 1 ]
+}
+served() {    # served <imp> <gate> <fallback> — a Cloudflare block (viafrei.de,
+    # www.) imports the ranges, gates on @cf_visitor, AND its bare fallback
+    # serves/redirects a direct connection (hotfix 2026-11-09), asked per block
     [ "$1" = 1 ] && [ "$2" = 1 ] && [ "$3" = 1 ]
 }
 none() {      # none <count> — the "refused on sight" verdicts
@@ -1204,13 +1209,13 @@ present "$s_sxff" \
 present "$s_limp" \
     && ok "viafrei.de imports the Cloudflare ranges from a file outside this repository" \
     || bad "the apex viafrei.de does not import the Cloudflare ranges"
-door "$s_limp" "$s_lgate" "$s_lfb" \
+served "$s_limp" "$s_lgate" "$s_lfb" \
     && ok "viafrei.de serves Cloudflare connections inside handle @cf_visitor and direct ones in its fallback, both from 127.0.0.1:18180" \
     || bad "the apex viafrei.de does not serve direct connections behind its Cloudflare gate: import inside @cf_visitor + handle @cf_visitor + handle { reverse_proxy 127.0.0.1:18180 } is not all present (imp=$s_limp gate=$s_lgate fallback=$s_lfb)"
 present "$s_wimp" \
     && ok "www.viafrei.de imports the same ranges file" \
     || bad "www.viafrei.de does not import the Cloudflare ranges"
-door "$s_wimp" "$s_wgate" "$s_wfb" \
+served "$s_wimp" "$s_wgate" "$s_wfb" \
     && ok "www.viafrei.de redirects inside handle @cf_visitor and redirects direct connections in its fallback too" \
     || bad "www.viafrei.de does not redirect direct connections behind its Cloudflare gate: import inside @cf_visitor + handle @cf_visitor + handle { redir https://viafrei.de{uri} permanent } is not all present (imp=$s_wimp gate=$s_wgate fallback=$s_wfb)"
 contained "$s_ltot" "$s_linside" "$s_lfbin" \
@@ -1236,6 +1241,16 @@ present "$s_lxff" \
 all_of "$s_hx" "$s_hxg" \
     && ok "every address header taken from a request header is inside a Cloudflare gate ($s_hxg of $s_hx)" \
     || bad "a client-chosen address header is forwarded outside a Cloudflare gate: $s_hxg of $s_hx inside one"
+# THE DIRECT FALLBACK'S PROMISE HAS A PRECONDITION: Caddy ignores a client's
+# X-Forwarded-For and sends the direct peer only while no proxy is TRUSTED.
+# One `trusted_proxies` (global `servers {}`, or in a reverse_proxy) and a
+# direct caller inside that range writes the address the tenant rate-limits
+# and geolocates; `client_ip_headers` moves the client address to a header.
+canary "trusted_proxies" "$RX_TRUSTED" '		trusted_proxies static private_ranges'
+s_trusted="$(grep -cE "$RX_TRUSTED" "$SRC" || true)"
+none "${s_trusted:-x}" \
+    && ok "no trusted_proxies / client_ip_headers anywhere: a direct caller cannot choose the X-Forwarded-For the fallback hands on" \
+    || bad "trusted_proxies or client_ip_headers is configured ($s_trusted line(s)): a direct caller in that range chooses the X-Forwarded-For of the direct-visitor fallback"
 present "$s_wredir" \
     && ok "inside the gate www.viafrei.de redirects permanently to https://viafrei.de{uri}" \
     || bad "www.viafrei.de does not redirect Cloudflare connections to the apex"
@@ -2253,6 +2268,15 @@ door 1 1 1 \
 door 1 1 0 \
     && bad "(j) the door verdict ACCEPTS a gate with no refusal behind it" \
     || ok "(j) and rejects a gate whose fallback does not refuse"
+served 1 1 1 \
+    && ok "(j) the served verdict accepts import + gate + serving fallback" \
+    || bad "(j) the served verdict rejects a complete Cloudflare block"
+served 1 1 0 \
+    && bad "(j) the served verdict ACCEPTS a Cloudflare block whose fallback neither serves nor redirects" \
+    || ok "(j) and rejects a block with no serving fallback"
+served 0 1 1 \
+    && bad "(j) the served verdict ACCEPTS a block that lost its import" \
+    || ok "(j) and rejects a block that lost its import"
 none 0 && none 1 \
     && bad "(j) the refusal verdict ACCEPTS 1: every 'refused on sight' rule above is decoration" \
     || ok "(j) the refusal verdicts accept 0 and reject 1"
@@ -2269,7 +2293,7 @@ all_of 2 1 \
 echo
 echo "== 17. the WIRING: the whole suite, run against a mutated copy of the real file =="
 # THE LAST GAP, and it is a real one. Section 14 reads numbers out of
-# caddy_scan and hands them to contained() / door() / none(). Section 16 proves
+# caddy_scan and hands them to contained() / door() / served() / none(). Section 16 proves
 # the scan discriminates and proves the verdicts reject a losing tuple. Neither
 # proves that section 14 passes the FORMER to the LATTER: `contained 1 1`
 # written literally would satisfy every assertion in this file and still print
@@ -2711,6 +2735,14 @@ if mutate "www serving the site instead of redirecting" "$TMP/m17"; then
         "www.viafrei.de does not redirect direct connections behind its Cloudflare gate" \
         "the www.viafrei.de block is not exactly" \
         "18180 is routed outside the apex's handle @cf_visitor and its fallback"
+fi
+
+# A TRUSTED PROXY, planted in a global `servers {}` block: from then on a
+# direct caller inside private_ranges chooses its own X-Forwarded-For.
+{ printf '{\n\tservers {\n\t\ttrusted_proxies static private_ranges\n\t}\n}\n\n'; cat "$SRC"; } > "$TMP/m17"
+if mutate "trusted_proxies planted in a global servers block" "$TMP/m17"; then
+    expect_fail "a trusted proxy fails end to end, on the TRUSTED-PROXIES assertion and only that one" \
+        "trusted_proxies or client_ip_headers is configured"
 fi
 
 # THE MCP BLOCK STAYS DNS-ONLY: the ranges imported there would refuse every

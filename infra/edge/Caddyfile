@@ -78,12 +78,13 @@ mavrov.de, www.mavrov.de { # de-brand:canonical: the owner's personal domain, ke
 # plain A/AAAA record and its block below does not know Cloudflare exists.
 # Public still means public: everybody reaches the site — through Cloudflare.
 #
-#   * A request is served only when it matches @cf_visitor: its connection
-#     comes from a Cloudflare address AND it carries a CF-Connecting-IP that
-#     looks like an address (Cloudflare sets that header on every request it
-#     forwards; without it the tenant would get an empty X-Forwarded-For).
-#     Then it is served exactly as before: the apex reverse-proxies to :18180
-#     with Host passed through, www redirects permanently to the apex.
+#   * A request is served THROUGH THE GATE when it matches @cf_visitor: its
+#     connection comes from a Cloudflare address AND it carries a
+#     CF-Connecting-IP that looks like an address (Cloudflare sets that header
+#     on every request it forwards; without it the tenant would get an empty
+#     X-Forwarded-For). Then the apex reverse-proxies to :18180 with Host
+#     passed through and CF-Connecting-IP as X-Forwarded-For, and www
+#     redirects permanently to the apex.
 #   * ANY OTHER REQUEST IS SERVED TOO, the pre-Cloudflare way (2026-11-09,
 #     owner-approved hotfix). The first cut answered it 403, so a crawler could
 #     not skip Cloudflare with `Host: viafrei.de` straight to this host (one
@@ -93,7 +94,9 @@ mavrov.de, www.mavrov.de { # de-brand:canonical: the owner's personal domain, ke
 #     direct visitors broke the site for anyone with a stale DNS answer. So
 #     the bare `handle {` fallback proxies the apex to the same upstream with
 #     Host passed through and NO address header from the request (Caddy sets
-#     X-Forwarded-For to the direct peer, which a caller cannot choose), and
+#     X-Forwarded-For to the direct peer, which a caller cannot choose — true
+#     only while NO trusted_proxies is configured anywhere, which apply.test.sh
+#     asserts), and
 #     www's fallback redirects to the apex. The Cloudflare path still carries
 #     the real client address; the crawler bypass is open again, and closing
 #     it needs Authenticated Origin Pulls (below), not a 403 to people.

@@ -11,9 +11,8 @@
 # (modules/caddyhttp/server.go, "guarantee ACME HTTP challenges; handle them
 # separately from any user-defined handlers", v2.11.9). This test shows it end
 # to end with the WORST peer — one outside the Cloudflare ranges, which only
-# the direct-visitor fallbacks answer (the apex proxies it to an upstream this
-# test does not run, so 502; www redirects it, 301 — never a 403 since the
-# 2026-11-09 hotfix):
+# the direct-visitor fallbacks answer (never a 403 since the 2026-11-09
+# hotfix): the apex proxies it to an echo upstream on :18180, www redirects it.
 #   - Pebble (a test ACME CA) validates http://<name>/… on port 80;
 #   - port 80 at the edge's address is an nginx that only redirects to https,
 #     standing in for Always Use HTTPS (the edge's own HTTP port is moved away);
@@ -21,7 +20,10 @@
 #     the host: a first issuance through 443 is impossible without a cert);
 #   - TLS-ALPN-01 is disabled, so 443 is the only path left.
 # PASS = both names renewed by Pebble AND a plain request from the same peer is
-# still answered by the fallback (apex 502, www 301). The site blocks are cut
+# answered by the fallback: www 301, and the apex 200 from the echo upstream
+# with X-Forwarded-For equal to the peer's OWN address although the peer sent a
+# made-up CF-Connecting-IP and X-Forwarded-For — on a direct connection the
+# caller cannot choose the address the tenant sees. The site blocks are cut
 # out of the committed Caddyfile verbatim.
 #
 # Exit: 0 pass, 1 fail, 2 cannot run (no docker, no image). Cleans up on exit.
@@ -44,7 +46,7 @@ bad() { fail=$((fail + 1)); echo "  ✗ $1"; }
 refuse() { echo "✗ $1" >&2; exit 2; }
 
 cleanup() {
-	docker rm -f "$NET-caddy" "$NET-nginx" "$NET-pebble" "$NET-dns" >/dev/null 2>&1
+	docker rm -f "$NET-caddy" "$NET-echo" "$NET-nginx" "$NET-pebble" "$NET-dns" >/dev/null 2>&1
 	docker network rm "$NET" >/dev/null 2>&1
 	rm -rf "$W"
 }
@@ -96,6 +98,22 @@ cat >"$W/pebble/config.json" <<'EOF'
 "profiles":{"default":{"description":"test","validityPeriod":7776000}}}}
 EOF
 printf 'server { listen 80; location / { return 301 https://$host$request_uri; } }\n' >"$W/nginx/default.conf"
+# The tenant stand-in on :18180: echoes the ADDRESS headers it was handed, one
+# per line, so a made-up value that reached the tenant would be visible.
+mkdir -p "$W/echo"
+cat >"$W/echo/Caddyfile" <<'EOF'
+{
+	admin off
+	auto_https off
+}
+http://:18180 {
+	respond "xff=[{http.request.header.X-Forwarded-For}]
+xri=[{http.request.header.X-Real-IP}]
+fwd=[{http.request.header.Forwarded}]
+tci=[{http.request.header.True-Client-IP}]
+" 200
+}
+EOF
 
 # Near-expiry certificates where Caddy keeps the ones this issuer manages:
 # 60 days old, 1 day left — inside the renewal window, so Caddy renews at start.
@@ -126,6 +144,8 @@ docker run -d --name "$NET-pebble" --network "$NET" --ip "$SUB.3" --network-alia
 # network namespace, so 443 at that address is Caddy and 80 is only a 301.
 docker run -d --name "$NET-nginx" --network "$NET" --ip "$SUB.10" \
 	-v "$W/nginx:/etc/nginx/conf.d:ro" "$NGINX_IMG" >/dev/null || refuse "cannot start the redirector"
+docker run -d --name "$NET-echo" --network "container:$NET-nginx" \
+	-v "$W/echo:/etc/caddy:ro" "$CADDY_IMG" >/dev/null || refuse "cannot start the echo upstream"
 docker run -d --name "$NET-caddy" --network "container:$NET-nginx" \
 	-v "$W/etc:/etc/caddy:ro" -v "$W/pebble:/pebble:ro" -v "$W/data:/data" \
 	"$CADDY_IMG" >/dev/null || refuse "cannot start caddy"
@@ -153,11 +173,30 @@ for n in viafrei.de www.viafrei.de; do
 		*[Pp]ebble*) ok "$n now presents the CA's certificate ($issuer)" ;;
 		*) bad "$n still presents another certificate (${issuer:-no answer})" ;;
 	esac
-	code=$(docker run --rm --network "$NET" "$SSL_IMG" sh -c \
-		"apk add -q curl >/dev/null 2>&1; curl -sk -o /dev/null -w '%{http_code}' --resolve $n:443:$SUB.10 https://$n/" 2>/dev/null)
-	case "$n" in viafrei.de) want=502 ;; *) want=301 ;; esac
-	[ "$code" = "$want" ] && ok "$n still answers an ordinary request from that peer by its fallback ($code)" ||
-		bad "$n answered an ordinary request from that peer $code, not $want (its fallback)"
+	# One container is the peer: it prints its own address, then the answer
+	# to a request carrying a made-up CF-Connecting-IP and X-Forwarded-For
+	# (2 s per request, the test timeout rule). Documentation addresses only.
+	ans=$(docker run --rm --network "$NET" "$SSL_IMG" sh -c \
+		"apk add -q curl >/dev/null 2>&1; echo \"me=\$(hostname -i)\"; curl -sk --max-time 2 -w 'code=%{http_code}\n' \
+		-H 'CF-Connecting-IP: 203.0.113.77' -H 'X-Forwarded-For: 192.0.2.99' \
+		--resolve $n:443:$SUB.10 https://$n/" 2>/dev/null)
+	me=$(printf '%s\n' "$ans" | sed -n 's/^me=\([0-9.]*\).*/\1/p')
+	code=$(printf '%s\n' "$ans" | sed -n 's/^code=//p')
+	if [ "$n" = www.viafrei.de ]; then
+		[ "$code" = 301 ] && ok "$n answers that peer by its fallback: a 301 to the apex" ||
+			bad "$n answered that peer ${code:-nothing}, not 301 (its fallback)"
+		continue
+	fi
+	[ "$code" = 200 ] && ok "$n serves that peer through its fallback (200 from the upstream)" ||
+		bad "$n answered that peer ${code:-nothing}, not 200 from the upstream"
+	[ -n "$me" ] && printf '%s\n' "$ans" | grep -qx "xff=\[$me\]" &&
+		ok "$n hands the upstream X-Forwarded-For = the peer's own address, nothing else" ||
+		bad "$n did not hand the upstream exactly the peer's address as X-Forwarded-For (peer=${me:-unknown}; $(printf '%s' "$ans" | grep '^xff=' || echo 'no xff line'))"
+	printf '%s\n' "$ans" | grep -q '^xri=\[\]$' && printf '%s\n' "$ans" | grep -q '^fwd=\[\]$' &&
+		printf '%s\n' "$ans" | grep -q '^tci=\[\]$' &&
+		! printf '%s\n' "$ans" | grep -qE '^(xff|xri|fwd|tci)=.*(203\.0\.113\.77|192\.0\.2\.99)' &&
+		ok "$n: neither made-up value reaches any address header of the upstream" ||
+		bad "$n: a made-up address reached the upstream ($(printf '%s' "$ans" | grep -E '^(xff|xri|fwd|tci)=' | tr '\n' ' '))"
 done
 grep -q '"challenge_type":"http-01"' "$W/caddy.log" && ok "the challenge type was http-01" || bad "no http-01 challenge in the log"
 for n in viafrei.de www.viafrei.de; do
