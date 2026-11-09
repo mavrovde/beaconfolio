@@ -78,15 +78,28 @@ mavrov.de, www.mavrov.de { # de-brand:canonical: the owner's personal domain, ke
 # plain A/AAAA record and its block below does not know Cloudflare exists.
 # Public still means public: everybody reaches the site — through Cloudflare.
 #
-#   * A request is served only when it matches @cf_visitor: its connection
-#     comes from a Cloudflare address AND it carries a CF-Connecting-IP that
-#     looks like an address (Cloudflare sets that header on every request it
-#     forwards; without it the tenant would get an empty X-Forwarded-For).
-#     Then it is served exactly as before: the apex reverse-proxies to :18180
-#     with Host passed through, www redirects permanently to the apex.
-#   * ANY OTHER REQUEST GETS 403. This host's address is public through the
-#     DNS-only names, so a crawler could otherwise skip Cloudflare by sending
-#     `Host: viafrei.de` straight to it — the bypass is one curl --resolve.
+#   * A request is served THROUGH THE GATE when it matches @cf_visitor: its
+#     connection comes from a Cloudflare address AND it carries a
+#     CF-Connecting-IP that looks like an address (Cloudflare sets that header
+#     on every request it forwards; without it the tenant would get an empty
+#     X-Forwarded-For). Then the apex reverse-proxies to :18180 with Host
+#     passed through and CF-Connecting-IP as X-Forwarded-For, and www
+#     redirects permanently to the apex.
+#   * ANY OTHER REQUEST IS SERVED TOO, the pre-Cloudflare way (2026-11-09,
+#     owner-approved hotfix). The first cut answered it 403, so a crawler could
+#     not skip Cloudflare with `Host: viafrei.de` straight to this host (one
+#     curl --resolve) — but a resolver still caching the old direct record
+#     sends REAL visitors here too (Google DNS still did 98 min after the
+#     switch; the owner could not open the site from a tablet), and a 403 to
+#     direct visitors broke the site for anyone with a stale DNS answer. So
+#     the bare `handle {` fallback proxies the apex to the same upstream with
+#     Host passed through and NO address header from the request (Caddy sets
+#     X-Forwarded-For to the direct peer, which a caller cannot choose — true
+#     only while NO trusted_proxies is configured anywhere, which apply.test.sh
+#     asserts), and
+#     www's fallback redirects to the apex. The Cloudflare path still carries
+#     the real client address; the crawler bypass is open again, and closing
+#     it needs Authenticated Origin Pulls (below), not a 403 to people.
 #   * The apex hands the tenant the VISITOR's address as X-Forwarded-For,
 #     taken from CF-Connecting-IP — OVERWRITTEN, never appended, and ONLY
 #     inside `handle @cf_visitor`. Cloudflare overwrites CF-Connecting-IP on
@@ -101,8 +114,9 @@ mavrov.de, www.mavrov.de { # de-brand:canonical: the owner's personal domain, ke
 # Cloudflare customer can point a proxied record of their own at this host's
 # address, and their traffic then passes this gate with their zone's settings
 # (none of our crawler protection) and a CF-Connecting-IP Cloudflare set for
-# their visitor. The gate therefore stops direct crawlers, not a determined one
-# with a Cloudflare account. The stronger follow-up is Authenticated Origin
+# their visitor. Since the 2026-11-09 hotfix the gate decides only WHICH
+# address the tenant is handed (CF-Connecting-IP, or the direct peer); it
+# refuses nobody. The stronger follow-up is Authenticated Origin
 # Pulls: Cloudflare presents a client certificate on the origin connection and
 # this edge requires it (`tls { client_auth { mode require_and_verify,
 # trust_pool file <origin-pull CA> } }` on these two blocks). Note that the
@@ -151,9 +165,9 @@ mavrov.de, www.mavrov.de { # de-brand:canonical: the owner's personal domain, ke
 #     very blocks below. Caddy answers a challenge in Server.ServeHTTP BEFORE
 #     any route ("guarantee ACME HTTP challenges; handle them separately from
 #     any user-defined handlers", modules/caddyhttp/server.go, v2.11.9), so it
-#     is never proxied and never 403ed — not even for a peer outside the ranges.
+#     is never proxied or redirected — not even for a peer outside the ranges.
 #     Proved end to end by infra/edge/acme-behind-cloudflare.test.sh (docker,
-#     a test CA, a 301-only port 80, ALPN off, a peer every route answers 403:
+#     a test CA, a 301-only port 80, ALPN off, a peer outside the ranges:
 #     both names renewed through 443).
 #   - This works only while the CURRENT certificate is valid (Full (strict)
 #     needs it to reach us at all). Caddy renews with a third of the lifetime
@@ -183,15 +197,15 @@ mavrov.de, www.mavrov.de { # de-brand:canonical: the owner's personal domain, ke
 #      Cloudflare to this edge over http, which redirects to https: a loop.
 #      Nothing at Cloudflare may rewrite the origin request to http.
 #   1. switch the two records to proxied in Cloudflare;
-#   2. wait out the OLD records' TTL (auto, about 300 s) — resolvers still
-#      holding the direct address would be sent to the 403 — or lower the
-#      TTL a day ahead;
+#   2. wait out the OLD records' TTL (auto, about 300 s) — a resolver may
+#      hold the direct address far longer (98 min measured), which is why a
+#      direct connection is served, not refused — or lower the TTL a day ahead;
 #   3. write the ranges file, then apply this Caddyfile.
 # Applied while the records are still DNS-only, every visitor connects
-# directly and gets the 403.
+# directly and is served by the fallback, with its own address as
+# X-Forwarded-For.
 # ROLLBACK is the reverse: apply the previous Caddyfile FIRST (the site serves
-# every connection again), THEN switch the records back to DNS-only. The other
-# way round, every visitor connects directly to a gate that refuses them.
+# every connection again), THEN switch the records back to DNS-only.
 viafrei.de {
 	@cf_visitor {
 		import /etc/caddy/viafrei-cloudflare.conf
@@ -203,8 +217,18 @@ viafrei.de {
 			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
 		}
 	}
+	# DIRECT VISITORS ARE SERVED (2026-11-09, owner-approved hotfix): a
+	# resolver that still caches the pre-Cloudflare A record sends its users
+	# here directly (Google DNS still did 98 min after the switch), and a 403
+	# to direct visitors broke the site for every one of them. The
+	# pre-Cloudflare shape: Host passed through, and NO address header taken
+	# from the request -- Caddy sets X-Forwarded-For to the direct peer
+	# itself, so a caller cannot choose it. Only the @cf_visitor path above
+	# trusts CF-Connecting-IP and carries the real client address.
 	handle {
-		respond 403
+		reverse_proxy 127.0.0.1:18180 {
+			header_up Host {host}
+		}
 	}
 }
 
@@ -213,8 +237,10 @@ viafrei.de {
 # https://www.viafrei.de/ as its own canonical page beside https://viafrei.de/de
 # (Search Console URL inspection, 2026-10-12) — a duplicate of the home page.
 # Permanent, path and query kept; the certificate for www stays automatic.
-# Behind Cloudflare like the apex (#1267), with the same matcher and door: a
-# direct connection gets 403, not the redirect.
+# Behind Cloudflare like the apex (#1267), with the same matcher. A direct
+# connection (a resolver still caching the pre-Cloudflare record) gets the SAME
+# redirect, never a 403: the 403 broke the site for every stale DNS answer
+# (2026-11-09, owner-approved hotfix). The apex it lands on serves it either way.
 www.viafrei.de {
 	@cf_visitor {
 		import /etc/caddy/viafrei-cloudflare.conf
@@ -224,7 +250,7 @@ www.viafrei.de {
 		redir https://viafrei.de{uri} permanent
 	}
 	handle {
-		respond 403
+		redir https://viafrei.de{uri} permanent
 	}
 }
 
