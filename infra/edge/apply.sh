@@ -125,6 +125,19 @@ done < <(awk '$1 == "output" && $2 == "file" { print $3 }' "$SRC")
 # validates — and leaves a gate that only asks for a header any direct caller
 # can send. Measured on caddy 2.11: "Valid configuration". So a remote_ip line
 # followed by an address is required here, by name.
+#
+# And it is read for its WIDTH (review N4): a remote_ip line that validates but
+# lets in far more than Cloudflare — `0.0.0.0/0`, `::/0`, a hand-widened /4,
+# or a keyword such as `private_ranges` — turns the range half of the gate
+# into a formality. Cloudflare's widest published prefixes are /13 (IPv4) and
+# /29 (IPv6); the generator refuses anything wider than /8 or /12, and the same
+# floor is enforced here on the file as it is ON THE HOST, because the file is
+# writable by hand. Every token after `remote_ip` must be an address or a CIDR
+# no wider than that; the offending tokens are named.
+CF_WIDE_AWK='{ sub(/#.*/, "") }
+$1 == "remote_ip" { for (i = 2; i <= NF; i++) { t = $i
+    if (t !~ /^[0-9A-Fa-f.:]+(\/[0-9]+)?$/) { print t; continue }
+    if (t ~ /\//) { p = t; sub(/.*\//, "", p); min = (t ~ /:/) ? 12 : 8; if (p + 0 < min) print t } } }'
 missing=0
 while IFS= read -r imp; do
     [ -n "$imp" ] || continue
@@ -141,6 +154,11 @@ while IFS= read -r imp; do
         && ! $AS_CADDY grep -qE '^[[:space:]]*remote_ip[[:space:]]+[0-9A-Fa-f]' "$IMPORT_ROOT$imp"; then
         echo "✗ import $imp carries no 'remote_ip <cidr> …' line (or $CADDY_USER cannot read it)" >&2
         echo "  — inside @cf_visitor the gate would test only a header. Fix: sudo bash $HERE/cloudflare-ranges.sh --write" >&2
+        missing=1
+    elif [ "${imp##*/}" = viafrei-cloudflare.conf ] \
+        && wide=$($AS_CADDY cat "$IMPORT_ROOT$imp" | awk "$CF_WIDE_AWK") && [ -n "$wide" ]; then
+        echo "✗ import $imp lets in more than Cloudflare: $(echo $wide)" >&2
+        echo "  — a /0, an IPv4 prefix wider than /8, an IPv6 prefix wider than /12, or a token that is no address. Fix: sudo bash $HERE/cloudflare-ranges.sh --write" >&2
         missing=1
     fi
 done < <(awk '$1 == "import" && $2 ~ /^\// { print $2 }' "$SRC" | sort -u)

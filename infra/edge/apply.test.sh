@@ -299,6 +299,31 @@ for shape in comments oldshape; do
         || bad "(7d) a ranges file without remote_ip was not refused by name before validate ($shape)"
 done
 unset CADDY_LOG
+# review N4: a remote_ip line that validates but lets in far more than
+# Cloudflare is refused too, the offending token named. /0 both families, an
+# IPv4 prefix wider than /8 (/7), an IPv6 prefix wider than /12 (/11), and a
+# keyword that is no address. The edges /8 and /12 are ACCEPTED (last case).
+for wide in 0.0.0.0/0 ::/0 104.0.0.0/7 2400::/11 private_ranges; do
+    fresh_case "old config"; EDGE_APPLY_CONFIRM=1
+    r7d="$TMP/r7d"; rm -rf "$r7d"; mkdir -p "$r7d/etc/caddy"
+    cp "$IMPORTS/etc/caddy/viafrei-status-allow.conf" "$r7d/etc/caddy/"
+    printf '# ranges\nremote_ip 198.51.100.0/24 %s 2001:db8::/32\n' "$wide" > "$r7d/etc/caddy/viafrei-cloudflare.conf"
+    CADDY_LOG="$TMP/caddy7d.log"; : > "$CADDY_LOG"
+    out="$TMP/out7d"; rc=0
+    ( export EDGE_IMPORT_ROOT="$r7d" CADDY_LOG; APPLY="$e7d/apply.sh"; run_apply --apply ) >"$out" 2>&1 || rc=$?
+    check "(7d) a ranges file carrying $wide is refused" 1 "$rc"
+    grep -qF "lets in more than Cloudflare: $wide" "$out" && [ ! -s "$CADDY_LOG" ] && [ "$(cat "$DST")" = "old config" ] \
+        && ok "(7d) $wide is named, before validate, with the edge untouched" \
+        || bad "(7d) $wide was not refused by name before validate"
+done
+fresh_case "old config"; EDGE_APPLY_CONFIRM=1
+r7d="$TMP/r7d"; rm -rf "$r7d"; mkdir -p "$r7d/etc/caddy"
+cp "$IMPORTS/etc/caddy/viafrei-status-allow.conf" "$r7d/etc/caddy/"
+printf 'remote_ip 10.0.0.0/8 2400::/12 192.0.2.1 2001:db8::1\n' > "$r7d/etc/caddy/viafrei-cloudflare.conf"
+out="$TMP/out7d"; rc=0
+( export EDGE_IMPORT_ROOT="$r7d"; APPLY="$e7d/apply.sh"; run_apply --apply ) >"$out" 2>&1 || rc=$?
+check "(7d) a /8, a /12 and bare addresses are accepted (the width floor's edges)" 0 "$rc"
+unset CADDY_LOG
 fresh_case "old config"; EDGE_APPLY_CONFIRM=1
 rc=0
 ( APPLY="$e7d/apply.sh"; run_apply --apply ) >/dev/null 2>&1 || rc=$?
@@ -1212,7 +1237,11 @@ grep -q '/etc/caddy/viafrei-cloudflare.conf   (root:caddy, 0640)' "$SRC" \
     && ok "the ranges file's documented path and mode are /etc/caddy/viafrei-cloudflare.conf, root:caddy 0640" \
     || bad "the Caddyfile does not document the ranges file as /etc/caddy/viafrei-cloudflare.conf (root:caddy, 0640)"
 for doc in 'Full (strict)' 'wait out the OLD records' 'ROLLBACK is the reverse: apply the previous Caddyfile FIRST' \
-           "Cloudflare's nameservers" 'Authenticated Origin' 'Cloudflare customer can point' 'viafrei-cloudflare-ranges-check'; do
+           "Cloudflare's nameservers" 'Authenticated Origin' 'Cloudflare customer can point' 'viafrei-cloudflare-ranges-check' \
+           'systemctl is-failed viafrei-cloudflare-ranges-check.service' 'TLS-ALPN-01 stops working' \
+           'Always Use HTTPS is ON' 'Caddy answers a challenge in Server.ServeHTTP BEFORE' \
+           'acme-behind-cloudflare.test.sh' 'openssl x509 -noout -enddate' 'Origin CA' \
+           'IPv6 prefix wider than /12'; do
     grep -qi -- "$doc" "$SRC" \
         && ok "the Caddyfile states: $doc" \
         || bad "the Caddyfile no longer states: $doc"
@@ -2768,6 +2797,9 @@ if [ -f "$SVC" ] && [ -f "$TMR" ]; then
     grep -qx 'OnCalendar=daily' "$TMR" && grep -qx 'Persistent=true' "$TMR" && grep -qx 'WantedBy=timers.target' "$TMR" \
         && ok "(18) the timer fires daily, catches up after downtime, and is enableable" \
         || bad "(18) the timer is not daily + persistent + WantedBy=timers.target"
+    grep -qF '#   systemctl is-failed viafrei-cloudflare-ranges-check.service' "$SVC" \
+        && ok "(18) the service names who reads a failure (the prod round, systemctl is-failed)" \
+        || bad "(18) the service does not name who reads a failed run"
 else
     bad "(18) the drift-check service or timer is missing under infra/edge/systemd/"
 fi

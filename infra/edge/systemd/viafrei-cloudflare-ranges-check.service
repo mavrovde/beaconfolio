@@ -8,6 +8,11 @@
 # is fixed by a person with `sudo bash infra/edge/cloudflare-ranges.sh --write`
 # and a validate + reload (see the Caddyfile).
 #
+# WHO READS A FAILURE: the 3-hourly prod round runs
+#   systemctl is-failed viafrei-cloudflare-ranges-check.service
+# and an answer of `failed` is a finding. A failed oneshot stays failed until
+# the next run succeeds, so a round within the day sees it.
+#
 # INSTALL, once, on the edge host, from a checkout of this repository:
 #   sudo install -m 0755 -o root -g root infra/edge/cloudflare-ranges.sh /usr/local/sbin/viafrei-cloudflare-ranges.sh
 #   sudo install -m 0644 -o root -g root infra/edge/systemd/viafrei-cloudflare-ranges-check.service infra/edge/systemd/viafrei-cloudflare-ranges-check.timer /etc/systemd/system/

@@ -129,7 +129,46 @@ mavrov.de, www.mavrov.de { # de-brand:canonical: the owner's personal domain, ke
 # whose Caddyfile is already in sync. The daily drift check is the systemd
 # pair in infra/edge/systemd/ (viafrei-cloudflare-ranges-check.{service,timer}):
 # it runs --check, logs to the journal and FAILS the unit when Cloudflare's
-# lists moved; it never writes.
+# lists moved; it never writes. WHO READS A FAILED UNIT: the 3-hourly prod
+# round, `systemctl is-failed viafrei-cloudflare-ranges-check.service` (a
+# finding when it answers `failed`); `systemctl --failed` shows it to anyone
+# on the host.
+#
+# apply.sh also reads the file's WIDTH: a /0, an IPv4 prefix wider than /8, an
+# IPv6 prefix wider than /12 or a token that is no address (`private_ranges`)
+# is refused by name — it would validate, and let far more than Cloudflare in.
+#
+# CERTIFICATES BEHIND CLOUDFLARE. This edge keeps obtaining and renewing the
+# viafrei.de and www.viafrei.de certificates itself; Cloudflare's own
+# certificate is what visitors see, ours is what Full (strict) verifies.
+#   - TLS-ALPN-01 stops working: Cloudflare terminates TLS, the CA's ALPN
+#     handshake never reaches us. Caddy logs that attempt failing and retries
+#     with HTTP-01 — expected noise, not a fault.
+#   - HTTP-01 goes through Cloudflare. Always Use HTTPS is ON in the zone, so
+#     the CA's http://…/.well-known/acme-challenge/<t> is answered at the edge
+#     of Cloudflare with a 301 to https (the CA follows it), and arrives HERE on
+#     443 — with a Cloudflare peer and a CF-Connecting-IP header, inside the
+#     very blocks below. Caddy answers a challenge in Server.ServeHTTP BEFORE
+#     any route ("guarantee ACME HTTP challenges; handle them separately from
+#     any user-defined handlers", modules/caddyhttp/server.go, v2.11.9), so it
+#     is never proxied and never 403ed — not even for a peer outside the ranges.
+#     Proved end to end by infra/edge/acme-behind-cloudflare.test.sh (docker,
+#     a test CA, a 301-only port 80, ALPN off, a peer every route answers 403:
+#     both names renewed through 443).
+#   - This works only while the CURRENT certificate is valid (Full (strict)
+#     needs it to reach us at all). Caddy renews with a third of the lifetime
+#     left — about 30 days of retries for a 90-day certificate.
+#   - CHECK after the switch, and at every prod round: the notAfter of the
+#     certificate the ORIGIN presents (not Cloudflare's),
+#       echo | openssl s_client -connect 127.0.0.1:443 -servername viafrei.de 2>/dev/null | openssl x509 -noout -enddate
+#     (and the same for www.viafrei.de) must stay more than 20 days out, and
+#     `journalctl -u caddy | grep 'certificate renewed successfully'` names
+#     both after each renewal. Under 20 days is a finding.
+#   - FALLBACK when renewal through Cloudflare fails: either switch the two
+#     records back to DNS-only for the renewal (the ROLLBACK order below; the
+#     edge then renews directly), or install a Cloudflare Origin CA
+#     certificate (15 years, trusted by Cloudflare only — fine under Full
+#     (strict), useless DNS-only) as a `tls <cert> <key>` in both blocks.
 #
 # The file must exist BEFORE the first apply: `caddy validate` fails on an
 # import that matches no file, and apply.sh refuses by name before it gets

@@ -111,10 +111,24 @@ The file is written by `infra/edge/cloudflare-ranges.sh`:
   when the installed file is missing or differs from Cloudflare's lists.
 - `infra/edge/systemd/viafrei-cloudflare-ranges-check.{service,timer}` run
   `--check` daily as the caddy user; drift or a refusal fails the unit
-  (journal, `systemctl --failed`). Install steps are in the service file.
+  (journal, `systemctl --failed`). Install steps are in the service file. The
+  3-hourly prod round reads it: `systemctl is-failed
+  viafrei-cloudflare-ranges-check.service` answering `failed` is a finding.
 
 `apply.sh --apply` refuses by name while the file is missing, empty or without
-a `remote_ip` line. A refreshed list takes effect after `caddy validate` +
+a `remote_ip` line, and when a token on it is `/0`, an IPv4 prefix wider than
+/8, an IPv6 prefix wider than /12 or not an address at all.
+
+Certificates: the edge keeps renewing viafrei.de and www.viafrei.de itself.
+TLS-ALPN-01 cannot reach it behind Cloudflare (logged and retried as HTTP-01);
+HTTP-01 is redirected by Always Use HTTPS (ON) and arrives on 443, where Caddy
+answers the challenge before any route, so neither the proxy nor the 403 sees
+it — proved by `infra/edge/acme-behind-cloudflare.test.sh` (docker). It needs
+the current certificate valid, so after the switch and at every prod round the
+ORIGIN certificate's notAfter (`openssl s_client -connect 127.0.0.1:443
+-servername viafrei.de` | `openssl x509 -noout -enddate`, and www) must be
+more than 20 days out. Fallback: DNS-only for the renewal, or a Cloudflare
+Origin CA certificate as `tls <cert> <key>` in both blocks. A refreshed list takes effect after `caddy validate` +
 `systemctl reload caddy` (apply.sh does not reload an edge whose Caddyfile is
 already in sync).
 
