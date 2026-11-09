@@ -1,0 +1,40 @@
+# Daily drift check of the Cloudflare ranges the viafrei.de/www edge blocks
+# import (viafrei repo #1267). READ-ONLY: runs `cloudflare-ranges.sh --check`,
+# which fetches Cloudflare's lists and compares them with
+# /etc/caddy/viafrei-cloudflare.conf. Exit 1 (drift, or the file is missing) or
+# 2 (a refusal: download failed, a line is not a CIDR, a short list) FAILS this
+# unit — visible in `systemctl --failed` and `journalctl -u
+# viafrei-cloudflare-ranges-check`. It never writes the file: a list that moved
+# is fixed by a person with `sudo bash infra/edge/cloudflare-ranges.sh --write`
+# and a validate + reload (see the Caddyfile).
+#
+# WHO READS A FAILURE: the 3-hourly prod round runs
+#   systemctl is-failed viafrei-cloudflare-ranges-check.service
+# and an answer of `failed` is a finding. A failed oneshot stays failed until
+# the next run succeeds, so a round within the day sees it.
+#
+# INSTALL, once, on the edge host, from a checkout of this repository:
+#   sudo install -m 0755 -o root -g root infra/edge/cloudflare-ranges.sh /usr/local/sbin/viafrei-cloudflare-ranges.sh
+#   sudo install -m 0644 -o root -g root infra/edge/systemd/viafrei-cloudflare-ranges-check.service infra/edge/systemd/viafrei-cloudflare-ranges-check.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now viafrei-cloudflare-ranges-check.timer
+#   sudo systemctl start viafrei-cloudflare-ranges-check.service   # one run now
+#   systemctl status viafrei-cloudflare-ranges-check.service       # expect status=0
+# Re-run the first `install` whenever cloudflare-ranges.sh changes in git.
+[Unit]
+Description=viafrei edge: Cloudflare ranges drift check (read-only)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# the caddy user reads the 0640 root:caddy file through its group; nothing
+# here needs root
+User=caddy
+Group=caddy
+ExecStart=/usr/local/sbin/viafrei-cloudflare-ranges.sh --check
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+TimeoutStartSec=120

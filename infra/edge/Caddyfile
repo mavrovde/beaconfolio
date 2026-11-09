@@ -70,9 +70,141 @@ mavrov.de, www.mavrov.de { # de-brand:canonical: the owner's personal domain, ke
 # :18181 still exists in the tenant's compose and still serves the old notice;
 # nothing routes to it. Retiring the port is a viafrei-repo change and belongs
 # with the v0.1.0 landing work.
+#
+# BEHIND CLOUDFLARE (viafrei repo issue #1267, owner 2026-11-09: protection
+# from crawlers that ignore robots.txt). viafrei.de and www.viafrei.de are the
+# ONLY two names on this host whose DNS records are Cloudflare-PROXIED; every
+# other name (mcp., status., admin., mail. and every beaconfolio site) stays a
+# plain A/AAAA record and its block below does not know Cloudflare exists.
+# Public still means public: everybody reaches the site — through Cloudflare.
+#
+#   * A request is served only when it matches @cf_visitor: its connection
+#     comes from a Cloudflare address AND it carries a CF-Connecting-IP that
+#     looks like an address (Cloudflare sets that header on every request it
+#     forwards; without it the tenant would get an empty X-Forwarded-For).
+#     Then it is served exactly as before: the apex reverse-proxies to :18180
+#     with Host passed through, www redirects permanently to the apex.
+#   * ANY OTHER REQUEST GETS 403. This host's address is public through the
+#     DNS-only names, so a crawler could otherwise skip Cloudflare by sending
+#     `Host: viafrei.de` straight to it — the bypass is one curl --resolve.
+#   * The apex hands the tenant the VISITOR's address as X-Forwarded-For,
+#     taken from CF-Connecting-IP — OVERWRITTEN, never appended, and ONLY
+#     inside `handle @cf_visitor`. Cloudflare overwrites CF-Connecting-IP on
+#     every request it forwards, so on a Cloudflare connection the header is
+#     Cloudflare's statement and not the caller's; on a direct connection it
+#     would be whatever the caller typed, and the tenant's rate limit and place
+#     lookup would believe it. Without the header the tenant would see one
+#     Cloudflare PoP for every visitor.
+#
+# WHAT remote_ip DOES NOT PROVE. A Cloudflare address says the connection
+# came through Cloudflare's network — not that it came through OUR zone. Any
+# Cloudflare customer can point a proxied record of their own at this host's
+# address, and their traffic then passes this gate with their zone's settings
+# (none of our crawler protection) and a CF-Connecting-IP Cloudflare set for
+# their visitor. The gate therefore stops direct crawlers, not a determined one
+# with a Cloudflare account. The stronger follow-up is Authenticated Origin
+# Pulls: Cloudflare presents a client certificate on the origin connection and
+# this edge requires it (`tls { client_auth { mode require_and_verify,
+# trust_pool file <origin-pull CA> } }` on these two blocks). Note that the
+# shared Cloudflare origin-pull CA proves "Cloudflare" again; only a
+# per-zone/per-hostname certificate proves "our zone".
+#
+# THE RANGES ARE NOT IN THIS FILE, for the same reason the allow-list below is
+# not: this file carries no address literal (apply.test.sh refuses one), and
+# the list changes on Cloudflare's schedule, not on a code review. `import`
+# reads one line, INSIDE the @cf_visitor matcher, from a host-side file written
+# by a committed generator:
+#
+#     /etc/caddy/viafrei-cloudflare.conf   (root:caddy, 0640), one line:
+#         remote_ip <cidr> [<cidr> …]
+#
+#     sudo bash infra/edge/cloudflare-ranges.sh --write   # fetch, validate, install
+#     sudo bash infra/edge/cloudflare-ranges.sh --check   # read-only: current?
+#
+# The generator fetches https://www.cloudflare.com/ips-v4 and /ips-v6, refuses
+# any line that is not a CIDR and a list shorter than 10 IPv4 or 5 IPv6
+# ranges (exit 2: a truncated download must never become "nobody may reach
+# the site"), writes atomically and keeps the previous file as .bak. A
+# refreshed list needs a validate + reload; apply.sh does not reload an edge
+# whose Caddyfile is already in sync. The daily drift check is the systemd
+# pair in infra/edge/systemd/ (viafrei-cloudflare-ranges-check.{service,timer}):
+# it runs --check, logs to the journal and FAILS the unit when Cloudflare's
+# lists moved; it never writes. WHO READS A FAILED UNIT: the 3-hourly prod
+# round, `systemctl is-failed viafrei-cloudflare-ranges-check.service` (a
+# finding when it answers `failed`); `systemctl --failed` shows it to anyone
+# on the host.
+#
+# apply.sh also reads the file's WIDTH: a /0, an IPv4 prefix wider than /8, an
+# IPv6 prefix wider than /12 or a token that is no address (`private_ranges`)
+# is refused by name — it would validate, and let far more than Cloudflare in.
+#
+# CERTIFICATES BEHIND CLOUDFLARE. This edge keeps obtaining and renewing the
+# viafrei.de and www.viafrei.de certificates itself; Cloudflare's own
+# certificate is what visitors see, ours is what Full (strict) verifies.
+#   - TLS-ALPN-01 stops working: Cloudflare terminates TLS, the CA's ALPN
+#     handshake never reaches us. Caddy logs that attempt failing and retries
+#     with HTTP-01 — expected noise, not a fault.
+#   - HTTP-01 goes through Cloudflare. Always Use HTTPS is ON in the zone, so
+#     the CA's http://…/.well-known/acme-challenge/<t> is answered at the edge
+#     of Cloudflare with a 301 to https (the CA follows it), and arrives HERE on
+#     443 — with a Cloudflare peer and a CF-Connecting-IP header, inside the
+#     very blocks below. Caddy answers a challenge in Server.ServeHTTP BEFORE
+#     any route ("guarantee ACME HTTP challenges; handle them separately from
+#     any user-defined handlers", modules/caddyhttp/server.go, v2.11.9), so it
+#     is never proxied and never 403ed — not even for a peer outside the ranges.
+#     Proved end to end by infra/edge/acme-behind-cloudflare.test.sh (docker,
+#     a test CA, a 301-only port 80, ALPN off, a peer every route answers 403:
+#     both names renewed through 443).
+#   - This works only while the CURRENT certificate is valid (Full (strict)
+#     needs it to reach us at all). Caddy renews with a third of the lifetime
+#     left — about 30 days of retries for a 90-day certificate.
+#   - CHECK after the switch, and at every prod round: the notAfter of the
+#     certificate the ORIGIN presents (not Cloudflare's),
+#       echo | openssl s_client -connect 127.0.0.1:443 -servername viafrei.de 2>/dev/null | openssl x509 -noout -enddate
+#     (and the same for www.viafrei.de) must stay more than 20 days out, and
+#     `journalctl -u caddy | grep 'certificate renewed successfully'` names
+#     both after each renewal. Under 20 days is a finding.
+#   - FALLBACK when renewal through Cloudflare fails: either switch the two
+#     records back to DNS-only for the renewal (the ROLLBACK order below; the
+#     edge then renews directly), or install a Cloudflare Origin CA
+#     certificate (15 years, trusted by Cloudflare only — fine under Full
+#     (strict), useless DNS-only) as a `tls <cert> <key>` in both blocks.
+#
+# The file must exist BEFORE the first apply: `caddy validate` fails on an
+# import that matches no file, and apply.sh refuses by name before it gets
+# there. A file WITHOUT a remote_ip line is refused too — inside the matcher
+# it would leave only the header test, and a header is what a direct caller
+# can send. A missing file therefore means "the change does not happen", never
+# "the site is open to every crawler" nor "the site is shut".
+#
+# ORDER ON THE DAY, switching ON:
+#   0. the zone is on Cloudflare's nameservers (done 2026-11-09) and its
+#      SSL/TLS mode is Full (strict) (set, 2026-11-09). Flexible would send
+#      Cloudflare to this edge over http, which redirects to https: a loop.
+#      Nothing at Cloudflare may rewrite the origin request to http.
+#   1. switch the two records to proxied in Cloudflare;
+#   2. wait out the OLD records' TTL (auto, about 300 s) — resolvers still
+#      holding the direct address would be sent to the 403 — or lower the
+#      TTL a day ahead;
+#   3. write the ranges file, then apply this Caddyfile.
+# Applied while the records are still DNS-only, every visitor connects
+# directly and gets the 403.
+# ROLLBACK is the reverse: apply the previous Caddyfile FIRST (the site serves
+# every connection again), THEN switch the records back to DNS-only. The other
+# way round, every visitor connects directly to a gate that refuses them.
 viafrei.de {
-	reverse_proxy 127.0.0.1:18180 {
-		header_up Host {host}
+	@cf_visitor {
+		import /etc/caddy/viafrei-cloudflare.conf
+		header_regexp CF-Connecting-IP ^[0-9A-Fa-f.:]+$
+	}
+	handle @cf_visitor {
+		reverse_proxy 127.0.0.1:18180 {
+			header_up Host {host}
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		}
+	}
+	handle {
+		respond 403
 	}
 }
 
@@ -81,8 +213,19 @@ viafrei.de {
 # https://www.viafrei.de/ as its own canonical page beside https://viafrei.de/de
 # (Search Console URL inspection, 2026-10-12) — a duplicate of the home page.
 # Permanent, path and query kept; the certificate for www stays automatic.
+# Behind Cloudflare like the apex (#1267), with the same matcher and door: a
+# direct connection gets 403, not the redirect.
 www.viafrei.de {
-	redir https://viafrei.de{uri} permanent
+	@cf_visitor {
+		import /etc/caddy/viafrei-cloudflare.conf
+		header_regexp CF-Connecting-IP ^[0-9A-Fa-f.:]+$
+	}
+	handle @cf_visitor {
+		redir https://viafrei.de{uri} permanent
+	}
+	handle {
+		respond 403
+	}
 }
 
 # ACCESS LOG for mcp.viafrei.de ONLY (viafrei repo issue #438, that tenant's
@@ -155,9 +298,11 @@ mcp.viafrei.de {
 }
 
 # The viafrei tenant's OPERATIONS CONSOLE (viafrei repo issues #94, #560) — one
-# of the TWO site blocks on this host with an IP restriction (the other is the
-# status page, the next block), and deliberately so: the blocks above serve the
-# product and stay PUBLIC (viafrei owner, 2026-09-19), this one serves the
+# of the TWO site blocks on this host gated on the owner's addresses (the other
+# is the status page, the next block), and deliberately so: the blocks above
+# serve the product and stay PUBLIC (viafrei owner, 2026-09-19; viafrei.de and
+# www. are gated on CLOUDFLARE's ranges, which is not a restriction on who may
+# read them, only on the road they take — #1267), this one serves the
 # operational surface — every worker's effective configuration, every feed's
 # errors, the schema head, what is deployed, and since viafrei 2.0 the owner's
 # restart and configuration actions. It moved from status.viafrei.de to
