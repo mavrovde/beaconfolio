@@ -17,7 +17,7 @@ cryptography==50.0.2
 passlib[bcrypt]==1.7.4
 email-validator==2.3.0
 python-multipart==0.0.32
-Pillow==12.3.0
+Pillow==13.0.0
 setuptools==84.0.0
 # Local speech-to-text for the voice channel (#264). CTranslate2 inference on
 # the CPU, in-process — RULE 10: no key, no endpoint, no metered call. The only
